@@ -93,7 +93,7 @@ temel layout ve doğrulama testleri tamamlandı.
 
 ### Commit
 
-(Tamamlandığında doldurulacak — commit hash'i buraya yazılır)
+`5744e57` — "Aşama 0: frontend/backend iskeleti, tasarım token'ları, migration runner, /api/v1 health"
 
 ### Güncel dosya yapısı
 
