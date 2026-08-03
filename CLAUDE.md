@@ -158,6 +158,8 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
   framer-motion, ikonlar için lucide-react kullanılır.
 - Tüm metinler Türkçe. Tarih/saat gösterimi `Europe/Istanbul`.
 - Form durumları: yükleniyor, hata, boş durum — üçü de mutlaka ele alınır.
+- **Görsel kararlar "Tasarım kuralları" bölümünde sabitlenmiştir.** Yeni bir
+  renk, boyut veya font tanımlama; oradaki token'ları kullan.
 
 **OTP (veli ve öğrenci girişi)**
 - 6 haneli, 10 dakika geçerli.
@@ -171,6 +173,148 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
 **Zaman**
 - Gün hesapları (`day_of_week`, `due_date`) yerel takvime göre yapılır;
   UTC üzerinden gün çıkarımı yapılmaz.
+
+---
+
+## Tasarım kuralları
+
+Üründe **birbirine zıt iki yoğunluk** vardır ve bu bilinçlidir:
+
+- **`compact`** — öğretmen rapor giriş tablosu ve admin listeleri. Rakibi
+  Excel; haftada onlarca kez açılır, klavyeden çıkmadan doldurulur. Bol beyaz
+  alan burada zarardır.
+- **`comfortable`** — veli rapor sayfası, öğrenci ödev ekranı, giriş ekranı.
+  Haftada bir kez, telefonda, tek seferlik okuma. Sıkışıklık burada zarardır.
+
+Karar verilmemiş bir durumda `comfortable` varsayılandır.
+
+### Tipografi
+
+- Tek aile: **IBM Plex Sans** (400 / 500 / 600). Google Fonts'tan `latin-ext`
+  alt kümesiyle yüklenir — Türkçe glifler (ğ ı İ ş ç ö ü) bu alt kümededir.
+- **Rakam gösteren her yerde `tabular-nums` zorunludur:** puan sütunları,
+  tarihler, hafta numaraları, sayaçlar. Hizalanmayan rakamlar tabloyu
+  okunamaz hale getirir.
+  ```css
+  .tabular { font-variant-numeric: tabular-nums; }
+  ```
+- Tip ölçeği: `12 / 13 / 14 / 16 / 20 / 24 px`. Tablo içi metin 13px,
+  gövde metni 14px, sayfa başlığı 20px. 24px yalnızca veli rapor sayfasının
+  başlığında.
+- Ağırlık: gövde 400, etiket ve tablo başlığı 500, sayfa başlığı 600.
+  Bunun dışında ağırlık kullanılmaz.
+
+### Renk
+
+Renk **işlevseldir, dekoratif değildir.** Aşağıdaki üç küme ve tek vurgu rengi
+dışında hiçbir yerde renk kullanılmaz.
+
+**Temel**
+```
+--bg          #FBFCFD   sayfa arkaplanı (saf beyaz değil — uzun giriş
+                        oturumlarında göz yorgunluğunu azaltır)
+--surface     #FFFFFF   kart, tablo, modal
+--border      #E3E7EB   ayırıcılar, input kenarları
+--text        #16202A   birincil metin
+--text-muted  #5A6672   ikincil metin, etiketler
+--accent      #0D6B62   birincil buton, odak halkası, aktif sekme
+--accent-fg   #FFFFFF   accent üzerindeki metin
+```
+> **`--accent` yalnızca etkileşimli öğelere aittir** — buton, odak halkası,
+> aktif sekme, link. Durum rozetlerinde, etiketlerde veya dekoratif hiçbir
+> yerde kullanılmaz. Böylece kullanıcı bu rengi gördüğünde "buraya
+> tıklanabilir" bilgisini güvenle çıkarır.
+
+**Devamsızlık** (`report_entries.attendance`)
+```
+present  (geldi)      #5A6672   nötr — en sık durum, dikkat çekmemeli
+late     (geç geldi)  #B45309   amber
+absent   (gelmedi)    #B42318   kırmızı
+excused  (izinli)     #175CD3   mavi
+```
+
+**Rapor durumu** (`reports.status`)
+```
+draft      (taslak)       #5A6672   nötr — henüz iş bitmemiş
+completed  (tamamlandı)   #175CD3   mavi — hazır, gönderim bekliyor
+sent       (gönderildi)   #067647   yeşil — döngü tamamlandı
+```
+
+**Teslim durumu**
+```
+yüklendi       #067647
+yüklenmedi     #B42318
+geç yüklendi   #B45309
+```
+
+> Üç kümede aynı renk aileleri bilinçli olarak tekrarlanır: kırmızı her zaman
+> "eksik/olumsuz", amber her zaman "gecikmiş", mavi her zaman "bilgi/hazır",
+> yeşil her zaman "tamam". Kullanıcı bir kez öğrenir, üç yerde birden kullanır.
+>
+> Renk **tek başına** anlam taşımaz: her durum rozeti renkle birlikte metin
+> veya ikon da içerir (renk körlüğü ve yazdırma için).
+
+### Ölçüler
+
+```
+--radius   6px   tüm bileşenler (buton, input, kart, rozet)
+--ring     2px   odak halkası kalınlığı
+```
+
+**`compact` yoğunluk**
+```
+tablo satır yüksekliği   36px
+input                    h-8 (32px)
+hücre iç boşluk          px-2 py-1
+tablo metni              13px
+bileşenler arası boşluk  8px
+```
+
+**`comfortable` yoğunluk** — shadcn varsayılanları korunur; bölümler arası
+boşluk 24px, kart iç boşluğu 16–20px.
+
+### Odak halkası
+
+Rapor giriş tablosu klavyeyle doldurulur; **odağın nerede olduğu her an
+görünmelidir.** Üründeki en önemli tek tasarım detayı budur.
+
+```css
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* tablo hücrelerinde düzen kaymasını önlemek için içe doğru: */
+td :focus-visible { outline-offset: -2px; }
+```
+
+Varsayılan shadcn `focus:ring` yerine bu kullanılır. Odak halkası hiçbir
+koşulda kaldırılmaz.
+
+### Mobil
+
+Dört rolden üçü telefondadır: veli WhatsApp linkinden gelir, öğrenci fotoğraf
+yükler, öğretmen dersten sonra telefondan doldurabilir. **Yalnızca admin
+paneli masaüstü önceliklidir; kalan her şey mobil önceliklidir.**
+
+- Dokunma hedefi minimum 44×44px — `compact` yoğunlukta bile mobilde
+  butonlar ve puan seçicileri bu boyutun altına inmez.
+- Rapor giriş tablosu dar ekranda **yatay kaydırılmaz**, öğrenci başına kart
+  görünümüne geçer (`spec.md` §6.1).
+- Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
+
+### Erişilebilirlik tabanı
+
+- `prefers-reduced-motion` desteklenir; framer-motion animasyonları bu
+  durumda devre dışı kalır.
+- Metin/arkaplan kontrastı en az 4.5:1.
+- Her form alanının `<label>`'ı vardır; placeholder etiket yerine geçmez.
+- Hata mesajları alanın altında, kırmızı **ve** metinle gösterilir.
+
+### Yazım tonu
+
+- Butonlar ne yaptığını söyler: "Raporu tamamla", "Gönder" — "Kaydet" veya
+  "Onayla" gibi belirsiz fiiller değil. Aynı eylem akış boyunca aynı adı taşır.
+- Hata mesajları özür dilemez, ne olduğunu ve ne yapılacağını söyler.
+  "Bir hata oluştu" yerine "Ödev puanı 1 ile 10 arasında olmalı."
+- Boş ekranlar davet eder: "Bu hafta doldurulacak rapor yok." + varsa eylem.
+- Cümle düzeni kullanılır; başlıklarda Her Kelime Büyük Yazılmaz.
 
 ---
 
@@ -243,6 +387,11 @@ VITE_API_URL=/api/v1          # vite proxy /api üzerinden geçer
 ## Aşama 0 — İskelet
 
 - Vite + React + TypeScript frontend iskeleti
+- **Tasarım token'ları en baştan kurulur:** IBM Plex Sans yüklemesi,
+  "Tasarım kuralları" bölümündeki CSS değişkenleri (`--bg`, `--accent`,
+  durum renkleri), `--radius`, odak halkası, `compact`/`comfortable`
+  yoğunluk sınıfları. Bileşenler bu token'lardan türetilir; ekran başına
+  yeni renk veya boyut tanımlanmaz.
 - Express + **TypeScript** backend iskeleti (backend'de de TS)
 - Migration runner kurulumu: `PRAGMA user_version` tabanlı migration listesi,
   `WAL + foreign_keys`, hata fırlatır
@@ -253,7 +402,11 @@ VITE_API_URL=/api/v1          # vite proxy /api üzerinden geçer
 - Temel layout: rol bazlı navigasyon iskeleti (içerik boş)
 
 **Bitti kriteri:** `npm run dev` (frontend) + `npm run dev` (backend)
-çalışıyor, frontend'den `/api/v1/health` çağrısı 200 dönüyor.
+çalışıyor, frontend'den `/api/v1/health` çağrısı 200 dönüyor. Ayrıca kök
+CSS'te tasarım token'ları (`--bg`, `--surface`, `--border`, `--text`,
+`--text-muted`, `--accent`, `--radius`, durum renkleri) tanımlı; IBM Plex Sans
+yükleniyor; örnek bir sayfada bir buton, bir input ve bir durum rozeti bu
+token'lardan türetilmiş halde görünüyor ve klavye odağında halka çıkıyor.
 
 ---
 
