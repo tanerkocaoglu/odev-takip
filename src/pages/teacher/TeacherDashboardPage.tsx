@@ -38,11 +38,19 @@ export default function TeacherDashboardPage() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold text-text">Bu hafta doldurulacaklar</h1>
-        {data?.week && (
-          <span className="tabular text-sm text-muted">
-            Hafta {data.week.week_no} · {data.week.label}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {data?.week && (
+            <span className="tabular text-sm text-muted">
+              Hafta {data.week.week_no} · {data.week.label}
+            </span>
+          )}
+          <Link
+            to="/teacher/reports/history"
+            className="text-sm font-medium text-accent hover:underline"
+          >
+            Geçmiş raporlarım
+          </Link>
+        </div>
       </div>
 
       <FormError message={error} />

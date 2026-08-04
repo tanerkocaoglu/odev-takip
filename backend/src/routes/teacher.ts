@@ -667,4 +667,81 @@ router.post('/reports/:id/complete', (req, res) => {
   res.json(buildReportPayload(id));
 });
 
+// ---------- Geçmiş raporlarım ----------
+
+/**
+ * GET /teacher/reports — öğretmenin tüm raporları (spec.md §6 "Geçmiş
+ * raporlarım"). Dashboard yalnızca draft/açılmamış gösterir; tamamlananlar
+ * buradan görüntülenir. Öğretmen: yalnızca kendi atamaları; admin: hepsi.
+ * Sıralama: hafta başlangıcı azalan (en yeni üstte).
+ */
+router.get('/reports', (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'teacher' && user.role !== 'admin') {
+    throw new AppError('FORBIDDEN', 403, 'Bu rapora erişim yetkiniz yok.');
+  }
+
+  const statusFilter =
+    typeof req.query.status === 'string' &&
+    ['draft', 'completed', 'sent'].includes(req.query.status)
+      ? req.query.status
+      : null;
+
+  const rows = (
+    user.role === 'teacher'
+      ? db
+          .prepare(
+            `SELECT r.id, r.class_course_id, r.week_id, r.status, r.completed_at, r.updated_at,
+                    cc.day_of_week, cc.lesson_time,
+                    c.name AS class_name, co.name AS course_name,
+                    w.week_no, w.start_date AS week_start, w.end_date AS week_end,
+                    w.label AS week_label,
+                    (SELECT COUNT(*) FROM report_entries re WHERE re.report_id = r.id) AS student_count
+             FROM reports r
+             JOIN class_courses cc ON cc.id = r.class_course_id
+             JOIN classes c ON c.id = cc.class_id
+             JOIN courses co ON co.id = cc.course_id
+             JOIN weeks w ON w.id = r.week_id
+             WHERE cc.teacher_id = ? AND cc.deleted_at IS NULL
+             ${statusFilter ? 'AND r.status = ?' : ''}
+             ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time`,
+          )
+          .all(user.id, ...(statusFilter ? [statusFilter] : []))
+      : db
+          .prepare(
+            `SELECT r.id, r.class_course_id, r.week_id, r.status, r.completed_at, r.updated_at,
+                    cc.day_of_week, cc.lesson_time,
+                    c.name AS class_name, co.name AS course_name,
+                    w.week_no, w.start_date AS week_start, w.end_date AS week_end,
+                    w.label AS week_label,
+                    (SELECT COUNT(*) FROM report_entries re WHERE re.report_id = r.id) AS student_count
+             FROM reports r
+             JOIN class_courses cc ON cc.id = r.class_course_id
+             JOIN classes c ON c.id = cc.class_id
+             JOIN courses co ON co.id = cc.course_id
+             JOIN weeks w ON w.id = r.week_id
+             WHERE cc.deleted_at IS NULL
+             ${statusFilter ? 'AND r.status = ?' : ''}
+             ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time`,
+          )
+          .all(...(statusFilter ? [statusFilter] : []))
+  ) as Array<{
+    id: string;
+    status: string;
+    completed_at: string | null;
+    updated_at: string;
+    day_of_week: number;
+    lesson_time: string | null;
+    class_name: string;
+    course_name: string;
+    week_no: number;
+    week_start: string;
+    week_end: string;
+    week_label: string;
+    student_count: number;
+  }>;
+
+  res.json({ items: rows });
+});
+
 export default router;

@@ -15,6 +15,7 @@ import StudentsPage from './pages/admin/StudentsPage';
 import GuardiansPage from './pages/admin/GuardiansPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
 import ReportEntryPage from './pages/teacher/ReportEntryPage';
+import ReportHistoryPage from './pages/teacher/ReportHistoryPage';
 
 export default function App() {
   return (
@@ -57,6 +58,7 @@ export default function App() {
         }
       >
         <Route index element={<TeacherDashboardPage />} />
+        <Route path="reports/history" element={<ReportHistoryPage />} />
         <Route
           path="reports/:classCourseId/:weekId"
           element={<ReportEntryPage />}

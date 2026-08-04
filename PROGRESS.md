@@ -104,16 +104,22 @@ eksik puan ve son hafta due_date doğrulamasından geçerek `completed` yapıyor
 - `ogretmen2` → `ogretmen1`'in atamasına `POST /teacher/reports` →
   ✅ **403** `{"error":{"code":"FORBIDDEN","message":"Bu rapora erişim yetkiniz yok."}}`
 
-<execute_command>
-<command>git add PROGRESS.md && git commit -m "Aşama 3: bitti kriteri adım adım kanıtlandı (statik + test başlıkları + canlı 7/7 akış + 403 kanıtı)"</command>
-<requires_approval>false</requires_approval>
-<task_progress>
-- [x] 1. typecheck (kök + backend) + lint çıktıları ✅
-- [x] 2. Backend testleri: 128/128 ✅ (teacher 22 dahil)
-- [x] 3. Frontend testleri: 20/20 ✅ (teacher.test.tsx 8 dahil)
-- [x] 4. Canlı akış: 7/7 adım ✅
-- [x] 5. Yabancı öğretmen 403 canlı kanıtı ✅
-- [x] 6. PROGRESS.md güncelle + commit
+### Kullanıcı geri bildirimi — "tamamlanan rapor kayboluyor" ✅ (eklenti)
+
+- **Sorun:** Dashboard yalnızca draft/açılmamış gösteriyor; tamamlanan raporlar
+  listeden düşüyordu ve öğretmenin bunları görüntüleyeceği bir ekran yoktu.
+- **Çözüm (spec.md §6 "Geçmiş raporlarım" — Aşama 3'te atlanmıştı):**
+  - Backend: `GET /teacher/reports` — öğretmenin **tüm** raporları (draft/
+    completed/sent), hafta başı azalan sıralı, sınıf/ders/öğrenci sayısı ve
+    `class_course_id`/`week_id` ile; `?status=` filtresi; öğretmen sahiplik +
+    admin tümü.
+  - Frontend: `pages/teacher/ReportHistoryPage.tsx` ("Geçmiş raporlarım"),
+    rota `/teacher/reports/history`, dashboard'dan link, satırlar durum
+    rozetiyle ve "Aç" (rapor giriş ekranına geri döner).
+- **Doğrulama:** canlı `GET /teacher/reports` → ✅ 14 rapor; `completed`
+  örneği `{"id":"b1f2494c","class_course_id":"seed-class-course-001-1",
+  "week_id":"seed-week-20","status":"completed","student_count":6}`;
+  testler 128/128 (backend) + 20/20 (frontend); typecheck ×2 + lint + build ✅.
 
 ### Çözülen sorunlar
 

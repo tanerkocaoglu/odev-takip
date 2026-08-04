@@ -21,6 +21,7 @@ import type {
   Student,
   Teacher,
   TeacherDashboard,
+  TeacherReportHistory,
   TeacherReportPayload,
   User,
   Week,
@@ -292,6 +293,9 @@ export const adminApi = {
 
 export const teacherApi = {
   dashboard: () => apiFetch<TeacherDashboard>('/teacher/dashboard'),
+  /** Geçmiş raporlarım — tüm durumlar (spec.md §6). */
+  history: (status?: 'draft' | 'completed' | 'sent') =>
+    apiFetch<TeacherReportHistory>(`/teacher/reports${status ? `?status=${status}` : ''}`),
   /** Get-or-create: rapor + satırlar + draft homeworks döner. */
   openReport: (classCourseId: string, weekId: string) =>
     apiFetch<TeacherReportPayload>('/teacher/reports', {

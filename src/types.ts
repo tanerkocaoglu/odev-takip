@@ -224,3 +224,26 @@ export interface ReportSaveInput {
   due_date?: string | null;
   entries?: ReportEntryInput[];
 }
+
+/** Geçmiş raporlarım — GET /teacher/reports yanıtı (spec.md §6). */
+export interface TeacherReportHistoryItem {
+  id: string;
+  class_course_id: string;
+  week_id: string;
+  status: 'draft' | 'completed' | 'sent';
+  completed_at: string | null;
+  updated_at: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  class_name: string;
+  course_name: string;
+  week_no: number;
+  week_start: string;
+  week_end: string;
+  week_label: string;
+  student_count: number;
+}
+
+export interface TeacherReportHistory {
+  items: TeacherReportHistoryItem[];
+}
