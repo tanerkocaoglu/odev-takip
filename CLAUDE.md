@@ -546,6 +546,9 @@ görüyor.
   öğrenciye `wa.me` linki gönderilir; sistem cron'u + `X-Cron-Secret` ile
   korunan `POST /api/internal/reminders` endpoint'i tetikler
 - R2 storage implementasyonu ve üretime geçiş
+- **Öğretmen atamalarını toplu devretme** — atamalı öğretmen soft-delete
+  edilemediği için (Aşama 2b) ayrılan öğretmen akışı; aksi halde admin
+  öğretmeni sistemden çıkaramaz
 - Saklama temizliği: 1 yıllık teslim dosyalarının silinmesi
 - KVKK: aydınlatma metni, `consent_at` akışı
 - Yıl sonu PDF özeti

@@ -90,6 +90,12 @@ Hassas yönetim işlemleri `audit_logs`'a yazılıyor.
   üç migration sıralı koştu — düzeltme doğrulandı.
 - **Windows db kilidi:** canlı doğrulama sonrası arka planda kalan tsx
   process'i app.db'yi kilitliyordu (EPERM) — process temizliği eklendi.
+- **Migration #3 backfill doğrulaması:** canlı app.db sorgusu (`ÖKLİD →
+  oklid`, `Türkçe → turkce`, boş değer 0) + `migration-backfill.test.ts`:
+  şema #2 durumuna geri sarılıp eski şemayla veri eklenerek #3'ün backfill'i
+  gerçek eski-veri senaryosunda kanıtlandı (regresyon testi olarak kalıcı).
+- **Aşama 6 notu:** atamalı öğretmen silinemediği için "öğretmen atamalarını
+  toplu devretme" akışı spec.md §10 + CLAUDE.md Aşama 6'ya işlendi.
 
 ### Commit
 
