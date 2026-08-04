@@ -1857,4 +1857,185 @@ router.post('/digests/:id/revoke', (req, res) => {
   res.json({ id: digest.id, is_revoked: true });
 });
 
+// ===========================================================================
+// Admin panel — özet + eksik rapor listesi + tam matris (spec.md §5.5)
+// ===========================================================================
+
+/** Ders günü bu haftada geçti mi? (spec §5.1 — vurgu için). */
+function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
+  const [y, m, d] = week.start_date.split('-').map(Number);
+  const classDay = new Date(y, m - 1, d);
+  classDay.setDate(classDay.getDate() + (dayOfWeek - 1));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return classDay < today;
+}
+
+/**
+ * GET /admin/dashboard — admin panelinin tek veri kaynağı (spec §5.5):
+ * - `summary`: "Bu hafta N rapordan M'si tamamlandı" (aktif yılın atamaları).
+ * - `missing`: yalnızca eksikler (draft / hiç açılmamış), günü geçenler üstte;
+ *   öğretmene göre gruplama frontend'de yapılır (`teacher_id` ile).
+ * - `matrix`: tam matris (satır = sınıf, sütun = ders) — ikincil sekme.
+ * - `digests`: haftanın pending/ready/sent sayıları ("bekleyen gönderimler").
+ */
+router.get('/dashboard', (req, res) => {
+  const weekId = typeof req.query.week_id === 'string' ? req.query.week_id : currentDigestWeek()?.id;
+  if (!weekId) {
+    res.json({ week: null, summary: { total: 0, completed: 0 }, missing: [], matrix: [], digests: { pending: 0, ready: 0, sent: 0 } });
+    return;
+  }
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(weekId) as unknown as WeekRecord;
+
+  // Toplam beklenti: aktif eğitim yılının (silinmemiş) atamaları.
+  const totalRow = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM class_courses cc
+       JOIN classes c ON c.id = cc.class_id AND c.deleted_at IS NULL
+       JOIN academic_years a ON a.id = c.academic_year_id AND a.is_active = 1
+       WHERE cc.deleted_at IS NULL`,
+    )
+    .get() as { n: number };
+  const completedRow = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM reports r
+       WHERE r.week_id = ? AND r.status IN ('completed','sent')`,
+    )
+    .get(weekId) as { n: number };
+
+  // Eksik raporlar (spec §5.5): draft ya da hiç açılmamış atamalar.
+  const missingRows = db
+    .prepare(
+      `SELECT cc.id AS class_course_id, cc.day_of_week, cc.lesson_time, cc.teacher_id,
+              c.id AS class_id, c.name AS class_name,
+              co.name AS course_name, t.full_name AS teacher_name,
+              r.id AS report_id, r.status AS report_status
+       FROM class_courses cc
+       JOIN classes c ON c.id = cc.class_id AND c.deleted_at IS NULL
+       JOIN academic_years a ON a.id = c.academic_year_id AND a.is_active = 1
+       JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
+       JOIN users t ON t.id = cc.teacher_id
+       LEFT JOIN reports r ON r.class_course_id = cc.id AND r.week_id = ?
+       WHERE cc.deleted_at IS NULL
+         AND (r.id IS NULL OR r.status = 'draft')
+       ORDER BY cc.day_of_week, cc.lesson_time`,
+    )
+    .all(weekId) as Array<{
+    class_course_id: string;
+    day_of_week: number;
+    lesson_time: string | null;
+    teacher_id: string;
+    class_id: string;
+    class_name: string;
+    course_name: string;
+    teacher_name: string;
+    report_id: string | null;
+    report_status: string | null;
+  }>;
+
+  const missing = missingRows
+    .map((r) => ({
+      class_course_id: r.class_course_id,
+      class_id: r.class_id,
+      class_name: r.class_name,
+      course_name: r.course_name,
+      teacher_id: r.teacher_id,
+      teacher_name: r.teacher_name,
+      day_of_week: r.day_of_week,
+      lesson_time: r.lesson_time,
+      status: r.report_status ?? 'not_started',
+      report_id: r.report_id,
+      is_overdue: isOverdue(week, r.day_of_week),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.is_overdue) - Number(a.is_overdue) ||
+        a.day_of_week - b.day_of_week ||
+        (a.lesson_time ?? '').localeCompare(b.lesson_time ?? ''),
+    );
+
+  // Tam matris (satır = sınıf, sütun = ders).
+  const matrixRows = db
+    .prepare(
+      `SELECT c.id AS class_id, c.name AS class_name,
+              cc.id AS class_course_id, cc.day_of_week, cc.lesson_time,
+              co.name AS course_name, t.full_name AS teacher_name,
+              r.status AS report_status, r.id AS report_id
+       FROM classes c
+       JOIN academic_years a ON a.id = c.academic_year_id AND a.is_active = 1
+       JOIN class_courses cc ON cc.class_id = c.id AND cc.deleted_at IS NULL
+       JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
+       JOIN users t ON t.id = cc.teacher_id
+       LEFT JOIN reports r ON r.class_course_id = cc.id AND r.week_id = ?
+       WHERE c.deleted_at IS NULL
+       ORDER BY c.name, cc.day_of_week, cc.lesson_time`,
+    )
+    .all(weekId) as Array<{
+    class_id: string;
+    class_name: string;
+    class_course_id: string;
+    day_of_week: number;
+    lesson_time: string | null;
+    course_name: string;
+    teacher_name: string;
+    report_status: string | null;
+    report_id: string | null;
+  }>;
+
+  const matrix = new Map<string, {
+    class_id: string;
+    class_name: string;
+    courses: Array<{
+      class_course_id: string;
+      course_name: string;
+      teacher_name: string;
+      day_of_week: number;
+      lesson_time: string | null;
+      status: string | null;
+      report_id: string | null;
+    }>;
+  }>();
+  for (const r of matrixRows) {
+    const entry = matrix.get(r.class_id) ?? { class_id: r.class_id, class_name: r.class_name, courses: [] };
+    entry.courses.push({
+      class_course_id: r.class_course_id,
+      course_name: r.course_name,
+      teacher_name: r.teacher_name,
+      day_of_week: r.day_of_week,
+      lesson_time: r.lesson_time,
+      status: r.report_status,
+      report_id: r.report_id,
+    });
+    matrix.set(r.class_id, entry);
+  }
+
+  const digests = db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+         SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) AS ready,
+         SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent
+       FROM weekly_digests WHERE week_id = ?`,
+    )
+    .get(weekId) as { pending: number | null; ready: number | null; sent: number | null };
+
+  res.json({
+    week: {
+      id: week.id,
+      week_no: week.week_no,
+      start_date: week.start_date,
+      end_date: week.end_date,
+      label: week.label,
+    },
+    summary: { total: totalRow.n, completed: completedRow.n },
+    missing,
+    matrix: [...matrix.values()],
+    digests: {
+      pending: digests.pending ?? 0,
+      ready: digests.ready ?? 0,
+      sent: digests.sent ?? 0,
+    },
+  });
+});
+
 export default router;

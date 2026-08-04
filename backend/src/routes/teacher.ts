@@ -816,6 +816,21 @@ router.get('/reports', (req, res) => {
   res.json({ items: rows });
 });
 
+/**
+ * GET /teacher/reports/:id — tek rapor (salt-okunur içerik). Öğretmen yalnızca
+ * kendi raporunu, admin tümünü alır (spec §2 "Haftalık raporu görme ✓ (tümü)").
+ * Admin panelinin "Tüm raporlar" görünümü buradan beslenir; `buildReportPayload`
+ * hiçbir düzenleme UI'ı gerektirmeyen salt-okunur veriyi döner.
+ */
+router.get('/reports/:id', (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'teacher' && user.role !== 'admin') {
+    throw new AppError('FORBIDDEN', 403, 'Bu rapora erişim yetkiniz yok.');
+  }
+  loadOwnedReport(user, req.params.id);
+  res.json(buildReportPayload(req.params.id));
+});
+
 // ---------- Teslim kontrol (Aşama 4) ----------
 
 /**
