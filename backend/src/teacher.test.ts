@@ -44,7 +44,7 @@ function signTokenFor(userId: string, role: Role): string {
 async function login(email: string): Promise<string> {
   const res = await request(app)
     .post('/api/v1/auth/login')
-    .send({ email, password: TEST_PASSWORD });
+    .send({ identifier: email, password: TEST_PASSWORD });
   return res.body.token as string;
 }
 
@@ -70,14 +70,13 @@ beforeAll(async () => {
   // --- İkinci öğretmen (yetki testleri için) ---
   db.prepare(
     `INSERT INTO users
-       (id, full_name, full_name_normalized, phone, email, password_hash, role,
+       (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'teacher', 1, 1, NULL, ?)`,
+     VALUES (?, ?, ?, NULL, ?, ?, 'teacher', 1, 1, NULL, ?)`,
   ).run(
     'test-teacher-2',
     'Test Teacher 2',
     'test teacher 2',
-    '+905009991000',
     'teacher2@test.local',
     hashPasswordSync(TEST_PASSWORD),
     new Date().toISOString(),
@@ -112,7 +111,7 @@ beforeAll(async () => {
   const now = new Date().toISOString();
   const insertStudent = db.prepare(
     `INSERT INTO users
-       (id, full_name, full_name_normalized, phone, email, password_hash, role,
+       (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
      VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
   );
@@ -125,13 +124,13 @@ beforeAll(async () => {
      VALUES (?, ?, ?, ?, ?)`,
   );
   const students: Array<[string, string, string]> = [
-    ['t-stu-1', 't-stu-rec-1', '+905009992001'],
-    ['t-stu-2', 't-stu-rec-2', '+905009992002'],
-    ['t-stu-3', 't-stu-rec-3', '+905009992003'],
-    ['t-stu-4', 't-stu-rec-4', '+905009992004'],
+    ['t-stu-1', 't-stu-rec-1', 'ogrenci-t-1'],
+    ['t-stu-2', 't-stu-rec-2', 'ogrenci-t-2'],
+    ['t-stu-3', 't-stu-rec-3', 'ogrenci-t-3'],
+    ['t-stu-4', 't-stu-rec-4', 'ogrenci-t-4'],
   ];
-  students.forEach(([userId, recId, phone], i) => {
-    insertStudent.run(userId, `Öğrenci ${userId}`, `ogrenci ${userId}`, phone, now);
+  students.forEach(([userId, recId, username], i) => {
+    insertStudent.run(userId, `Öğrenci ${userId}`, `ogrenci ${userId}`, username, now);
     insertStudentRec.run(recId, userId);
     const end = i === 3 ? '2026-08-02' : null; // 4. öğrenci hafta 2'de yok
     insertEnrollment.run(`t-enr-${i + 1}`, recId, 't-class', '2026-07-20', end);

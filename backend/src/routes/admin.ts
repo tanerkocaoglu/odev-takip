@@ -21,6 +21,7 @@ import { normalizeTurkish } from '../utils/text.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { hashPassword } from '../utils/hash.js';
 import { normalizePhone } from '../utils/phone.js';
+import { nextUsername } from '../utils/username.js';
 import { writeAuditLog } from '../services/audit.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
@@ -658,7 +659,6 @@ router.delete('/class-courses/:id', (req, res) => {
 const teacherSchema = z.object({
   full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
   email: z.string().trim().email('Geçerli bir e-posta adresi girin.'),
-  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
   password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
 });
 
@@ -681,7 +681,7 @@ router.get('/teachers', (req, res) => {
 
   const rows = db
     .prepare(
-      `SELECT id, full_name, email, phone, is_active, created_at
+      `SELECT id, full_name, email, is_active, created_at
        FROM users
        WHERE ${where.join(' AND ')}
        ORDER BY full_name
@@ -697,19 +697,18 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = teacherSchema.parse(req.body);
     const email = input.email.trim();
-    const phone = normalizePhone(input.phone);
 
     const clash = db
       .prepare(
         `SELECT id FROM users
-         WHERE (email = ? OR phone = ?) AND deleted_at IS NULL`,
+         WHERE email = ? AND deleted_at IS NULL`,
       )
-      .get(email, phone);
+      .get(email);
     if (clash) {
       throw new AppError(
         'CONFLICT',
         409,
-        'Bu e-posta veya telefon ile kayıtlı bir kullanıcı var.',
+        'Bu e-posta ile kayıtlı bir kullanıcı var.',
       );
     }
 
@@ -717,14 +716,13 @@ router.post(
     const passwordHash = await hashPassword(input.password);
     db.prepare(
       `INSERT INTO users
-         (id, full_name, full_name_normalized, phone, email, password_hash, role,
+         (id, full_name, full_name_normalized, username, email, password_hash, role,
           is_active, token_version, deleted_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'teacher', 1, 1, NULL, ?)`,
+       VALUES (?, ?, ?, NULL, ?, ?, 'teacher', 1, 1, NULL, ?)`,
     ).run(
       id,
       input.full_name,
       normalizeTurkish(input.full_name),
-      phone,
       email,
       passwordHash,
       new Date().toISOString(),
@@ -732,7 +730,7 @@ router.post(
 
     const row = db
       .prepare(
-        `SELECT id, full_name, email, phone, is_active, created_at FROM users WHERE id = ?`,
+        `SELECT id, full_name, email, is_active, created_at FROM users WHERE id = ?`,
       )
       .get(id);
     res.status(201).json(row);
@@ -742,7 +740,6 @@ router.post(
 const teacherPatchSchema = z.object({
   full_name: z.string().trim().min(1).optional(),
   email: z.string().trim().email().optional(),
-  phone: z.string().trim().min(10).optional(),
 });
 
 router.patch('/teachers/:id', (req, res) => {
@@ -756,19 +753,18 @@ router.patch('/teachers/:id', (req, res) => {
     throw new AppError('NOT_FOUND', 404, 'Öğretmen bulunamadı.');
   }
 
-  const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
-  if (phone !== undefined || input.email !== undefined) {
+  if (input.email !== undefined) {
     const clash = db
       .prepare(
         `SELECT id FROM users
-         WHERE (email = ? OR phone = ?) AND id != ? AND deleted_at IS NULL`,
+         WHERE email = ? AND id != ? AND deleted_at IS NULL`,
       )
-      .get(input.email ?? null, phone ?? null, id);
+      .get(input.email, id);
     if (clash) {
       throw new AppError(
         'CONFLICT',
         409,
-        'Bu e-posta veya telefon ile kayıtlı bir kullanıcı var.',
+        'Bu e-posta ile kayıtlı bir kullanıcı var.',
       );
     }
   }
@@ -783,10 +779,6 @@ router.patch('/teachers/:id', (req, res) => {
     sets.push(`email = ?`);
     values.push(input.email);
   }
-  if (phone !== undefined) {
-    sets.push(`phone = ?`);
-    values.push(phone);
-  }
   if (sets.length > 0) {
     values.push(id);
     db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -794,7 +786,7 @@ router.patch('/teachers/:id', (req, res) => {
 
   const row = db
     .prepare(
-      `SELECT id, full_name, email, phone, is_active, created_at FROM users WHERE id = ?`,
+      `SELECT id, full_name, email, is_active, created_at FROM users WHERE id = ?`,
     )
     .get(id);
   res.json(row);
@@ -877,7 +869,6 @@ router.delete('/teachers/:id', (req, res) => {
 const adminSchema = z.object({
   full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
   email: z.string().trim().email('Geçerli bir e-posta adresi girin.'),
-  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
   password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
 });
 
@@ -886,19 +877,18 @@ router.post(
   asyncHandler(async (req, res) => {
     const input = adminSchema.parse(req.body);
     const email = input.email.trim();
-    const phone = normalizePhone(input.phone);
 
     const clash = db
       .prepare(
         `SELECT id FROM users
-         WHERE (email = ? OR phone = ?) AND deleted_at IS NULL`,
+         WHERE email = ? AND deleted_at IS NULL`,
       )
-      .get(email, phone);
+      .get(email);
     if (clash) {
       throw new AppError(
         'CONFLICT',
         409,
-        'Bu e-posta veya telefon ile kayıtlı bir kullanıcı var.',
+        'Bu e-posta ile kayıtlı bir kullanıcı var.',
       );
     }
 
@@ -906,14 +896,13 @@ router.post(
     const passwordHash = await hashPassword(input.password);
     db.prepare(
       `INSERT INTO users
-         (id, full_name, full_name_normalized, phone, email, password_hash, role,
+         (id, full_name, full_name_normalized, username, email, password_hash, role,
           is_active, token_version, deleted_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'admin', 1, 1, NULL, ?)`,
+       VALUES (?, ?, ?, NULL, ?, ?, 'admin', 1, 1, NULL, ?)`,
     ).run(
       id,
       input.full_name,
       normalizeTurkish(input.full_name),
-      phone,
       email,
       passwordHash,
       new Date().toISOString(),
@@ -930,7 +919,7 @@ router.post(
 
     const row = db
       .prepare(
-        `SELECT id, full_name, email, phone, is_active, created_at FROM users WHERE id = ?`,
+        `SELECT id, full_name, email, is_active, created_at FROM users WHERE id = ?`,
       )
       .get(id);
     res.status(201).json(row);
@@ -941,9 +930,9 @@ router.post(
 
 const guardianSchema = z.object({
   full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
-  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
-  whatsapp_phone: z.string().trim().min(10).optional().nullable(),
+  whatsapp_phone: z.string().trim().min(10, 'Geçerli bir WhatsApp numarası girin.'),
   phone_secondary: z.string().trim().min(10).optional().nullable(),
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
 });
 
 router.get('/guardians', (req, res) => {
@@ -967,7 +956,7 @@ router.get('/guardians', (req, res) => {
 
   const rows = db
     .prepare(
-      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.phone, u.email, u.is_active,
+      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.username, u.email, u.is_active,
               g.whatsapp_phone, g.phone_secondary, g.consent_at,
               (SELECT COUNT(*) FROM students s
                 WHERE s.guardian_id = g.id AND s.deleted_at IS NULL) AS child_count
@@ -982,59 +971,51 @@ router.get('/guardians', (req, res) => {
   res.json(paged(rows, total, pagination));
 });
 
-router.post('/guardians', (req, res) => {
-  const input = guardianSchema.parse(req.body);
-  const phone = normalizePhone(input.phone);
-  const whatsapp = input.whatsapp_phone ? normalizePhone(input.whatsapp_phone) : null;
-  const secondary = input.phone_secondary ? normalizePhone(input.phone_secondary) : null;
+router.post(
+  '/guardians',
+  asyncHandler(async (req, res) => {
+    const input = guardianSchema.parse(req.body);
+    const whatsapp = normalizePhone(input.whatsapp_phone);
+    const secondary = input.phone_secondary ? normalizePhone(input.phone_secondary) : null;
 
-  const clash = db
-    .prepare(`SELECT id FROM users WHERE phone = ? AND deleted_at IS NULL`)
-    .get(phone);
-  if (clash) {
-    throw new AppError(
-      'CONFLICT',
-      409,
-      'Bu telefon ile kayıtlı bir kullanıcı var.',
-    );
-  }
+    const userId = randomUUID();
+    const guardianId = randomUUID();
+    const username = nextUsername('guardian');
+    const passwordHash = await hashPassword(input.password);
+    const now = new Date().toISOString();
 
-  const userId = randomUUID();
-  const guardianId = randomUUID();
-  const now = new Date().toISOString();
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        `INSERT INTO users
+           (id, full_name, full_name_normalized, username, email, password_hash, role,
+            is_active, token_version, deleted_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'guardian', 1, 1, NULL, ?)`,
+      ).run(userId, input.full_name, normalizeTurkish(input.full_name), username, passwordHash, now);
 
-  db.exec('BEGIN');
-  try {
-    db.prepare(
-      `INSERT INTO users
-         (id, full_name, full_name_normalized, phone, email, password_hash, role,
-          is_active, token_version, deleted_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, 'guardian', 1, 1, NULL, ?)`,
-    ).run(userId, input.full_name, normalizeTurkish(input.full_name), phone, now);
+      db.prepare(
+        `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
+         VALUES (?, ?, ?, ?, NULL, NULL)`,
+      ).run(guardianId, userId, whatsapp, secondary);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
 
-    db.prepare(
-      `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
-       VALUES (?, ?, ?, ?, NULL, NULL)`,
-    ).run(guardianId, userId, whatsapp, secondary);
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-
-  const row = db
-    .prepare(
-      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.phone, g.whatsapp_phone, g.phone_secondary
-       FROM users u JOIN guardians g ON g.user_id = u.id WHERE u.id = ?`,
-    )
-    .get(userId);
-  res.status(201).json(row);
-});
+    const row = db
+      .prepare(
+        `SELECT g.id AS id, u.id AS user_id, u.full_name, u.username, g.whatsapp_phone, g.phone_secondary
+         FROM users u JOIN guardians g ON g.user_id = u.id WHERE u.id = ?`,
+      )
+      .get(userId);
+    res.status(201).json(row);
+  }),
+);
 
 const guardianPatchSchema = z.object({
   full_name: z.string().trim().min(1).optional(),
-  phone: z.string().trim().min(10).optional(),
-  whatsapp_phone: z.string().trim().min(10).optional().nullable(),
+  whatsapp_phone: z.string().trim().min(10).optional(),
   phone_secondary: z.string().trim().min(10).optional().nullable(),
 });
 
@@ -1053,37 +1034,20 @@ router.patch('/guardians/:id', (req, res) => {
     throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
   }
 
-  const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
-  if (phone !== undefined) {
-    const clash = db
-      .prepare(
-        `SELECT id FROM users WHERE phone = ? AND id != ? AND deleted_at IS NULL`,
-      )
-      .get(phone, current.user_id);
-    if (clash) {
-      throw new AppError(
-        'CONFLICT',
-        409,
-        'Bu telefon ile kayıtlı bir kullanıcı var.',
-      );
-    }
-  }
-
   const userSets: string[] = [];
   const userValues: Array<string | number> = [];
   if (input.full_name !== undefined) {
     userSets.push(`full_name = ?`, `full_name_normalized = ?`);
     userValues.push(input.full_name, normalizeTurkish(input.full_name));
   }
-  if (phone !== undefined) {
-    userSets.push(`phone = ?`);
-    userValues.push(phone);
-  }
   if (userSets.length > 0) {
     userValues.push(current.user_id);
     db.prepare(`UPDATE users SET ${userSets.join(', ')} WHERE id = ?`).run(...userValues);
   }
 
+  // whatsapp_phone zorunludur (spec.md §3.1): oluşturmada gerekir; güncellemede
+  // opsiyonel-ama-null-olamaz — kısmi güncelleme (yalnızca phone_secondary) bozulmaz,
+  // gönderilirse boş/null olamaz.
   const guardianSets: string[] = [];
   const guardianValues: Array<string | null> = [];
   for (const key of ['whatsapp_phone', 'phone_secondary'] as const) {
@@ -1102,12 +1066,49 @@ router.patch('/guardians/:id', (req, res) => {
 
   const row = db
     .prepare(
-      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.phone, g.whatsapp_phone, g.phone_secondary
+      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.username, g.whatsapp_phone, g.phone_secondary
        FROM users u JOIN guardians g ON g.user_id = u.id WHERE g.id = ?`,
     )
     .get(id);
   res.json(row);
 });
+
+// Şifre sıfırlama — spec.md §2.1: veli/öğrenci e-posta/SMS kanalı olmadığından
+// unutulan şifrenin tek kurtuluşu admin reset-password'tür. token_version +1
+// ile mevcut oturumlar biter. Öğretmen deseniyle birebir (resetPasswordSchema
+// yukarıda tanımlı).
+router.post(
+  '/guardians/:id/reset-password',
+  asyncHandler<{ id: string }>(async (req, res) => {
+    const { id } = req.params;
+    const { password } = resetPasswordSchema.parse(req.body);
+
+    const current = db
+      .prepare(
+        `SELECT g.user_id FROM users u
+         JOIN guardians g ON g.user_id = u.id AND g.deleted_at IS NULL
+         WHERE g.id = ? AND u.role = 'guardian' AND u.deleted_at IS NULL`,
+      )
+      .get(id) as { user_id: string } | undefined;
+    if (!current) {
+      throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
+    }
+
+    const passwordHash = await hashPassword(password);
+    db.prepare(
+      `UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?`,
+    ).run(passwordHash, current.user_id);
+
+    writeAuditLog({
+      actorId: req.user!.id,
+      action: 'guardian.password_reset',
+      entityType: 'guardian',
+      entityId: id,
+    });
+
+    res.json({ message: 'Şifre güncellendi.' });
+  }),
+);
 
 router.delete('/guardians/:id', (req, res) => {
   const { id } = req.params;
@@ -1164,9 +1165,9 @@ router.delete('/guardians/:id', (req, res) => {
 
 const studentSchema = z.object({
   full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
-  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
   guardian_id: z.string().trim().min(1),
   class_id: z.string().trim().min(1),
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
 });
 
 router.get('/students', (req, res) => {
@@ -1206,7 +1207,7 @@ router.get('/students', (req, res) => {
 
   const rows = db
     .prepare(
-      `SELECT u.id, u.full_name, u.phone, u.is_active,
+      `SELECT u.id, u.full_name, u.username, u.is_active,
               s.id AS student_id, s.guardian_id,
               gu.full_name AS guardian_name,
               c.name AS class_name, e.class_id
@@ -1225,85 +1226,77 @@ router.get('/students', (req, res) => {
   res.json(paged(rows, total, pagination));
 });
 
-router.post('/students', (req, res) => {
-  const input = studentSchema.parse(req.body);
-  const phone = normalizePhone(input.phone);
+router.post(
+  '/students',
+  asyncHandler(async (req, res) => {
+    const input = studentSchema.parse(req.body);
 
-  const clash = db
-    .prepare(`SELECT id FROM users WHERE phone = ? AND deleted_at IS NULL`)
-    .get(phone);
-  if (clash) {
-    throw new AppError(
-      'CONFLICT',
-      409,
-      'Bu telefon ile kayıtlı bir kullanıcı var.',
-    );
-  }
+    const guardian = db
+      .prepare(
+        `SELECT g.id FROM guardians g
+         JOIN users u ON u.id = g.user_id
+         WHERE g.id = ? AND g.deleted_at IS NULL AND u.deleted_at IS NULL`,
+      )
+      .get(input.guardian_id);
+    if (!guardian) {
+      throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
+    }
 
-  const guardian = db
-    .prepare(
-      `SELECT g.id FROM guardians g
-       JOIN users u ON u.id = g.user_id
-       WHERE g.id = ? AND g.deleted_at IS NULL AND u.deleted_at IS NULL`,
-    )
-    .get(input.guardian_id);
-  if (!guardian) {
-    throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
-  }
+    const cls = db
+      .prepare(`SELECT id FROM classes WHERE id = ? AND deleted_at IS NULL`)
+      .get(input.class_id);
+    if (!cls) {
+      throw new AppError('NOT_FOUND', 404, 'Sınıf bulunamadı.');
+    }
 
-  const cls = db
-    .prepare(`SELECT id FROM classes WHERE id = ? AND deleted_at IS NULL`)
-    .get(input.class_id);
-  if (!cls) {
-    throw new AppError('NOT_FOUND', 404, 'Sınıf bulunamadı.');
-  }
+    const userId = randomUUID();
+    const studentId = randomUUID();
+    const enrollmentId = randomUUID();
+    const username = nextUsername('student');
+    const passwordHash = await hashPassword(input.password);
+    const now = new Date().toISOString();
+    const today = now.slice(0, 10);
 
-  const userId = randomUUID();
-  const studentId = randomUUID();
-  const enrollmentId = randomUUID();
-  const now = new Date().toISOString();
-  const today = now.slice(0, 10);
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        `INSERT INTO users
+           (id, full_name, full_name_normalized, username, email, password_hash, role,
+            is_active, token_version, deleted_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'student', 1, 1, NULL, ?)`,
+      ).run(userId, input.full_name, normalizeTurkish(input.full_name), username, passwordHash, now);
 
-  db.exec('BEGIN');
-  try {
-    db.prepare(
-      `INSERT INTO users
-         (id, full_name, full_name_normalized, phone, email, password_hash, role,
-          is_active, token_version, deleted_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
-    ).run(userId, input.full_name, normalizeTurkish(input.full_name), phone, now);
+      db.prepare(
+        `INSERT INTO students (id, user_id, guardian_id, deleted_at)
+         VALUES (?, ?, ?, NULL)`,
+      ).run(studentId, userId, input.guardian_id);
 
-    db.prepare(
-      `INSERT INTO students (id, user_id, guardian_id, deleted_at)
-       VALUES (?, ?, ?, NULL)`,
-    ).run(studentId, userId, input.guardian_id);
+      db.prepare(
+        `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+         VALUES (?, ?, ?, ?, NULL)`,
+      ).run(enrollmentId, studentId, input.class_id, today);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
 
-    db.prepare(
-      `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
-       VALUES (?, ?, ?, ?, NULL)`,
-    ).run(enrollmentId, studentId, input.class_id, today);
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-
-  const row = db
-    .prepare(
-      `SELECT u.id, u.full_name, u.phone, s.id AS student_id, c.name AS class_name
-       FROM users u
-       JOIN students s ON s.user_id = u.id
-       JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
-       JOIN classes c ON c.id = e.class_id
-       WHERE u.id = ?`,
-    )
-    .get(userId);
-  res.status(201).json(row);
-});
+    const row = db
+      .prepare(
+        `SELECT u.id, u.full_name, u.username, s.id AS student_id, c.name AS class_name
+         FROM users u
+         JOIN students s ON s.user_id = u.id
+         JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
+         JOIN classes c ON c.id = e.class_id
+         WHERE u.id = ?`,
+      )
+      .get(userId);
+    res.status(201).json(row);
+  }),
+);
 
 const studentPatchSchema = z.object({
   full_name: z.string().trim().min(1).optional(),
-  phone: z.string().trim().min(10).optional(),
   guardian_id: z.string().trim().min(1).optional(),
 });
 
@@ -1335,29 +1328,11 @@ router.patch('/students/:id', (req, res) => {
     }
   }
 
-  const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
-  if (phone !== undefined) {
-    const clash = db
-      .prepare(`SELECT id FROM users WHERE phone = ? AND id != ? AND deleted_at IS NULL`)
-      .get(phone, id);
-    if (clash) {
-      throw new AppError(
-        'CONFLICT',
-        409,
-        'Bu telefon ile kayıtlı bir kullanıcı var.',
-      );
-    }
-  }
-
   const userSets: string[] = [];
   const userValues: Array<string | number> = [];
   if (input.full_name !== undefined) {
     userSets.push(`full_name = ?`, `full_name_normalized = ?`);
     userValues.push(input.full_name, normalizeTurkish(input.full_name));
-  }
-  if (phone !== undefined) {
-    userSets.push(`phone = ?`);
-    userValues.push(phone);
   }
   if (userSets.length > 0) {
     userValues.push(id);
@@ -1373,12 +1348,47 @@ router.patch('/students/:id', (req, res) => {
 
   const row = db
     .prepare(
-      `SELECT u.id, u.full_name, u.phone, s.id AS student_id, s.guardian_id
+      `SELECT u.id, u.full_name, u.username, s.id AS student_id, s.guardian_id
        FROM users u JOIN students s ON s.user_id = u.id WHERE u.id = ?`,
     )
     .get(id);
   res.json(row);
 });
+
+// Şifre sıfırlama (öğrenci) — spec.md §2.1: e-posta/SMS kanalı yok, tek çıkış
+// yolu admin reset-password'tür. token_version +1 ile mevcut oturumlar biter.
+router.post(
+  '/students/:id/reset-password',
+  asyncHandler<{ id: string }>(async (req, res) => {
+    const { id } = req.params;
+    const { password } = resetPasswordSchema.parse(req.body);
+
+    const current = db
+      .prepare(
+        `SELECT s.id AS student_id FROM users u
+         JOIN students s ON s.user_id = u.id AND s.deleted_at IS NULL
+         WHERE u.id = ? AND u.role = 'student' AND u.deleted_at IS NULL`,
+      )
+      .get(id) as { student_id: string } | undefined;
+    if (!current) {
+      throw new AppError('NOT_FOUND', 404, 'Öğrenci bulunamadı.');
+    }
+
+    const passwordHash = await hashPassword(password);
+    db.prepare(
+      `UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?`,
+    ).run(passwordHash, id);
+
+    writeAuditLog({
+      actorId: req.user!.id,
+      action: 'student.password_reset',
+      entityType: 'student',
+      entityId: current.student_id,
+    });
+
+    res.json({ message: 'Şifre güncellendi.' });
+  }),
+);
 
 // Sınıf değişikliği — hafta sınırında (spec.md §3.1):
 // Admin bir hafta seçer; seçilen haftanın start_date'i yeni enrollment'ın

@@ -18,7 +18,7 @@ beforeAll(async () => {
   insertTestUsers();
   const login = await request(app)
     .post('/api/v1/auth/login')
-    .send({ email: 'admin@test.local', password: TEST_PASSWORD });
+    .send({ identifier: 'admin@test.local', password: TEST_PASSWORD });
   adminToken = login.body.token as string;
 });
 
@@ -42,7 +42,7 @@ describe('Yetki — /admin/* yalnızca admin', () => {
   it('öğretmen tokenı ile 403 döner', async () => {
     const login = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'teacher@test.local', password: TEST_PASSWORD });
+      .send({ identifier: 'teacher@test.local', password: TEST_PASSWORD });
     const res = await request(app)
       .get('/api/v1/admin/academic-years')
       .set('Authorization', `Bearer ${login.body.token}`);
@@ -391,20 +391,17 @@ describe('Atamalar (class_courses)', () => {
 });
 
 describe('Öğretmen', () => {
-  it('oluşturur; aynı e-posta/telefon 409 döner', async () => {
+  it('oluşturur; aynı e-posta 409 döner', async () => {
     const created = await adminRequest('post', '/api/v1/admin/teachers').send({
       full_name: 'Yeni Öğretmen',
       email: 'yeni@test.local',
-      phone: '+90 532 111 22 33',
       password: 'Sifre123',
     });
     expect(created.status).toBe(201);
-    expect(created.body.phone).toBe('+905321112233'); // normalize edildi
 
     const clash = await adminRequest('post', '/api/v1/admin/teachers').send({
       full_name: 'İkinci',
       email: 'yeni@test.local',
-      phone: '+905321112233',
       password: 'Sifre123',
     });
     expect(clash.status).toBe(409);
@@ -413,7 +410,7 @@ describe('Öğretmen', () => {
   it('oluşturulan öğretmen şifresiyle giriş yapabilir', async () => {
     const login = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'yeni@test.local', password: 'Sifre123' });
+      .send({ identifier: 'yeni@test.local', password: 'Sifre123' });
     expect(login.status).toBe(200);
     expect(login.body.user.role).toBe('teacher');
   });
@@ -432,7 +429,7 @@ describe('Öğretmen', () => {
 
     const oldLogin = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'yeni@test.local', password: 'Sifre123' });
+      .send({ identifier: 'yeni@test.local', password: 'Sifre123' });
     const oldToken = oldLogin.body.token as string;
 
     const reset = await adminRequest(
@@ -448,7 +445,7 @@ describe('Öğretmen', () => {
 
     const newLogin = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'yeni@test.local', password: 'YeniSifre456' });
+      .send({ identifier: 'yeni@test.local', password: 'YeniSifre456' });
     expect(newLogin.status).toBe(200);
   });
 
@@ -456,14 +453,13 @@ describe('Öğretmen', () => {
     const created = await adminRequest('post', '/api/v1/admin/teachers').send({
       full_name: 'Silinecek Öğretmen',
       email: 'silinecek@test.local',
-      phone: '+905339998877',
       password: 'Sifre123',
     });
     const teacherId = created.body.id as string;
 
     const login = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'silinecek@test.local', password: 'Sifre123' });
+      .send({ identifier: 'silinecek@test.local', password: 'Sifre123' });
     const token = login.body.token as string;
 
     const del = await adminRequest('delete', `/api/v1/admin/teachers/${teacherId}`);
@@ -490,7 +486,6 @@ describe('Admin ekleme', () => {
     const created = await adminRequest('post', '/api/v1/admin/admins').send({
       full_name: 'İkinci Yönetici',
       email: 'admin2@test.local',
-      phone: '+905331112233',
       password: 'Sifre123',
     });
     expect(created.status).toBe(201);
@@ -507,7 +502,7 @@ describe('Admin ekleme', () => {
 
     const login = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'admin2@test.local', password: 'Sifre123' });
+      .send({ identifier: 'admin2@test.local', password: 'Sifre123' });
     expect(login.status).toBe(200);
     expect(login.body.user.role).toBe('admin');
   });
@@ -516,7 +511,6 @@ describe('Admin ekleme', () => {
     const res = await adminRequest('post', '/api/v1/admin/admins').send({
       full_name: 'X',
       email: 'x@test.local',
-      phone: '+905331113344',
       password: '123',
     });
     expect(res.status).toBe(400);
@@ -524,20 +518,21 @@ describe('Admin ekleme', () => {
 });
 
 describe('Veli', () => {
-  it('oluşturur; aynı telefon 409; arama çalışır', async () => {
+  it('oluşturur (username otomatik üretilir); whatsapp zorunlu; arama çalışır', async () => {
     const created = await adminRequest('post', '/api/v1/admin/guardians').send({
       full_name: 'Örnek Kişi 1',
-      phone: '+90 533 000 11 22',
       whatsapp_phone: '+90 533 000 22 33',
+      password: 'Sifre123',
     });
     expect(created.status).toBe(201);
     expect(created.body.whatsapp_phone).toBe('+905330002233');
+    expect(created.body.username).toMatch(/^veli\d+$/);
 
-    const clash = await adminRequest('post', '/api/v1/admin/guardians').send({
-      full_name: 'Başka Veli',
-      phone: '+905330001122',
+    const missingWhatsapp = await adminRequest('post', '/api/v1/admin/guardians').send({
+      full_name: 'WhatsAppsız Veli',
+      password: 'Sifre123',
     });
-    expect(clash.status).toBe(409);
+    expect(missingWhatsapp.status).toBe(400);
 
     const search = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
     expect(search.body.total).toBe(1);
@@ -546,15 +541,56 @@ describe('Veli', () => {
     );
   });
 
-  it('PATCH whatsapp_phone günceller; boş yapılabilir', async () => {
+  it('PATCH whatsapp_phone null yapılamaz; phone_secondary tek başına güncellenebilir', async () => {
     const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
     const guardian = (list.body.items as Array<{ id: string }>)[0];
 
-    const patched = await adminRequest('patch', `/api/v1/admin/guardians/${guardian.id}`).send({
+    const cleared = await adminRequest('patch', `/api/v1/admin/guardians/${guardian.id}`).send({
       whatsapp_phone: null,
     });
-    expect(patched.status).toBe(200);
-    expect(patched.body.whatsapp_phone).toBeNull();
+    expect(cleared.status).toBe(400);
+
+    const partial = await adminRequest('patch', `/api/v1/admin/guardians/${guardian.id}`).send({
+      phone_secondary: '+905330009999',
+    });
+    expect(partial.status).toBe(200);
+    expect(partial.body.phone_secondary).toBe('+905330009999');
+    expect(partial.body.whatsapp_phone).toBe('+905330002233');
+  });
+
+  it('şifre sıfırlama sonrası eski token 401, yeni şifreyle giriş OK', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const guardian = (list.body.items as Array<{ id: string; username: string }>)[0];
+
+    const oldLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: guardian.username, password: 'Sifre123' });
+    expect(oldLogin.status).toBe(200);
+    const oldToken = oldLogin.body.token as string;
+
+    const reset = await adminRequest(
+      'post',
+      `/api/v1/admin/guardians/${guardian.id}/reset-password`,
+    ).send({ password: 'YeniSifre456' });
+    expect(reset.status).toBe(200);
+
+    const meWithOld = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${oldToken}`);
+    expect(meWithOld.status).toBe(401);
+
+    const newLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: guardian.username, password: 'YeniSifre456' });
+    expect(newLogin.status).toBe(200);
+
+    const { db } = await import('./db/index.js');
+    const log = db
+      .prepare(
+        `SELECT action FROM audit_logs WHERE entity_type = 'guardian' ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get() as { action: string };
+    expect(log.action).toBe('guardian.password_reset');
   });
 
   it('çocuğu olan veli silinemez (409); çocuksuz veli silinir + audit', async () => {
@@ -625,20 +661,22 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
 
     const g = await adminRequest('post', '/api/v1/admin/guardians').send({
       full_name: 'Veli Öğrenci',
-      phone: '+905339990001',
+      whatsapp_phone: '+905339990001',
+      password: 'Sifre123',
     });
     guardianId = g.body.id as string;
   });
 
-  it('öğrenci oluşturur (users + students + enrollment tek akış)', async () => {
+  it('öğrenci oluşturur (username otomatik) — users + students + enrollment tek akış', async () => {
     const created = await adminRequest('post', '/api/v1/admin/students').send({
       full_name: 'Test Öğrenci Yeni',
-      phone: '+905339990002',
       guardian_id: guardianId,
       class_id: classAId,
+      password: 'Sifre123',
     });
     expect(created.status).toBe(201);
     expect(created.body.class_name).toBe('SEVA');
+    expect(created.body.username).toMatch(/^ogrenci\d+$/);
   });
 
   it('arama veli adıyla da çalışır; sayfalama total doğru', async () => {
@@ -714,16 +752,67 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
   it('silinen öğrenci listeden kaybolur ve giriş yapamaz', async () => {
     const created = await adminRequest('post', '/api/v1/admin/students').send({
       full_name: 'Silinecek Öğrenci',
-      phone: '+905339990003',
       guardian_id: guardianId,
       class_id: classBId,
+      password: 'Sifre123',
     });
     const studentId = created.body.id as string;
+
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: created.body.username as string, password: 'Sifre123' });
+    expect(login.status).toBe(200);
+    const token = login.body.token as string;
 
     const del = await adminRequest('delete', `/api/v1/admin/students/${studentId}`);
     expect(del.status).toBe(204);
 
     const search = await adminRequest('get', '/api/v1/admin/students?q=silinecek');
     expect(search.body.total).toBe(0);
+
+    const me = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(me.status).toBe(401);
+  });
+
+  it('öğrenci şifre sıfırlama: eski token 401, yeni şifreyle giriş OK', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/students').send({
+      full_name: 'Şifre Sıfırlanacak Öğrenci',
+      guardian_id: guardianId,
+      class_id: classBId,
+      password: 'Sifre123',
+    });
+    const studentId = created.body.id as string;
+    const username = created.body.username as string;
+
+    const oldLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: username, password: 'Sifre123' });
+    const oldToken = oldLogin.body.token as string;
+
+    const reset = await adminRequest(
+      'post',
+      `/api/v1/admin/students/${studentId}/reset-password`,
+    ).send({ password: 'YeniSifre456' });
+    expect(reset.status).toBe(200);
+
+    const meWithOld = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${oldToken}`);
+    expect(meWithOld.status).toBe(401);
+
+    const newLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: username, password: 'YeniSifre456' });
+    expect(newLogin.status).toBe(200);
+
+    const { db } = await import('./db/index.js');
+    const log = db
+      .prepare(
+        `SELECT action FROM audit_logs WHERE entity_type = 'student' AND action = 'student.password_reset' ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get() as { action: string };
+    expect(log.action).toBe('student.password_reset');
   });
 });

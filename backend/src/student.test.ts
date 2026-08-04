@@ -60,7 +60,7 @@ function signTokenFor(
 async function login(email: string): Promise<string> {
   const res = await request(app)
     .post('/api/v1/auth/login')
-    .send({ email, password: TEST_PASSWORD });
+    .send({ identifier: email, password: TEST_PASSWORD });
   return res.body.token as string;
 }
 
@@ -112,28 +112,27 @@ beforeAll(async () => {
   // --- İkinci öğretmen + ikinci öğrenci (yetki testleri) ---
   db.prepare(
     `INSERT INTO users
-       (id, full_name, full_name_normalized, phone, email, password_hash, role,
+       (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'teacher', 1, 1, NULL, ?)`,
+     VALUES (?, ?, ?, NULL, ?, ?, 'teacher', 1, 1, NULL, ?)`,
   ).run(
     's-teacher-2',
     'Second Teacher',
     'second teacher',
-    '+905009991001',
     'teacher2b@test.local',
     hashPasswordSync(TEST_PASSWORD),
     new Date().toISOString(),
   );
   db.prepare(
     `INSERT INTO users
-       (id, full_name, full_name_normalized, phone, email, password_hash, role,
+       (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
      VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
   ).run(
     's-student-2',
     'İkinci Öğrenci',
     'ikinci ogrenci',
-    '+905009992011',
+    'ogrenci-s-2',
     new Date().toISOString(),
   );
   db.prepare(
