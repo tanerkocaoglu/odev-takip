@@ -20,6 +20,7 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
+import { ensurePendingDigests, maybeReadyDigests } from '../services/digests.js';
 import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -724,6 +725,16 @@ router.post('/reports/:id/complete', (req, res) => {
      SET status = 'completed', completed_at = COALESCE(completed_at, ?), updated_at = ?
      WHERE id = ?`,
   ).run(now, now, id);
+
+  // Digest tetikleme (spec.md §5.4): ilk tamamlanmada pending açılır; sınıfın
+  // o haftadaki tüm dersleri tamamlanınca aynı kayıtlar ready olur.
+  const classRow = db
+    .prepare(`SELECT class_id FROM class_courses WHERE id = ?`)
+    .get(report.class_course_id) as { class_id: string } | undefined;
+  if (classRow) {
+    ensurePendingDigests(classRow.class_id, report.week_id);
+    maybeReadyDigests(classRow.class_id, report.week_id);
+  }
 
   res.json(buildReportPayload(id));
 });
