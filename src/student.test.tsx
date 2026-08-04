@@ -6,10 +6,20 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { studentApi } from './services/api';
+import { studentApi, openProtectedFile } from './services/api';
 import HomeworkListPage from './pages/student/HomeworkListPage';
 
 const BASE_URL = '/api/v1';
+
+// Dosya açma davranışı openProtectedFile'ın kendi birim testlerinde kapsanır;
+// sayfa testinde yalnızca butonun doğru anahtarla çağırdığını doğruluyoruz.
+vi.mock('./services/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/api')>();
+  return {
+    ...actual,
+    openProtectedFile: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 function mockFetch(status: number, body: unknown) {
   return vi.fn().mockResolvedValue({
@@ -86,7 +96,7 @@ const HOMEWORKS = {
 };
 
 describe('HomeworkListPage', () => {
-  it('ödevleri listeler; teslim rozetleri ve dosya linki gösterilir; puan yok', async () => {
+  it('ödevleri listeler; teslim rozetleri ve dosya butonu gösterilir; puan yok', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
     render(
       <MemoryRouter>
@@ -103,14 +113,33 @@ describe('HomeworkListPage', () => {
     expect(screen.getByText('Matematik · Örnek Kişi 5')).toBeInTheDocument();
     expect(screen.getByText('Fizik · Örnek Kişi 4')).toBeInTheDocument();
 
-    const fileLink = screen.getByRole('link', { name: /rapor\.jpg/ });
-    expect(fileLink).toHaveAttribute(
-      'href',
-      `${BASE_URL}/files/1234567890-0123456789abcdef.jpg`,
-    );
+    // Dosya korumalı olduğu için `<a href>` Authorization header gönderemezdi;
+    // artık Bearer token'lı fetch'i çağıran butonla açılır (bkz. openProtectedFile).
+    expect(
+      screen.getByRole('button', { name: /rapor\.jpg/ }),
+    ).toBeInTheDocument();
 
     // Öğrenci ekranında puan/not asla görünmez.
     expect(screen.queryByText(/puan/i)).not.toBeInTheDocument();
+  });
+
+  it('dosya butonuna basınca openProtectedFile doğru anahtarla çağrılır', async () => {
+    const openMock = vi.mocked(openProtectedFile);
+    // afterEach'teki restoreAllMocks mock uygulamasını sıfırlar — burada yeniden kur.
+    openMock.mockReset();
+    openMock.mockResolvedValue(undefined);
+    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /rapor\.jpg/ }));
+    expect(openMock).toHaveBeenCalledWith('1234567890-0123456789abcdef.jpg');
   });
 
   it('boş listede boş durum gösterilir', async () => {

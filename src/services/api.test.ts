@@ -10,6 +10,7 @@ import {
   getToken,
   setToken,
   clearToken,
+  openProtectedFile,
 } from './api';
 
 const BASE_URL = '/api/v1';
@@ -127,5 +128,85 @@ describe('token yardımcıları', () => {
     expect(getToken()).toBe('tok');
     clearToken();
     expect(getToken()).toBeNull();
+  });
+});
+
+describe('openProtectedFile', () => {
+  it('token yokken 401 fırlatır ve fetch çağrılmaz', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(openProtectedFile('k.jpg')).rejects.toMatchObject({
+      status: 401,
+      code: 'UNAUTHORIZED',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('Bearer token ile dosyayı çeker, blob URL üretip yeni sekmede açar', async () => {
+    setToken('abc');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const createObjectURL = vi.fn(() => 'blob:fake');
+    const revokeObjectURL = vi.fn();
+    const OriginalURL = globalThis.URL;
+    vi.stubGlobal(
+      'URL',
+      class extends OriginalURL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = revokeObjectURL;
+      },
+    );
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null as unknown as Window);
+    vi.useFakeTimers();
+
+    await openProtectedFile('abc.jpg');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${BASE_URL}/files/abc.jpg`);
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer abc' });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith('blob:fake', '_blank', 'noreferrer');
+
+    vi.runAllTimers();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('401 yanıtında token temizlenir ve ApiClientError fırlatılır', async () => {
+    setToken('abc');
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(401, { error: { code: 'UNAUTHORIZED', message: 'Oturum geçersiz.' } }),
+    );
+
+    await expect(openProtectedFile('k.jpg')).rejects.toMatchObject({
+      status: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Oturum geçersiz.',
+    });
+    expect(getToken()).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('hata yanıtındaki sunucu mesajı kullanılır', async () => {
+    setToken('abc');
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(403, { error: { code: 'FORBIDDEN', message: 'Erişim yok.' } }),
+    );
+
+    const err = await openProtectedFile('k.jpg').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiClientError);
+    expect(err).toMatchObject({ status: 403, message: 'Erişim yok.' });
+    vi.unstubAllGlobals();
   });
 });

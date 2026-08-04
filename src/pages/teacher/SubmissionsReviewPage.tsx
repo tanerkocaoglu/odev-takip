@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock3, FileText } from 'lucide-react';
 import type { TeacherHomeworkWithSubmissions, TeacherSubmission } from '../../types';
-import { teacherApi, fileUrl, ApiClientError } from '../../services/api';
+import { teacherApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { LoadingState, EmptyState, FormError, PrimaryButton } from '../../components/admin/ui';
 
 function fmtDate(iso: string): string {
@@ -179,15 +179,23 @@ export default function SubmissionsReviewPage() {
                     <ul className="mt-3 space-y-1">
                       {s.files.map((f) => (
                         <li key={f.key}>
-                          <a
-                            href={fileUrl(f.key)}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailError(null);
+                              openProtectedFile(f.key).catch((err) =>
+                                setDetailError(
+                                  err instanceof ApiClientError
+                                    ? err.message
+                                    : 'Dosya açılırken bir hata oluştu.',
+                                ),
+                              );
+                            }}
                             className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
                           >
                             <FileText className="h-4 w-4 shrink-0" />
                             <span className="truncate">{f.filename}</span>
-                          </a>
+                          </button>
                         </li>
                       ))}
                     </ul>

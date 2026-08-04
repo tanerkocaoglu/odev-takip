@@ -14,7 +14,7 @@ import type {
   TeacherReportPayload,
 } from '../../types';
 import { ATTENDANCE_LABELS, DAY_LABELS } from '../../types';
-import { teacherApi, fileUrl, ApiClientError } from '../../services/api';
+import { teacherApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { Field, FormError, LoadingState, PrimaryButton } from '../../components/admin/ui';
 
 const inputClass =
@@ -49,6 +49,7 @@ export default function ReportEntryPage() {
 
   const [bulkScore, setBulkScore] = useState('');
   const [mobileIndex, setMobileIndex] = useState(0);
+  const [fileOpenError, setFileOpenError] = useState<string | null>(null);
 
   const reportIdRef = useRef<string | null>(null);
   const originalDueRef = useRef('');
@@ -348,6 +349,8 @@ export default function ReportEntryPage() {
         </label>
       </div>
 
+      <FormError message={fileOpenError} />
+
       {/* Masaüstü: tablo */}
       <div className="compact hidden overflow-hidden rounded-md border border-border bg-surface md:block">
         <table className="w-full">
@@ -369,10 +372,20 @@ export default function ReportEntryPage() {
                   <td className="text-[13px] text-text">
                     <span>{entry.student_name}</span>
                     {entry.submission && (
-                      <a
-                        href={fileUrl(entry.submission.files[0]?.key ?? '')}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFileOpenError(null);
+                          const key = entry.submission!.files[0]?.key;
+                          if (!key) return;
+                          openProtectedFile(key).catch((err) =>
+                            setFileOpenError(
+                              err instanceof ApiClientError
+                                ? err.message
+                                : 'Dosya açılırken bir hata oluştu.',
+                            ),
+                          );
+                        }}
                         className={
                           'mt-0.5 flex w-fit items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ' +
                           (entry.submission.is_late
@@ -381,7 +394,7 @@ export default function ReportEntryPage() {
                         }
                       >
                         {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
-                      </a>
+                      </button>
                     )}
                     {!entry.submission && (
                       <span className="mt-0.5 flex w-fit items-center rounded-full bg-red/10 px-1.5 py-0.5 text-[11px] font-medium text-sub-missing">
@@ -481,10 +494,20 @@ export default function ReportEntryPage() {
                     </span>
                   </div>
                   {entry.submission ? (
-                    <a
-                      href={fileUrl(entry.submission.files[0]?.key ?? '')}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFileOpenError(null);
+                        const key = entry.submission!.files[0]?.key;
+                        if (!key) return;
+                        openProtectedFile(key).catch((err) =>
+                          setFileOpenError(
+                            err instanceof ApiClientError
+                              ? err.message
+                              : 'Dosya açılırken bir hata oluştu.',
+                          ),
+                        );
+                      }}
                       className={
                         'inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
                         (entry.submission.is_late
@@ -493,7 +516,7 @@ export default function ReportEntryPage() {
                       }
                     >
                       {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'} · ödevi aç
-                    </a>
+                    </button>
                   ) : (
                     <span className="inline-flex w-fit items-center rounded-full bg-red/10 px-2 py-0.5 text-xs font-medium text-sub-missing">
                       Yüklenmedi

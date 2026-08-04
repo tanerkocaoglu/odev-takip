@@ -332,9 +332,52 @@ export const teacherApi = {
 
 // ---------- Öğrenci ödev ve teslim (Aşama 4) ----------
 
-/** Korumalı dosya URL'si — /api/v1/files/:key (spec.md §8). */
-export function fileUrl(key: string): string {
-  return `${BASE_URL}/files/${key}`;
+/**
+ * Korumalı dosyayı Bearer token ile çekip yeni sekmede açar.
+ *
+ * `<a href>` doğrudan Authorization header gönderemediği için backend 401
+ * dönerdi. Bu yardımcı fetch + blob + `URL.createObjectURL` kullanır:
+ * token header'a konur, yanıt blob olarak alınır, geçici URL üretilip
+ * `window.open` ile açılır. Hata durumunda ApiClientError fırlatılır
+ * (401'de apiFetch gibi oturum temizlenir).
+ */
+export async function openProtectedFile(key: string): Promise<void> {
+  const token = getToken();
+  if (!token) {
+    clearToken();
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Giriş yapmanız gerekiyor.');
+  }
+
+  const res = await fetch(`${BASE_URL}/files/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    let body: ApiError | null = null;
+    try {
+      body = (await res.json()) as ApiError;
+    } catch {
+      // JSON dışı yanıt — genel hata
+    }
+    const code = body?.error.code ?? 'INTERNAL';
+    const message =
+      body?.error.message ?? 'Bir hata oluştu, lütfen tekrar deneyin.';
+    if (res.status === 401) {
+      clearToken();
+    }
+    throw new ApiClientError(
+      res.status,
+      code,
+      message,
+      body?.error.fields,
+    );
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noreferrer');
+  // Blob URL'yi bir sonraki tick'te temizle; önce tarayıcı indirmeyi başlatsın.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export const studentApi = {

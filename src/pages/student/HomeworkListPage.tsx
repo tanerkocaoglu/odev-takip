@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Clock3, FileText, UploadCloud, XCircle } from 'lucide-react';
 import type { StudentHomework } from '../../types';
-import { studentApi, fileUrl, ApiClientError } from '../../services/api';
+import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { LoadingState, EmptyState, FormError } from '../../components/admin/ui';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -174,6 +174,7 @@ function HomeworkCard({
   onUpload: () => void;
 }) {
   const [pickError, setPickError] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   const selectFiles = (list: FileList | null) => {
     if (!list) return;
@@ -228,19 +229,30 @@ function HomeworkCard({
           <ul className="space-y-1">
             {item.submission.files.map((f) => (
               <li key={f.key}>
-                <a
-                  href={fileUrl(f.key)}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenError(null);
+                    openProtectedFile(f.key).catch((err) =>
+                      setOpenError(
+                        err instanceof ApiClientError
+                          ? err.message
+                          : 'Dosya açılırken bir hata oluştu.',
+                      ),
+                    );
+                  }}
                   className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
                 >
                   <FileText className="h-4 w-4 shrink-0" />
                   <span className="truncate">{f.filename}</span>
                   <span className="tabular text-xs text-muted">({fmtBytes(f.size)})</span>
-                </a>
+                </button>
               </li>
             ))}
           </ul>
+          {openError && (
+            <p className="text-sm font-medium text-att-absent">{openError}</p>
+          )}
         </div>
       )}
 
