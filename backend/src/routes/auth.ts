@@ -19,6 +19,7 @@ import { sendSms } from '../services/sms.js';
 import { requestOtp, verifyOtp } from '../services/otp.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
+import { normalizePhone } from '../utils/phone.js';
 import type { AuthUser, Role } from '../types.js';
 
 const router = Router();
@@ -30,11 +31,6 @@ function asyncHandler(
   return (req, res, next) => {
     fn(req, res, next).catch(next);
   };
-}
-
-/** Kullanıcının girdiği numaradan boşluk/tire/parantezleri temizler. */
-function normalizePhone(raw: string): string {
-  return raw.replace(/[\s\-()]/g, '');
 }
 
 interface LoadedUser {
