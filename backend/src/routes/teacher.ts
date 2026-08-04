@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
+import { writeAuditLog } from '../services/audit.js';
 import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -392,6 +393,278 @@ router.post('/reports', (req, res) => {
   }
 
   res.status(201).json(buildReportPayload(reportId));
+});
+
+// ---------- Autosave (PUT) + Tamamla (POST complete) ----------
+
+interface OwnedReportRow {
+  id: string;
+  class_course_id: string;
+  week_id: string;
+  topic_covered: string | null;
+  prev_homework_id: string | null;
+  prev_homework_text: string | null;
+  status: string;
+  completed_at: string | null;
+  teacher_id: string;
+}
+
+/**
+ * Raporu yükler + sahiplik doğrular (spec.md §2): öğretmen yalnızca kendi
+ * class_course'unun raporu, admin tümü. Yoksa 404, yetkisizse 403.
+ */
+function loadOwnedReport(user: AuthUser, reportId: string): OwnedReportRow {
+  const report = db
+    .prepare(
+      `SELECT r.id, r.class_course_id, r.week_id, r.topic_covered,
+              r.prev_homework_id, r.prev_homework_text, r.status, r.completed_at,
+              cc.teacher_id
+       FROM reports r
+       JOIN class_courses cc ON cc.id = r.class_course_id
+       WHERE r.id = ?`,
+    )
+    .get(reportId) as OwnedReportRow | undefined;
+  if (!report) {
+    throw new AppError('NOT_FOUND', 404, 'Rapor bulunamadı.');
+  }
+  if (user.role !== 'admin' && (user.role !== 'teacher' || report.teacher_id !== user.id)) {
+    throw new AppError('FORBIDDEN', 403, 'Bu rapora erişim yetkiniz yok.');
+  }
+  return report;
+}
+
+const entrySchema = z.object({
+  student_id: z.string().trim().min(1),
+  attendance: z.enum(['present', 'absent', 'late', 'excused']),
+  homework_score: z.number().int().min(1).max(10).nullable(),
+  interest_score: z.number().int().min(1).max(10).nullable(),
+  teacher_note: z.string().trim().nullable(),
+});
+
+const putReportSchema = z.object({
+  topic_covered: z.string().trim().nullable().optional(),
+  prev_homework_text: z.string().trim().nullable().optional(),
+  homework_description: z.string().trim().nullable().optional(),
+  due_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Tarih YYYY-MM-DD biçiminde olmalı.')
+    .nullable()
+    .optional(),
+  entries: z.array(entrySchema).optional(),
+});
+
+/**
+ * Otomatik kaydetme (spec.md §5.1 adım 4). `completed` raporu düzenlemek
+ * serbesttir ve `audit_logs`'a yazılır (spec §2); `sent` rapora 403.
+ *
+ * due_date kuralı: normal haftada sunucu otomatik doldurduğu için öğretmen
+ * tarihi **boşaltamaz**, yalnızca değiştirebilir. Null ancak sunucunun zaten
+ * null hesapladığı (yılın son haftası, homeworks satırı yok) durumda kabul
+ * edilir — aksi halde 400 (CLAUDE.md Aşama 3 due_date kararı).
+ */
+router.put('/reports/:id', (req, res) => {
+  const user = req.user!;
+  const { id } = req.params;
+  const report = loadOwnedReport(user, id);
+  // İlk satırda yetki: gönderilmiş rapor öğretmene kapalı (spec §2).
+  if (report.status === 'sent') {
+    throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
+  }
+  const input = putReportSchema.parse(req.body);
+
+  const homework = db
+    .prepare(`SELECT due_date, description FROM homeworks WHERE report_id = ?`)
+    .get(id) as { due_date: string; description: string } | undefined;
+
+  // due_date boşaltma koruması: dolu tarih null yapılamaz.
+  if (input.due_date === null && homework && homework.due_date !== null) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Teslim tarihi boşaltılamaz, yalnızca değiştirilebilir.',
+      { due_date: 'Teslim tarihi boşaltılamaz, yalnızca değiştirilebilir.' },
+    );
+  }
+
+  // Verilmiş ödev: referans (prev_homework_id) ile metin arasındaki seçim.
+  // Referans korunuyorsa metin null; metin değiştiyse referans null yapılır
+  // (reports CHECK: ikisi aynı anda dolu olamaz).
+  let newPrevId = report.prev_homework_id;
+  let newPrevText = report.prev_homework_text;
+  if (input.prev_homework_text !== undefined) {
+    const incoming = input.prev_homework_text === '' ? null : input.prev_homework_text;
+    let refDesc: string | null = null;
+    if (report.prev_homework_id) {
+      const ref = db
+        .prepare(`SELECT description FROM homeworks WHERE id = ?`)
+        .get(report.prev_homework_id) as { description: string } | undefined;
+      refDesc = ref?.description ?? null;
+    }
+    if (report.prev_homework_id && incoming === refDesc) {
+      newPrevId = report.prev_homework_id;
+      newPrevText = null;
+    } else {
+      newPrevId = null;
+      newPrevText = incoming;
+    }
+  }
+
+  // Gelen satırlar bu rapora ait olmalı.
+  const reportStudentIds = new Set(
+    (
+      db
+        .prepare(`SELECT student_id FROM report_entries WHERE report_id = ?`)
+        .all(id) as Array<{ student_id: string }>
+    ).map((r) => r.student_id),
+  );
+  for (const entry of input.entries ?? []) {
+    if (!reportStudentIds.has(entry.student_id)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        400,
+        'Raporda kayıtlı olmayan bir öğrenci için satır gönderildi.',
+        { entries: 'Bilinmeyen öğrenci.' },
+      );
+    }
+  }
+
+  const now = new Date().toISOString();
+  const newTopic = input.topic_covered === undefined ? report.topic_covered : input.topic_covered;
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `UPDATE reports
+       SET topic_covered = ?, prev_homework_id = ?, prev_homework_text = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(newTopic, newPrevId, newPrevText, now, id);
+
+    if (homework) {
+      const newDue = input.due_date === undefined ? homework.due_date : input.due_date;
+      const newDesc =
+        input.homework_description === undefined
+          ? homework.description
+          : (input.homework_description ?? '');
+      db.prepare(`UPDATE homeworks SET description = ?, due_date = ? WHERE report_id = ?`).run(
+        newDesc,
+        newDue,
+        id,
+      );
+    } else if (input.due_date) {
+      // Yılın son haftası: satır yoktu, öğretmen tarihi girince oluşturulur.
+      db.prepare(
+        `INSERT INTO homeworks
+           (id, report_id, class_course_id, week_id, description, attachments, due_date)
+         VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+      ).run(
+        randomUUID(),
+        id,
+        report.class_course_id,
+        report.week_id,
+        input.homework_description ?? '',
+        input.due_date,
+      );
+    }
+
+    const updateEntry = db.prepare(
+      `UPDATE report_entries
+       SET attendance = ?, homework_score = ?, interest_score = ?, teacher_note = ?
+       WHERE report_id = ? AND student_id = ?`,
+    );
+    for (const entry of input.entries ?? []) {
+      const isAbsent = entry.attendance === 'absent' || entry.attendance === 'excused';
+      updateEntry.run(
+        entry.attendance,
+        isAbsent ? null : entry.homework_score,
+        isAbsent ? null : entry.interest_score,
+        entry.teacher_note,
+        id,
+        entry.student_id,
+      );
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  // completed raporu düzenleme audit'a yazılır (spec §2).
+  if (report.status === 'completed') {
+    writeAuditLog({
+      actorId: user.id,
+      action: 'report.update',
+      entityType: 'report',
+      entityId: id,
+      diff: { edited_fields: Object.keys(input), by_role: user.role },
+    });
+  }
+
+  res.json(buildReportPayload(id));
+});
+
+/**
+ * Raporu tamamlar (spec.md §5.1 adım 5): devamsız olmayan her öğrenci için iki
+ * puan da dolu olmalı; yılın son haftasında teslim tarihi girilmiş olmalı.
+ */
+router.post('/reports/:id/complete', (req, res) => {
+  const user = req.user!;
+  const { id } = req.params;
+  const report = loadOwnedReport(user, id);
+  if (report.status === 'sent') {
+    throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
+  }
+
+  // Yılın son haftası: homeworks satırı (due_date) yoksa tamamlanamaz (spec §5.2).
+  const homework = db
+    .prepare(`SELECT due_date FROM homeworks WHERE report_id = ?`)
+    .get(id) as { due_date: string } | undefined;
+  if (!homework || !homework.due_date) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Yılın son haftası — teslim tarihini belirleyin.',
+      { due_date: 'Teslim tarihi zorunlu.' },
+    );
+  }
+
+  // Devamsız olmayan her öğrenci için iki puan da dolu olmalı (spec §5.1).
+  const entries = db
+    .prepare(
+      `SELECT student_id, attendance, homework_score, interest_score
+       FROM report_entries WHERE report_id = ?`,
+    )
+    .all(id) as Array<{
+    student_id: string;
+    attendance: string;
+    homework_score: number | null;
+    interest_score: number | null;
+  }>;
+  const missing: Record<string, string> = {};
+  for (const entry of entries) {
+    if (
+      (entry.attendance === 'present' || entry.attendance === 'late') &&
+      (entry.homework_score === null || entry.interest_score === null)
+    ) {
+      missing[entry.student_id] = 'Ödev ve ilgi puanı girilmeli.';
+    }
+  }
+  if (Object.keys(missing).length > 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Devamsız olmayan her öğrenci için ödev ve ilgi puanı girilmelidir.',
+      missing,
+    );
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE reports
+     SET status = 'completed', completed_at = COALESCE(completed_at, ?), updated_at = ?
+     WHERE id = ?`,
+  ).run(now, now, id);
+
+  res.json(buildReportPayload(id));
 });
 
 export default router;

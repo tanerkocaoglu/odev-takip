@@ -164,6 +164,31 @@ beforeAll(async () => {
      VALUES (?, ?, ?, ?, NULL, NULL, 'completed', ?, ?, ?)`,
   ).run('t-report-done', CC_DONE, WEEK2.id, 'Bitti', now, 'test-teacher', now);
 
+  // --- Adım 2: PUT/complete akışları için ek atamalar (t-year, hafta 2) ---
+  insertCourse.run('t-course-5', 'Ders 5', 'ders 5');
+  insertCourse.run('t-course-6', 'Ders 6', 'ders 6');
+  insertCc.run('t-cc-5', 't-class', 't-course-5', 'test-teacher', 4, '14:00');
+  insertCc.run('t-cc-6', 't-class', 't-course-6', 'test-teacher', 5, '15:00');
+
+  // --- Son hafta senaryosu (spec §5.2): TEK haftalı ayrı eğitim yılı ---
+  // Sonraki hafta olmadığından calculateDueDate null döner; homeworks satırı
+  // öğretmen tarihi elle girene kadar oluşturulmaz.
+  db.prepare(
+    `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+     VALUES (?, ?, ?, ?, 0)`,
+  ).run('t-year-last', 'Son Hafta Yılı', '2026-08-10', '2026-08-16');
+  insertWeek.run('t-week-last', 't-year-last', 1, '2026-08-10', '2026-08-16', 'Son Hafta');
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES (?, ?, ?, ?, NULL)`,
+  ).run('t-class-last', 't-year-last', 'Son Sınıf', 'son sinif');
+  insertCourse.run('t-course-last', 'Son Ders', 'son ders');
+  insertCc.run('t-cc-last', 't-class-last', 't-course-last', 'test-teacher', 3, '12:00');
+  // Bu sınıfa tek aktif öğrenci.
+  insertStudent.run('t-stu-5', 'Öğrenci t-stu-5', 'ogrenci t-stu-5', '+905009992005', now);
+  insertStudentRec.run('t-stu-rec-5', 't-stu-5');
+  insertEnrollment.run('t-enr-5', 't-stu-rec-5', 't-class-last', '2026-08-10', null);
+
   adminToken = await login('admin@test.local');
   teacherToken = await login('teacher@test.local');
 });
@@ -357,5 +382,276 @@ describe('POST /api/v1/teacher/reports (get-or-create)', () => {
       .send({ class_course_id: CC_OTHER, week_id: WEEK2.id });
     expect(res.status).toBe(201);
     expect(res.body.report.status).toBe('draft');
+  });
+});
+
+describe('PUT /api/v1/teacher/reports/:id (autosave)', () => {
+  let reportId: string;
+  let studentIds: string[];
+
+  beforeAll(async () => {
+    const created = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-5', week_id: WEEK2.id });
+    reportId = created.body.report.id as string;
+    studentIds = (created.body.entries as Array<{ student_id: string }>).map(
+      (e) => e.student_id,
+    );
+  });
+
+  it('konu, yapılacak ödev ve satırları günceller', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        topic_covered: 'İkinci dereceden denklemler',
+        homework_description: 'Sayfa 42, alıştırmalar 1-10',
+        entries: studentIds.map((sid) => ({
+          student_id: sid,
+          attendance: 'present',
+          homework_score: 7,
+          interest_score: 8,
+          teacher_note: null,
+        })),
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.report.topic_covered).toBe('İkinci dereceden denklemler');
+    expect(res.body.report.homework.description).toBe('Sayfa 42, alıştırmalar 1-10');
+    expect(
+      (res.body.entries as Array<{ homework_score: number; interest_score: number }>).every(
+        (e) => e.homework_score === 7 && e.interest_score === 8,
+      ),
+    ).toBe(true);
+  });
+
+  it('normal haftada due_date boşaltılamaz (null → 400)', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ due_date: null });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.fields.due_date).toBeDefined();
+  });
+
+  it('due_date değiştirilebilir', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ due_date: '2026-08-12' });
+    expect(res.status).toBe(200);
+    expect(res.body.report.homework.due_date).toBe('2026-08-12');
+  });
+
+  it('devamsız satırda puanlar null yapılır', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        entries: [
+          {
+            student_id: studentIds[0],
+            attendance: 'absent',
+            homework_score: 5,
+            interest_score: 6,
+            teacher_note: null,
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    const row = (res.body.entries as Array<{ student_id: string; attendance: string; homework_score: number | null; interest_score: number | null }>).find(
+      (e) => e.student_id === studentIds[0],
+    );
+    expect(row!.attendance).toBe('absent');
+    expect(row!.homework_score).toBeNull();
+    expect(row!.interest_score).toBeNull();
+  });
+
+  it('verilmiş ödev metni değişince serbest metin olarak saklanır', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ prev_homework_text: 'Elle yazılmış önceki ödev' });
+    expect(res.status).toBe(200);
+    expect(res.body.report.prev_homework_text).toBe('Elle yazılmış önceki ödev');
+  });
+
+  it('raporda olmayan öğrenci satırı 400 döner', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        entries: [
+          {
+            student_id: 'yok-student',
+            attendance: 'present',
+            homework_score: 5,
+            interest_score: 5,
+            teacher_note: null,
+          },
+        ],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('POST /api/v1/teacher/reports/:id/complete', () => {
+  let reportId: string;
+  let studentIds: string[];
+
+  beforeAll(async () => {
+    const created = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-6', week_id: WEEK2.id });
+    reportId = created.body.report.id as string;
+    studentIds = (created.body.entries as Array<{ student_id: string }>).map(
+      (e) => e.student_id,
+    );
+  });
+
+  it('entegrasyon zinciri: eksik puanla tamamla 400, doldurunca 200 + completed', async () => {
+    // 1) Hiç puan girilmeden tamamla → 400, fields öğrenci id'lerini içerir.
+    const missing = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(missing.status).toBe(400);
+    expect(missing.body.error.code).toBe('VALIDATION_ERROR');
+    expect(missing.body.error.fields[studentIds[0]]).toBeDefined();
+
+    // 2) İlk öğrenci hariç hepsini doldur.
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        entries: studentIds.slice(1).map((sid) => ({
+          student_id: sid,
+          attendance: 'present',
+          homework_score: 6,
+          interest_score: 7,
+          teacher_note: null,
+        })),
+      });
+
+    // 3) Hâlâ eksik (yalnız ilk öğrenci) → 400.
+    const still = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(still.status).toBe(400);
+    expect(still.body.error.fields[studentIds[0]]).toBeDefined();
+    expect(still.body.error.fields[studentIds[1]]).toBeUndefined();
+
+    // 4) Son öğrenciyi de doldur → tamamla → 200 + completed.
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        entries: [
+          {
+            student_id: studentIds[0],
+            attendance: 'present',
+            homework_score: 9,
+            interest_score: 9,
+            teacher_note: 'Gayretli.',
+          },
+        ],
+      });
+
+    const done = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(done.status).toBe(200);
+    expect(done.body.report.status).toBe('completed');
+    expect(done.body.report.completed_at).not.toBeNull();
+  });
+
+  it('tamamlanmış rapor düzenlenebilir ve audit_logs\'a yazılır', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ topic_covered: 'Düzeltilmiş konu' });
+    expect(res.status).toBe(200);
+    expect(res.body.report.status).toBe('completed');
+    expect(res.body.report.topic_covered).toBe('Düzeltilmiş konu');
+
+    const audit = db
+      .prepare(
+        `SELECT action FROM audit_logs
+         WHERE entity_type = 'report' AND entity_id = ?
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(reportId) as { action: string } | undefined;
+    expect(audit).toBeDefined();
+    expect(audit!.action).toBe('report.update');
+  });
+
+  it('gönderilmiş (sent) rapor düzenlenemez ve tamamlanamaz (403)', async () => {
+    db.prepare(`UPDATE reports SET status = 'sent' WHERE id = ?`).run(reportId);
+
+    const put = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ topic_covered: 'X' });
+    expect(put.status).toBe(403);
+    expect(put.body.error.code).toBe('FORBIDDEN');
+
+    const complete = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(complete.status).toBe(403);
+  });
+});
+
+describe('Yılın son haftası (spec §5.2 sınır durumu)', () => {
+  it('tek haftalı yılda due_date null; tarih girilmeden tamamla 400, girilince 200', async () => {
+    // 1) Rapor oluştur — sonraki hafta yok, due_date hesaplanamaz, homework yok.
+    const created = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-last', week_id: 't-week-last' });
+    expect(created.status).toBe(201);
+    expect(created.body.report.homework).toBeNull();
+    const reportId = created.body.report.id as string;
+    const sid = (created.body.entries as Array<{ student_id: string }>)[0].student_id;
+
+    // 2) Teslim tarihi yokken tamamla → 400 (due_date zorunlu).
+    const noDate = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(noDate.status).toBe(400);
+    expect(noDate.body.error.code).toBe('VALIDATION_ERROR');
+    expect(noDate.body.error.fields.due_date).toBeDefined();
+
+    // 3) Öğretmen tarihi elle girer + puanları doldurur → homeworks satırı oluşur.
+    const put = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        due_date: '2026-08-15',
+        homework_description: 'Son hafta ödevi',
+        entries: [
+          {
+            student_id: sid,
+            attendance: 'present',
+            homework_score: 8,
+            interest_score: 8,
+            teacher_note: null,
+          },
+        ],
+      });
+    expect(put.status).toBe(200);
+    expect(put.body.report.homework).toEqual({
+      description: 'Son hafta ödevi',
+      due_date: '2026-08-15',
+    });
+
+    // 4) Tarih girilince tamamlanabilir.
+    const done = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(done.status).toBe(200);
+    expect(done.body.report.status).toBe('completed');
   });
 });
