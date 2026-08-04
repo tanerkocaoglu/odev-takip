@@ -18,6 +18,11 @@ import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { adminOnly } from '../middleware/adminOnly.js';
 import { normalizeTurkish } from '../utils/text.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { hashPassword } from '../utils/hash.js';
+import { normalizePhone } from '../utils/phone.js';
+import { writeAuditLog } from '../services/audit.js';
+import { parsePagination, paged } from '../utils/pagination.js';
 
 const router = Router();
 
@@ -635,5 +640,289 @@ router.delete('/class-courses/:id', (req, res) => {
   );
   res.status(204).end();
 });
+
+// ---------- Öğretmen ----------
+
+const teacherSchema = z.object({
+  full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
+  email: z.string().trim().email('Geçerli bir e-posta adresi girin.'),
+  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
+});
+
+router.get('/teachers', (req, res) => {
+  const pagination = parsePagination(req.query);
+  const q = typeof req.query.q === 'string' ? normalizeTurkish(req.query.q.trim()) : '';
+
+  const where = [`role = 'teacher'`, `deleted_at IS NULL`];
+  const values: Array<string | number> = [];
+  if (q) {
+    where.push(`(full_name_normalized LIKE ? OR email LIKE ?)`);
+    values.push(`%${q}%`, `%${q}%`);
+  }
+
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS c FROM users WHERE ${where.join(' AND ')}`).get(...values) as {
+      c: number;
+    }
+  ).c;
+
+  const rows = db
+    .prepare(
+      `SELECT id, full_name, email, phone, is_active, created_at
+       FROM users
+       WHERE ${where.join(' AND ')}
+       ORDER BY full_name
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...values, pagination.limit, pagination.offset);
+
+  res.json(paged(rows, total, pagination));
+});
+
+router.post(
+  '/teachers',
+  asyncHandler(async (req, res) => {
+    const input = teacherSchema.parse(req.body);
+    const email = input.email.trim();
+    const phone = normalizePhone(input.phone);
+
+    const clash = db
+      .prepare(
+        `SELECT id FROM users
+         WHERE (email = ? OR phone = ?) AND deleted_at IS NULL`,
+      )
+      .get(email, phone);
+    if (clash) {
+      throw new AppError(
+        'CONFLICT',
+        409,
+        'Bu e-posta veya telefon ile kayıtlı bir kullanıcı var.',
+      );
+    }
+
+    const id = randomUUID();
+    const passwordHash = await hashPassword(input.password);
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, phone, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'teacher', 1, 1, NULL, ?)`,
+    ).run(
+      id,
+      input.full_name,
+      normalizeTurkish(input.full_name),
+      phone,
+      email,
+      passwordHash,
+      new Date().toISOString(),
+    );
+
+    const row = db
+      .prepare(
+        `SELECT id, full_name, email, phone, is_active, created_at FROM users WHERE id = ?`,
+      )
+      .get(id);
+    res.status(201).json(row);
+  }),
+);
+
+const teacherPatchSchema = z.object({
+  full_name: z.string().trim().min(1).optional(),
+  email: z.string().trim().email().optional(),
+  phone: z.string().trim().min(10).optional(),
+});
+
+router.patch('/teachers/:id', (req, res) => {
+  const { id } = req.params;
+  const input = teacherPatchSchema.parse(req.body);
+
+  const current = db
+    .prepare(`SELECT id FROM users WHERE id = ? AND role = 'teacher' AND deleted_at IS NULL`)
+    .get(id);
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Öğretmen bulunamadı.');
+  }
+
+  const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
+  if (phone !== undefined || input.email !== undefined) {
+    const clash = db
+      .prepare(
+        `SELECT id FROM users
+         WHERE (email = ? OR phone = ?) AND id != ? AND deleted_at IS NULL`,
+      )
+      .get(input.email ?? null, phone ?? null, id);
+    if (clash) {
+      throw new AppError(
+        'CONFLICT',
+        409,
+        'Bu e-posta veya telefon ile kayıtlı bir kullanıcı var.',
+      );
+    }
+  }
+
+  const sets: string[] = [];
+  const values: Array<string | number> = [];
+  if (input.full_name !== undefined) {
+    sets.push(`full_name = ?`, `full_name_normalized = ?`);
+    values.push(input.full_name, normalizeTurkish(input.full_name));
+  }
+  if (input.email !== undefined) {
+    sets.push(`email = ?`);
+    values.push(input.email);
+  }
+  if (phone !== undefined) {
+    sets.push(`phone = ?`);
+    values.push(phone);
+  }
+  if (sets.length > 0) {
+    values.push(id);
+    db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  }
+
+  const row = db
+    .prepare(
+      `SELECT id, full_name, email, phone, is_active, created_at FROM users WHERE id = ?`,
+    )
+    .get(id);
+  res.json(row);
+});
+
+const resetPasswordSchema = z.object({
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
+});
+
+router.post(
+  '/teachers/:id/reset-password',
+  asyncHandler<{ id: string }>(async (req, res) => {
+    const { id } = req.params;
+    const { password } = resetPasswordSchema.parse(req.body);
+
+    const current = db
+      .prepare(`SELECT id FROM users WHERE id = ? AND role = 'teacher' AND deleted_at IS NULL`)
+      .get(id);
+    if (!current) {
+      throw new AppError('NOT_FOUND', 404, 'Öğretmen bulunamadı.');
+    }
+
+    const passwordHash = await hashPassword(password);
+    // Şifre değişince token_version +1 — mevcut oturumlar 401 alır.
+    db.prepare(
+      `UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?`,
+    ).run(passwordHash, id);
+
+    writeAuditLog({
+      actorId: req.user!.id,
+      action: 'teacher.password_reset',
+      entityType: 'user',
+      entityId: id,
+    });
+
+    res.json({ message: 'Şifre güncellendi.' });
+  }),
+);
+
+router.delete('/teachers/:id', (req, res) => {
+  const { id } = req.params;
+  const current = db
+    .prepare(`SELECT id FROM users WHERE id = ? AND role = 'teacher' AND deleted_at IS NULL`)
+    .get(id);
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Öğretmen bulunamadı.');
+  }
+
+  // Aktif ataması olan öğretmen silinemez — raporlar sahipsiz kalır.
+  const activeAssignments = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM class_courses
+       WHERE teacher_id = ? AND deleted_at IS NULL`,
+    )
+    .get(id) as { c: number };
+  if (activeAssignments.c > 0) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Bu öğretmenin aktif atamaları var, önce atamaları kaldırın.',
+    );
+  }
+
+  db.prepare(
+    `UPDATE users SET deleted_at = ?, token_version = token_version + 1 WHERE id = ?`,
+  ).run(new Date().toISOString(), id);
+
+  writeAuditLog({
+    actorId: req.user!.id,
+    action: 'teacher.delete',
+    entityType: 'user',
+    entityId: id,
+  });
+
+  res.status(204).end();
+});
+
+// ---------- Admin ekleme ----------
+
+const adminSchema = z.object({
+  full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
+  email: z.string().trim().email('Geçerli bir e-posta adresi girin.'),
+  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
+});
+
+router.post(
+  '/admins',
+  asyncHandler(async (req, res) => {
+    const input = adminSchema.parse(req.body);
+    const email = input.email.trim();
+    const phone = normalizePhone(input.phone);
+
+    const clash = db
+      .prepare(
+        `SELECT id FROM users
+         WHERE (email = ? OR phone = ?) AND deleted_at IS NULL`,
+      )
+      .get(email, phone);
+    if (clash) {
+      throw new AppError(
+        'CONFLICT',
+        409,
+        'Bu e-posta veya telefon ile kayıtlı bir kullanıcı var.',
+      );
+    }
+
+    const id = randomUUID();
+    const passwordHash = await hashPassword(input.password);
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, phone, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'admin', 1, 1, NULL, ?)`,
+    ).run(
+      id,
+      input.full_name,
+      normalizeTurkish(input.full_name),
+      phone,
+      email,
+      passwordHash,
+      new Date().toISOString(),
+    );
+
+    // spec.md §2: "Admin başka admin ekleyebilir; bu işlem audit_logs'a yazılır."
+    writeAuditLog({
+      actorId: req.user!.id,
+      action: 'user.create',
+      entityType: 'user',
+      entityId: id,
+      diff: { role: 'admin', email },
+    });
+
+    const row = db
+      .prepare(
+        `SELECT id, full_name, email, phone, is_active, created_at FROM users WHERE id = ?`,
+      )
+      .get(id);
+    res.status(201).json(row);
+  }),
+);
 
 export default router;

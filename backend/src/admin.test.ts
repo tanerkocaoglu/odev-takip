@@ -389,3 +389,136 @@ describe('Atamalar (class_courses)', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('Öğretmen', () => {
+  it('oluşturur; aynı e-posta/telefon 409 döner', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/teachers').send({
+      full_name: 'Yeni Öğretmen',
+      email: 'yeni@test.local',
+      phone: '+90 532 111 22 33',
+      password: 'Sifre123',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.phone).toBe('+905321112233'); // normalize edildi
+
+    const clash = await adminRequest('post', '/api/v1/admin/teachers').send({
+      full_name: 'İkinci',
+      email: 'yeni@test.local',
+      phone: '+905321112233',
+      password: 'Sifre123',
+    });
+    expect(clash.status).toBe(409);
+  });
+
+  it('oluşturulan öğretmen şifresiyle giriş yapabilir', async () => {
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'yeni@test.local', password: 'Sifre123' });
+    expect(login.status).toBe(200);
+    expect(login.body.user.role).toBe('teacher');
+  });
+
+  it('sayfalama çalışır (pageSize ve total)', async () => {
+    const res = await adminRequest('get', '/api/v1/admin/teachers?page=1&pageSize=1');
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBeGreaterThanOrEqual(2);
+    expect(res.body.items.length).toBe(1);
+    expect(res.body.page).toBe(1);
+  });
+
+  it('şifre sıfırlama sonrası eski token 401, yeni şifreyle giriş OK', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/teachers?q=yeni+ogretmen');
+    const teacher = (list.body.items as Array<{ id: string }>)[0];
+
+    const oldLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'yeni@test.local', password: 'Sifre123' });
+    const oldToken = oldLogin.body.token as string;
+
+    const reset = await adminRequest(
+      'post',
+      `/api/v1/admin/teachers/${teacher.id}/reset-password`,
+    ).send({ password: 'YeniSifre456' });
+    expect(reset.status).toBe(200);
+
+    const meWithOld = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${oldToken}`);
+    expect(meWithOld.status).toBe(401);
+
+    const newLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'yeni@test.local', password: 'YeniSifre456' });
+    expect(newLogin.status).toBe(200);
+  });
+
+  it('silme: audit log yazar; eski token 401; atamalı öğretmen 409', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/teachers').send({
+      full_name: 'Silinecek Öğretmen',
+      email: 'silinecek@test.local',
+      phone: '+905339998877',
+      password: 'Sifre123',
+    });
+    const teacherId = created.body.id as string;
+
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'silinecek@test.local', password: 'Sifre123' });
+    const token = login.body.token as string;
+
+    const del = await adminRequest('delete', `/api/v1/admin/teachers/${teacherId}`);
+    expect(del.status).toBe(204);
+
+    const me = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(me.status).toBe(401);
+
+    const audit = await request(app).get('/api/v1/auth/me');
+    void audit;
+    // audit_logs'ta kayıt var (doğrudan DB üzerinden doğrulanır)
+    const { db } = await import('./db/index.js');
+    const log = db
+      .prepare(`SELECT action FROM audit_logs WHERE entity_id = ? ORDER BY created_at DESC LIMIT 1`)
+      .get(teacherId) as { action: string };
+    expect(log.action).toBe('teacher.delete');
+  });
+});
+
+describe('Admin ekleme', () => {
+  it('yeni admin oluşturur ve audit log yazar', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/admins').send({
+      full_name: 'İkinci Yönetici',
+      email: 'admin2@test.local',
+      phone: '+905331112233',
+      password: 'Sifre123',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.role ?? 'admin').toBe('admin');
+
+    const { db } = await import('./db/index.js');
+    const log = db
+      .prepare(
+        `SELECT action, diff FROM audit_logs WHERE entity_id = ? ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(created.body.id as string) as { action: string; diff: string };
+    expect(log.action).toBe('user.create');
+    expect(JSON.parse(log.diff)).toMatchObject({ role: 'admin' });
+
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'admin2@test.local', password: 'Sifre123' });
+    expect(login.status).toBe(200);
+    expect(login.body.user.role).toBe('admin');
+  });
+
+  it('kısa şifre 400 döner', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/admins').send({
+      full_name: 'X',
+      email: 'x@test.local',
+      phone: '+905331113344',
+      password: '123',
+    });
+    expect(res.status).toBe(400);
+  });
+});

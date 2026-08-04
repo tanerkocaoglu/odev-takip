@@ -9,7 +9,7 @@
  * - `GET  /auth/me`          — oturum bilgisi (korunan; frontend oturum kontrolü)
  */
 
-import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
@@ -19,19 +19,11 @@ import { sendSms } from '../services/sms.js';
 import { requestOtp, verifyOtp } from '../services/otp.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 import { normalizePhone } from '../utils/phone.js';
 import type { AuthUser, Role } from '../types.js';
 
 const router = Router();
-
-/** Express 4 async hataları otomatik yakalamaz; next'e iletir. */
-function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
-): RequestHandler {
-  return (req, res, next) => {
-    fn(req, res, next).catch(next);
-  };
-}
 
 interface LoadedUser {
   authUser: AuthUser;
