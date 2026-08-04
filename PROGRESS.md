@@ -103,7 +103,6 @@ eksik puan ve son hafta due_date doğrulamasından geçerek `completed` yapıyor
 **Canlı yetki kanıtı**
 - `ogretmen2` → `ogretmen1`'in atamasına `POST /teacher/reports` →
   ✅ **403** `{"error":{"code":"FORBIDDEN","message":"Bu rapora erişim yetkiniz yok."}}`
-Güncelleme kaydedildi. PROGRESS.md'yi commit'liyorum.
 
 <execute_command>
 <command>git add PROGRESS.md && git commit -m "Aşama 3: bitti kriteri adım adım kanıtlandı (statik + test başlıkları + canlı 7/7 akış + 403 kanıtı)"</command>
