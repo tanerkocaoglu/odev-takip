@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Admin panel + salt-okunur rapor testleri — Aşama 5 (spec.md §5.5).
  * - `GET /teacher/reports/:id` — salt-okunur: öğretmen kendi, admin tümü;
  *   başka öğretmen / veli / öğrenci 403.
@@ -26,12 +26,13 @@ const WEEK2 = { id: 'ds-week-2', start: '2026-08-03', end: '2026-08-09' };
 const WEEK3 = { id: 'ds-week-3', start: '2026-08-10', end: '2026-08-16' };
 
 const CC_1 = 'ds-cc-1'; // Ders 1, Pazartesi — tamamlanacak
-const CC_2 = 'ds-cc-2'; // Ders 2, Salı — hiç açılmamış
+const CC_2 = 'ds-cc-2'; // Ders 2, Pazartesi — hiç açılmamış, günü geçmiş
 const CC_3 = 'ds-cc-3'; // diğer sınıf, Cuma — hiç açılmamış
 
 let adminToken: string;
 let teacherToken: string;
 let teacher2Token: string;
+let doneReportId: string;
 
 function signTokenFor(userId: string, role: Role): string {
   return signToken(
@@ -153,7 +154,7 @@ beforeAll(async () => {
   teacherToken = await login('teacher@test.local');
   teacher2Token = await login('teacher2@test.local');
 
-  globalThis.__doneReportId = await completeReport(CC_1, WEEK2.id);
+  doneReportId = await completeReport(CC_1, WEEK2.id);
 });
 
 afterAll(() => {
@@ -163,7 +164,7 @@ afterAll(() => {
 describe('GET /api/v1/teacher/reports/:id (salt-okunur)', () => {
   it('sahip öğretmen raporu alır (completed içerik + satırlar)', async () => {
     const res = await request(app)
-      .get(`/api/v1/teacher/reports/${globalThis.__doneReportId}`)
+      .get(`/api/v1/teacher/reports/${doneReportId}`)
       .set('Authorization', `Bearer ${teacherToken}`);
     expect(res.status).toBe(200);
     expect(res.body.report.status).toBe('completed');
@@ -174,7 +175,7 @@ describe('GET /api/v1/teacher/reports/:id (salt-okunur)', () => {
 
   it('admin her raporu alır', async () => {
     const res = await request(app)
-      .get(`/api/v1/teacher/reports/${globalThis.__doneReportId}`)
+      .get(`/api/v1/teacher/reports/${doneReportId}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
     expect(res.body.report.status).toBe('completed');
@@ -182,7 +183,7 @@ describe('GET /api/v1/teacher/reports/:id (salt-okunur)', () => {
 
   it('başka öğretmen 403 döner', async () => {
     const res = await request(app)
-      .get(`/api/v1/teacher/reports/${globalThis.__doneReportId}`)
+      .get(`/api/v1/teacher/reports/${doneReportId}`)
       .set('Authorization', `Bearer ${teacher2Token}`);
     expect(res.status).toBe(403);
   });
@@ -193,7 +194,7 @@ describe('GET /api/v1/teacher/reports/:id (salt-okunur)', () => {
       ['test-student', 'student'],
     ] as Array<[string, Role]>) {
       const res = await request(app)
-        .get(`/api/v1/teacher/reports/${globalThis.__doneReportId}`)
+        .get(`/api/v1/teacher/reports/${doneReportId}`)
         .set('Authorization', `Bearer ${signTokenFor(id, role)}`);
       expect(res.status).toBe(403);
     }
@@ -226,7 +227,7 @@ describe('GET /api/v1/admin/dashboard (spec §5.5)', () => {
     expect(missing).toHaveLength(2);
     expect(missing.map((m) => m.class_course_id).sort()).toEqual([CC_2, CC_3].sort());
     expect(missing.every((m) => m.status === 'not_started')).toBe(true);
-    // CC_2 Salı (bugün 08-04'te geçti) → overdue; CC_3 Cuma → değil.
+    // CC_2 Pazartesi (bugün 08-04'te geçti) → overdue; CC_3 Cuma → değil.
     const cc2 = missing.find((m) => m.class_course_id === CC_2)!;
     const cc3 = missing.find((m) => m.class_course_id === CC_3)!;
     expect(cc2.is_overdue).toBe(true);

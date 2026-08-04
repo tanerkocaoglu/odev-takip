@@ -13,9 +13,6 @@ import request from 'supertest';
 import { createApp } from './app.js';
 import { db } from './db/index.js';
 import { resetDb, insertTestUsers, TEST_PASSWORD } from './test/helpers.js';
-import { signToken } from './utils/token.js';
-import { hashPasswordSync } from './utils/hash.js';
-import type { Role } from './types.js';
 
 const app = createApp();
 
@@ -27,13 +24,6 @@ const CC_1 = 'd-cc-1';
 const CC_2 = 'd-cc-2';
 
 let teacherToken: string;
-
-function signTokenFor(userId: string, role: Role): string {
-  return signToken(
-    { id: userId, role, teacher_id: null, student_id: null, guardian_id: null },
-    1,
-  );
-}
 
 async function login(email: string): Promise<string> {
   const res = await request(app)

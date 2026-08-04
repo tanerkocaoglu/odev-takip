@@ -107,7 +107,7 @@ router.get('/reports', (req, res) => {
       try {
         snapshot = JSON.parse(r.snapshot);
       } catch {
-        snapshot = null;
+        // bozuk snapshot → null kalır
       }
       return {
         id: r.id,

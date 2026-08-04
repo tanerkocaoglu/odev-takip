@@ -758,6 +758,23 @@ router.get('/reports', (req, res) => {
     ['draft', 'completed', 'sent'].includes(req.query.status)
       ? req.query.status
       : null;
+  const classId = typeof req.query.class_id === 'string' ? req.query.class_id : null;
+  const weekId = typeof req.query.week_id === 'string' ? req.query.week_id : null;
+
+  const extraWhere: string[] = [];
+  const extraValues: string[] = [];
+  if (statusFilter) {
+    extraWhere.push('r.status = ?');
+    extraValues.push(statusFilter);
+  }
+  if (classId) {
+    extraWhere.push('cc.class_id = ?');
+    extraValues.push(classId);
+  }
+  if (weekId) {
+    extraWhere.push('r.week_id = ?');
+    extraValues.push(weekId);
+  }
 
   const rows = (
     user.role === 'teacher'
@@ -775,10 +792,10 @@ router.get('/reports', (req, res) => {
              JOIN courses co ON co.id = cc.course_id
              JOIN weeks w ON w.id = r.week_id
              WHERE cc.teacher_id = ? AND cc.deleted_at IS NULL
-             ${statusFilter ? 'AND r.status = ?' : ''}
+             ${extraWhere.length > 0 ? 'AND ' + extraWhere.join(' AND ') : ''}
              ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time`,
           )
-          .all(user.id, ...(statusFilter ? [statusFilter] : []))
+          .all(user.id, ...extraValues)
       : db
           .prepare(
             `SELECT r.id, r.class_course_id, r.week_id, r.status, r.completed_at, r.updated_at,
@@ -793,10 +810,10 @@ router.get('/reports', (req, res) => {
              JOIN courses co ON co.id = cc.course_id
              JOIN weeks w ON w.id = r.week_id
              WHERE cc.deleted_at IS NULL
-             ${statusFilter ? 'AND r.status = ?' : ''}
+             ${extraWhere.length > 0 ? 'AND ' + extraWhere.join(' AND ') : ''}
              ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time`,
           )
-          .all(...(statusFilter ? [statusFilter] : []))
+          .all(...extraValues)
   ) as Array<{
     id: string;
     status: string;
