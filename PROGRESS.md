@@ -134,7 +134,7 @@ Tüm kontroller çalışan `app.db` üzerinde elle tekrar kanıtlandı:
 `669a58b` — PROGRESS.md: Aşama 0 commit hash eklendi
 `524d432` — Aşama 1: veri modeli (migration #1), normalizasyon/hafta/hash util'leri, idempotent seed, FK + idempotentlik testleri
 `529731b` — PROGRESS.md: Aşama 1 elle doğrulama sonuçları
-*(Aşama 1 senaryo güncellemesi commit hash'i buraya eklenecek)*
+`a8df0f8` — Aşama 1: seed'e kardeş (201-205) ve sınıf değişikliği (öğrenci 3-4) senaryoları + schema.test.ts güncellemesi
 
 ### Güncel dosya yapısı
 
