@@ -348,6 +348,40 @@ registerMigration(4, 'submission_files', () => {
   `);
 });
 
+/**
+ * Migration #5 — username girişi (Aşama 2a retrofit).
+ *
+ * OTP/telefon tabanlı veli/öğrenci girişi kaldırıldı; yerine otomatik üretilen
+ * `username` + admin'in belirlediği şifre geldi (spec.md §2.1, §3.1):
+ * - `users.phone` düşürülür, `users.username` eklenir.
+ * - `idx_users_username` (kısmi) + `idx_users_email` (kısmi) kurulur.
+ * - `otp_codes` tablosu düşürülür (migration #2 burada geri alınır).
+ *
+ * Backfill: şema yalnız — UNIQUE indeks NULL'lara izin verdiği için mevcut
+ * satırlara username yazılması migration'ı engellemez. Mevcut (seed) satırların
+ * username + şifre ile doldurulması seed script'inin "boşluk doldurma" geçişiyle
+ * yapılır (CLAUDE.md: seed verisi migration'a konmaz).
+ *
+ * NOT: `users.password_hash` ve `guardians.whatsapp_phone` DB seviyesinde NOT
+ * NULL değildir — yalnızca uygulama seviyesinde zorlanır. Üretimden önce tablo
+ * yeniden kurulumu (SQLite 12 adımlı rebuild) ile DB seviyesine taşınmalı
+ * (Aşama 6 adayı).
+ */
+registerMigration(5, 'username_login', () => {
+  db.exec(`DROP INDEX idx_users_phone`);
+  db.exec(`ALTER TABLE users DROP COLUMN phone`);
+  db.exec(`ALTER TABLE users ADD COLUMN username TEXT`);
+
+  db.exec(
+    `CREATE UNIQUE INDEX idx_users_username ON users(username) WHERE deleted_at IS NULL`,
+  );
+  db.exec(
+    `CREATE UNIQUE INDEX idx_users_email ON users(email) WHERE deleted_at IS NULL AND email IS NOT NULL`,
+  );
+
+  db.exec(`DROP TABLE otp_codes`);
+});
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

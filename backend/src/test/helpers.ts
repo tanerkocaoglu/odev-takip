@@ -1,6 +1,9 @@
 /**
  * Test yardımcıları — ayrı test.db üzerinde şema + 4 rol hesabı kurar.
  * (vitest.config.ts `DB_PATH` ile gerçek app.db'ye dokunmaz.)
+ *
+ * Aşama 2a retrofit sonrası (migration #5): `users.phone` yok; veli/öğrenci
+ * `username` + şifre ile giriş yapar; `otp_codes` tablosu kaldırıldı.
  */
 
 import { db } from '../db/index.js';
@@ -10,9 +13,8 @@ import { normalizeTurkish } from '../utils/text.js';
 
 export const TEST_PASSWORD = 'Password123!';
 
-// FK sırasına göre silinir (otp_codes, users'a referans verir).
+// FK sırasına göre silinir.
 const CLEAN_TABLES = [
-  'otp_codes',
   'audit_logs',
   'weekly_digests',
   'submission_files',
@@ -42,7 +44,10 @@ export function resetDb(): void {
   }
 }
 
-/** 4 rolün test hesabını kurar (admin + öğretmen şifreli, veli + öğrenci OTP'li). */
+/**
+ * 4 rolün test hesabını kurar (tümü şifreli — spec.md §2.1):
+ * admin/öğretmen `email`+şifre, veli/öğrenci `username`+şifre.
+ */
 export function insertTestUsers(): void {
   const now = new Date().toISOString();
   const hash = hashPasswordSync(TEST_PASSWORD);
@@ -50,19 +55,19 @@ export function insertTestUsers(): void {
   const users: Array<{
     id: string;
     full_name: string;
-    phone: string;
+    username: string | null;
     email: string | null;
     role: string;
   }> = [
-    { id: 'test-admin', full_name: 'Test Admin', phone: '+905009990001', email: 'admin@test.local', role: 'admin' },
-    { id: 'test-teacher', full_name: 'Test Teacher', phone: '+905009990002', email: 'teacher@test.local', role: 'teacher' },
-    { id: 'test-guardian', full_name: 'Test Guardian', phone: '+905009990003', email: null, role: 'guardian' },
-    { id: 'test-student', full_name: 'Test Student', phone: '+905009990004', email: null, role: 'student' },
+    { id: 'test-admin', full_name: 'Test Admin', username: null, email: 'admin@test.local', role: 'admin' },
+    { id: 'test-teacher', full_name: 'Test Teacher', username: null, email: 'teacher@test.local', role: 'teacher' },
+    { id: 'test-guardian', full_name: 'Test Guardian', username: 'test-guardian', email: null, role: 'guardian' },
+    { id: 'test-student', full_name: 'Test Student', username: 'test-student', email: null, role: 'student' },
   ];
 
   const insertUser = db.prepare(
     `INSERT INTO users
-       (id, full_name, full_name_normalized, phone, email, password_hash, role,
+       (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, NULL, ?)`,
   );
@@ -71,7 +76,7 @@ export function insertTestUsers(): void {
       u.id,
       u.full_name,
       normalizeTurkish(u.full_name),
-      u.phone,
+      u.username,
       u.email,
       hash,
       u.role,
