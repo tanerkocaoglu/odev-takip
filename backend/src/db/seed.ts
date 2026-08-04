@@ -8,7 +8,13 @@
  *   bu yüzden id'ler `seed-enrollment-...` sabittir).
  * - İlk admin: `ADMIN_PASSWORD` env değeri hash'lenerek eklenir; var olan
  *   admin güncellenmez.
+ * - Öğrenci/veli kullanıcıları `SEED_USER_PASSWORD` env değeriyle şifrelenir;
+ *   `username`'leri otomatik üretilir (ogrenci<n> / veli<n> — spec.md §2.1).
  * - Migration #1'in varlığından emin olur (runMigrations idempotenttir).
+ *
+ * Aşama 2a retrofit: seedDatabase artık async'tir (`hashPassword` asenkron);
+ * eski DB'de kalan seed satırlarına fillUsername/fillPasswordHash ile geriye
+ * dönük username + şifre atanır (INSERT OR IGNORE güncellemez).
  *
  * Senaryo verileri:
  * - 5 velinin 2'şer çocuğu (kardeş öğrenciler 201-205, sınıf 6-10'a dağıtılır)
@@ -25,7 +31,8 @@ import { db } from './index.js';
 import { runMigrations } from './migrations.js';
 import { loadEnv } from '../utils/env.js';
 import { normalizeTurkish } from '../utils/text.js';
-import { hashPasswordSync } from '../utils/hash.js';
+import { hashPassword } from '../utils/hash.js';
+import { nextUsername } from '../utils/username.js';
 import { calculateDueDate, type WeekRecord } from '../utils/weeks.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +60,25 @@ function update(table: string, set: Row, where: Row): void {
     ...whereKeys.map((k) => where[k]),
   ];
   db.prepare(`UPDATE ${table} SET ${setSql} WHERE ${whereSql}`).run(...values);
+}
+
+/**
+ * Boşluk doldurma (Aşama 2a retrofit) — eski DB'de (migration #5 öncesi seed)
+ * var olan öğrenci/veli satırları `username`/`password_hash` içermez; `INSERT
+ * OR IGNORE` mevcut satırı güncellemediği için bu geçiş eksik alanları doldurur.
+ * Yalnızca NULL/'BOŞ' olanları yazar → idempotent; admin/öğretmen şifrelerine
+ * dokunmaz (onların hash'i asla NULL değildir).
+ */
+function fillUsername(userId: string, username: string): void {
+  db.prepare(
+    `UPDATE users SET username = ? WHERE id = ? AND (username IS NULL OR username = '')`,
+  ).run(username, userId);
+}
+
+function fillPasswordHash(userId: string, passwordHash: string): void {
+  db.prepare(
+    `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash IS NULL`,
+  ).run(passwordHash, userId);
 }
 
 function now(): string {
@@ -222,11 +248,19 @@ interface ClassCourse {
 
 // ---------- Seed ana fonksiyonu ----------
 
-export function seedDatabase(adminPassword: string): void {
+export async function seedDatabase(
+  adminPassword: string,
+  userPassword: string,
+): Promise<void> {
   runMigrations();
 
   const yearId = 'seed-academic-year';
   const createdAt = now();
+
+  // Tek sefer hash — her satır için scrypt çalıştırılmaz. Aynı değer tüm
+  // seed kullanıcılarına yazılır; fill-password yalnızca NULL'ken çalışır.
+  const adminHash = await hashPassword(adminPassword);
+  const userHash = await hashPassword(userPassword);
 
   // --- Haftalar (21) — week 20 = bu hafta, week 21 = sonraki hafta ---
   const weeks = buildWeeks();
@@ -259,9 +293,9 @@ export function seedDatabase(adminPassword: string): void {
     id: 'seed-user-admin-001',
     full_name: 'Sistem Yöneticisi',
     full_name_normalized: normalizeTurkish('Sistem Yöneticisi'),
-    phone: '+905000000001',
+    username: null,
     email: 'admin@dershane.local',
-    password_hash: hashPasswordSync(adminPassword),
+    password_hash: adminHash,
     role: 'admin',
     is_active: 1,
     token_version: 1,
@@ -278,9 +312,9 @@ export function seedDatabase(adminPassword: string): void {
       id,
       full_name: name,
       full_name_normalized: normalizeTurkish(name),
-      phone: phone(2 + i),
+      username: null,
       email: `ogretmen${i + 1}@dershane.local`,
-      password_hash: hashPasswordSync(adminPassword),
+      password_hash: adminHash,
       role: 'teacher',
       is_active: 1,
       token_version: 1,
@@ -323,32 +357,43 @@ export function seedDatabase(adminPassword: string): void {
 
     const studentName = `Öğrenci ${s}`;
     const guardianName = `Veli ${s}`;
+
+    // Username otomatik üretilir (spec.md §2.1): ogrenci<n> / veli<n>.
+    // Deterministik döngü sırası + fill-gaps sayesinde hem taze hem eski DB'de
+    // aynı sonuç — INSERT OR IGNORE deterministik id'lerle idempotent kalır.
+    const studentUsername = nextUsername('student');
     insert('users', {
       id: studentUserId,
       full_name: studentName,
       full_name_normalized: normalizeTurkish(studentName),
-      phone: phone(200 + s),
+      username: studentUsername,
       email: null,
-      password_hash: null,
+      password_hash: userHash,
       role: 'student',
       is_active: 1,
       token_version: 1,
       deleted_at: null,
       created_at: createdAt,
     });
+    fillUsername(studentUserId, studentUsername);
+    fillPasswordHash(studentUserId, userHash);
+
+    const guardianUsername = nextUsername('guardian');
     insert('users', {
       id: guardianUserId,
       full_name: guardianName,
       full_name_normalized: normalizeTurkish(guardianName),
-      phone: phone(400 + s),
+      username: guardianUsername,
       email: null,
-      password_hash: null,
+      password_hash: userHash,
       role: 'guardian',
       is_active: 1,
       token_version: 1,
       deleted_at: null,
       created_at: createdAt,
     });
+    fillUsername(guardianUserId, guardianUsername);
+    fillPasswordHash(guardianUserId, userHash);
 
     const studentRecId = `seed-student-${pad(s)}`;
     const guardianRecId = `seed-guardian-${pad(s)}`;
@@ -378,21 +423,23 @@ export function seedDatabase(adminPassword: string): void {
     const guardianRecId = `seed-guardian-${pad(k)}`; // veli 1..5
     const studentName = `Öğrenci ${studentNum}`;
 
-    // Telefon aralığı 601-605: mevcut aralıklarla çakışmaz
-    // (1-11 admin/öğretmen, 201-400 öğrenci, 401-600 veli).
+    const studentUsername = nextUsername('student');
     insert('users', {
       id: studentUserId,
       full_name: studentName,
       full_name_normalized: normalizeTurkish(studentName),
-      phone: phone(600 + k),
+      username: studentUsername,
       email: null,
-      password_hash: null,
+      password_hash: userHash,
       role: 'student',
       is_active: 1,
       token_version: 1,
       deleted_at: null,
       created_at: createdAt,
     });
+    fillUsername(studentUserId, studentUsername);
+    fillPasswordHash(studentUserId, userHash);
+
     insert('students', {
       id: `seed-student-${pad(studentNum)}`,
       user_id: studentUserId,
@@ -569,7 +616,14 @@ if (isDirectRun) {
     );
     process.exit(1);
   }
+  const userPassword = process.env.SEED_USER_PASSWORD?.trim();
+  if (!userPassword) {
+    console.error(
+      'SEED_USER_PASSWORD ortam değişkeni boş. backend/.env dosyasını kontrol edin.',
+    );
+    process.exit(1);
+  }
 
-  seedDatabase(adminPassword);
+  await seedDatabase(adminPassword, userPassword);
   console.log('Seed tamam.');
 }

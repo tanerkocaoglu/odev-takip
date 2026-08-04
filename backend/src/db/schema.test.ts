@@ -40,7 +40,6 @@ beforeAll(() => {
     'academic_years',
     'students',
     'guardians',
-    'otp_codes',
     'users',
   ];
   for (const t of tables) {
@@ -86,8 +85,8 @@ describe('foreign key ihlali', () => {
 describe('seed', () => {
   // ~416 kullanıcı için scrypt hash — yavaş bir CLI işlemidir; varsayılan
   // 5 sn timeout yetmez.
-  it('seed kayıtları beklenen hacimde üretir', { timeout: 60_000 }, () => {
-    seedDatabase('test-admin-password');
+  it('seed kayıtları beklenen hacimde üretir', { timeout: 60_000 }, async () => {
+    await seedDatabase('test-admin-password', 'test-user-password');
 
     // 1 admin + 10 öğretmen + 205 öğrenci (200 + 5 kardeş) + 200 veli = 416
     expect(count('users')).toBe(416);
@@ -107,7 +106,7 @@ describe('seed', () => {
     expect(count('homeworks')).toBe(108);
   });
 
-  it('seed idempotenttir — ikinci çalıştırmada kayıt çoğalmaz', () => {
+  it('seed idempotenttir — ikinci çalıştırmada kayıt çoğalmaz', async () => {
     const before = {
       users: count('users'),
       students: count('students'),
@@ -121,7 +120,7 @@ describe('seed', () => {
       homeworks: count('homeworks'),
     };
 
-    seedDatabase('test-admin-password');
+    await seedDatabase('test-admin-password', 'test-user-password');
 
     expect(count('users')).toBe(before.users);
     expect(count('students')).toBe(before.students);
@@ -180,6 +179,37 @@ describe('seed', () => {
     expect(admin).toBeDefined();
     expect(admin!.role).toBe('admin');
     expect(admin!.password_hash).toMatch(/^scrypt\$/);
+  });
+
+  it('öğrenci/veli username\'leri unique, şifre hash\'leri doludur (migration #5 retrofit)', () => {
+    const duplicates = db
+      .prepare(
+        `SELECT username, COUNT(*) AS c FROM users
+         WHERE role IN ('student','guardian') AND username IS NOT NULL
+         GROUP BY username HAVING c > 1`,
+      )
+      .all();
+    expect(duplicates).toHaveLength(0);
+
+    const missing = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM users
+         WHERE role IN ('student','guardian')
+           AND (username IS NULL OR username = '' OR password_hash IS NULL)`,
+      )
+      .get() as { c: number };
+    expect(missing.c).toBe(0);
+
+    const pattern = db
+      .prepare(
+        `SELECT username FROM users
+         WHERE role = 'student' AND username NOT LIKE 'ogrenci%'
+         UNION ALL
+         SELECT username FROM users
+         WHERE role = 'guardian' AND username NOT LIKE 'veli%'`,
+      )
+      .all();
+    expect(pattern).toHaveLength(0);
   });
 
   it('5 velinin 2\'şer çocuğu vardır (kardeş senaryosu)', () => {

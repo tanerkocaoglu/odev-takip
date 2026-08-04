@@ -3,7 +3,7 @@
  *
  * Harici paket (dotenv) yok — satır satır basit ayrıştırıcı.
  * CLAUDE.md: backend/.env'de PORT, BASE_URL, JWT_SECRET, ADMIN_PASSWORD,
- * SMS_PROVIDER_KEY, STORAGE_DRIVER bulunur.
+ * SEED_USER_PASSWORD, STORAGE_DRIVER bulunur.
  */
 
 import fs from 'node:fs';
