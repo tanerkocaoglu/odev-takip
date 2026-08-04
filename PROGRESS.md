@@ -68,15 +68,53 @@ eksik puan ve son hafta due_date doğrulamasından geçerek `completed` yapıyor
 - `src/teacher.test.tsx` (8 test): dashboard listeleme + gecikme bayrağı;
   rapor giriş ekranı otomatik kaydetme, devamsızlık-disable, toplu doldurma.
 
-### Doğrulamalar
+### Doğrulamalar (adım adım kanıt)
 
-| Kontrol | Sonuç |
-|---|---|
-| Backend testleri (128) | ✅ `teacher.test.ts` 22 dahil |
-| Frontend testleri (20) | ✅ `teacher.test.tsx` 8 dahil |
-| `npm run typecheck` (kök + backend) | ✅ |
-| `npm run lint` | ✅ |
-| **Canlı bitti kriteri** (öğretmen girişi → dashboard → rapor aç → puan doldur → tamamla) | ✅ `completed` |
+**Statik**
+- `npm run typecheck` (kök + backend) → ✅ `tsc --noEmit` temiz
+- `npm run lint` → ✅ `eslint .` temiz
+
+**Backend testleri — `teacher.test.ts` (22 test, ayrı çalıştırıldı ✅)**
+- `entegrasyon zinciri: eksik puanla tamamla 400, doldurunca 200 + completed`
+- `başka öğretmenin atamasına rapor oluşturulamaz (403)`
+- `gönderilmiş (sent) rapor düzenlenemez ve tamamlanamaz (403)`
+- `rapor + satırlar + draft homeworks oluşturur; prev ödev otomatik dolar`
+- `devamsız satırda puanlar null yapılır`
+- `tek haftalık yılda due_date null; tarih girilmeden tamamla 400, girilince 200`
+- Tüm backend paketi: ✅ 128/128 (10 dosya)
+
+**Frontend testleri**
+- `src/teacher.test.tsx` (8 test): dashboard listeleme + gecikme bayrağı,
+  rapor giriş ekranı autosave, devamsızlık-disable, toplu doldurma
+- Tüm paket: ✅ 20/20 (3 dosya)
+
+**Canlı sunucu (seed öğretmeni, temiz `db:reset`) — 7/7 adım**
+1. `ogretmen1@dershane.local` / `admin123` giriş → ✅ HTTP 200 (JWT)
+2. `GET /teacher/dashboard` → ✅ week 20, 9 kayıt ("bu hafta doldurulacaklar")
+3. `is_overdue` bayrağı → ✅ 9 gecikmiş
+4. `POST /teacher/reports` get-or-create → ✅ rapor `b1f2494c...`, 6 öğrenci
+5. `prev_homework_text` otomatik dolu → ✅ "Hafta 19 ödevi — ders 1"
+6. Eksik puanla `POST /reports/:id/complete` → ✅ 400 `VALIDATION_ERROR` +
+   `fields` (ör. `{"seed-student-001":"Ödev ve ilgi puanı girilmeli.", ...}`)
+7. Tüm satırları doldur (PUT 200) → `complete` (200) → **DB sorgusu:**
+   `SELECT status, completed_at FROM reports WHERE id = ?` →
+   `{"status":"completed","completed_at":"2026-08-04T14:21:07.592Z"}`
+
+**Canlı yetki kanıtı**
+- `ogretmen2` → `ogretmen1`'in atamasına `POST /teacher/reports` →
+  ✅ **403** `{"error":{"code":"FORBIDDEN","message":"Bu rapora erişim yetkiniz yok."}}`
+Güncelleme kaydedildi. PROGRESS.md'yi commit'liyorum.
+
+<execute_command>
+<command>git add PROGRESS.md && git commit -m "Aşama 3: bitti kriteri adım adım kanıtlandı (statik + test başlıkları + canlı 7/7 akış + 403 kanıtı)"</command>
+<requires_approval>false</requires_approval>
+<task_progress>
+- [x] 1. typecheck (kök + backend) + lint çıktıları ✅
+- [x] 2. Backend testleri: 128/128 ✅ (teacher 22 dahil)
+- [x] 3. Frontend testleri: 20/20 ✅ (teacher.test.tsx 8 dahil)
+- [x] 4. Canlı akış: 7/7 adım ✅
+- [x] 5. Yabancı öğretmen 403 canlı kanıtı ✅
+- [x] 6. PROGRESS.md güncelle + commit
 
 ### Çözülen sorunlar
 
