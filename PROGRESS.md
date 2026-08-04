@@ -82,6 +82,26 @@ raporları `completed` durumunda.
 | `user_version` = 1 | ✅ |
 | Tablolar: 14, İndeksler: 20 | ✅ |
 
+### Elle doğrulama (kullanıcı talebi üzerine, canlı DB'de)
+
+Tüm kontroller çalışan `app.db` üzerinde elle tekrar kanıtlandı:
+
+1. **Seed idempotentliği:** `db:reset` sonrası enrollment=200, users=411;
+   `db:seed` ikinci kez çalıştırıldığında sayılar **değişmedi** (200/411,
+   ayrıca reports=100, report_entries=800, homeworks=100 sabit) — UNIQUE'si
+   olmayan `enrollments` için asıl kanıt bu.
+2. **Türkçe normalizasyon:** `Örnek Kişi 6 → ornek kisi 6`, `Örnek Kişi 5 →
+   ornek kisi 5`, `Örnek Kişi 7 → ornek kisi 7`, `Öğrenci 1 → ogrenci 1` —
+   yani `ı→i`, `ş→s`, `ğ→g` doğru; "ışık" değil "isik" kuralı.
+3. **Geçen hafta raporları:** `reports` GROUP BY → yalnızca `completed = 100`;
+   `homeworks = 100` — Aşama 3 "verilmiş olan ödev" (prev_homework) mantığı
+   için veri hazır.
+4. **FK açık mı:** Uygulamanın kullandığı bağlantı üzerinden
+   `PRAGMA foreign_keys = 1`; olmayan referansla `report_entries` INSERT'i
+   `FOREIGN KEY constraint failed` ile engellendi. (Not: `sqlite3` CLI yeni
+   bağlantı açtığı için yanıltıcı olabilir; doğru doğrulama uygulama
+   bağlantısındandır — `db/index.ts`'te WAL'dan hemen sonra açılır.)
+
 ### Çözülen sorunlar
 
 - **FK sıralaması:** `students.guardian_id → guardians(id)` — önce guardian,
