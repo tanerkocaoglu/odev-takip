@@ -1,4 +1,5 @@
 import { db } from './index.js';
+import { normalizeTurkish } from '../utils/text.js';
 
 /**
  * Migration listesi — PRAGMA user_version tabanlı sıralı runner.
@@ -285,6 +286,39 @@ registerMigration(2, 'otp_codes', () => {
 
     CREATE INDEX idx_otp_codes_user ON otp_codes(user_id, created_at);
   `);
+});
+
+/**
+ * Migration #3 — classes/courses `name_normalized` (Aşama 2b).
+ * İsim aramaları ve çakışma kontrolleri ASCII'ye indirgenmiş ad üzerinden
+ * yapılır (SQLite LIKE Türkçe harflerde duyarsız değildir). Backfill JS ile
+ * yapılır — normalizeTurkish yalnızca sunucuda üretilir.
+ */
+registerMigration(3, 'name_normalized', () => {
+  db.exec(`ALTER TABLE classes ADD COLUMN name_normalized TEXT NOT NULL DEFAULT ''`);
+  db.exec(`ALTER TABLE courses ADD COLUMN name_normalized TEXT NOT NULL DEFAULT ''`);
+
+  const backfillClasses = db.prepare(`SELECT id, name FROM classes`);
+  const updateClass = db.prepare(`UPDATE classes SET name_normalized = ? WHERE id = ?`);
+  for (const row of backfillClasses.all() as Array<{ id: string; name: string }>) {
+    updateClass.run(normalizeTurkish(row.name), row.id);
+  }
+
+  const backfillCourses = db.prepare(`SELECT id, name FROM courses`);
+  const updateCourse = db.prepare(`UPDATE courses SET name_normalized = ? WHERE id = ?`);
+  for (const row of backfillCourses.all() as Array<{ id: string; name: string }>) {
+    updateCourse.run(normalizeTurkish(row.name), row.id);
+  }
+
+  db.exec(`DROP INDEX idx_classes_name`);
+  db.exec(`DROP INDEX idx_courses_name`);
+  db.exec(
+    `CREATE UNIQUE INDEX idx_classes_name
+       ON classes(academic_year_id, name_normalized) WHERE deleted_at IS NULL`,
+  );
+  db.exec(
+    `CREATE UNIQUE INDEX idx_courses_name ON courses(name_normalized) WHERE deleted_at IS NULL`,
+  );
 });
 
 export function runMigrations(): void {

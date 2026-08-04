@@ -222,23 +222,30 @@ CREATE TABLE classes (
   id               TEXT PRIMARY KEY,
   academic_year_id TEXT NOT NULL REFERENCES academic_years(id),
   name             TEXT NOT NULL,   -- "ÖKLİD", "PİSAGOR", "SEVA", ...
+  name_normalized  TEXT NOT NULL,   -- arama için; yazım anında normalizeTurkish
   deleted_at       TEXT
 ) STRICT;
 
 CREATE UNIQUE INDEX idx_classes_name
-  ON classes(academic_year_id, name) WHERE deleted_at IS NULL;
+  ON classes(academic_year_id, name_normalized) WHERE deleted_at IS NULL;
 ```
+> `name_normalized` migration #3 ile eklendi (Aşama 2b): isim aramaları ve
+> çakışma kontrolü ASCII'ye indirgenmiş ad üzerinden yapılır (SQLite LIKE
+> Türkçe karakterlerde harf duyarsız değildir). Yazma anında yalnızca sunucuda
+> üretilir — `normalizeTurkish(name)`.
 
 **`courses`**
 ```sql
 CREATE TABLE courses (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,   -- "Matematik", "Geometri", ...
-  deleted_at TEXT
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,   -- "Matematik", "Geometri", ...
+  name_normalized TEXT NOT NULL,   -- arama için; yazım anında normalizeTurkish
+  deleted_at      TEXT
 ) STRICT;
 
-CREATE UNIQUE INDEX idx_courses_name ON courses(name) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_courses_name ON courses(name_normalized) WHERE deleted_at IS NULL;
 ```
+> `name_normalized` migration #3 ile eklendi; `classes` notu aynen geçerlidir.
 
 **`class_courses`** — sistemin merkez tablosu
 ```sql

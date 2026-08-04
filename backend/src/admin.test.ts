@@ -206,3 +206,186 @@ describe('Hafta', () => {
     expect(again.status).toBe(201);
   });
 });
+
+describe('Sınıf', () => {
+  let yearId: string;
+
+  beforeAll(async () => {
+    const list = await adminRequest('get', '/api/v1/admin/academic-years');
+    const year = (list.body.items as Array<{ id: string; name: string }>).find(
+      (y) => y.name === YEAR.name,
+    );
+    if (!year) throw new Error('2026-2027 yılı bulunamadı');
+    yearId = year.id;
+  });
+
+  it('oluşturur; Türkçe harf duyarsız arama bulur', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: yearId,
+      name: 'ÖKLİD',
+    });
+    expect(created.status).toBe(201);
+
+    const search = await adminRequest('get', '/api/v1/admin/classes?q=oklid');
+    expect((search.body.items as Array<{ name: string }>).map((c) => c.name)).toContain(
+      'ÖKLİD',
+    );
+  });
+
+  it('aynı ad farklı harf biçimiyle 409 döner (normalized çakışma)', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: yearId,
+      name: 'Öklİd',
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('PATCH ad değiştirir; silinen sınıf listede görünmez', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/classes');
+    const cls = (list.body.items as Array<{ id: string; name: string }>)[0];
+
+    const patched = await adminRequest('patch', `/api/v1/admin/classes/${cls.id}`).send({
+      name: 'ÖKLİD YENİ',
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.name).toBe('ÖKLİD YENİ');
+
+    const del = await adminRequest('delete', `/api/v1/admin/classes/${cls.id}`);
+    expect(del.status).toBe(204);
+
+    const after = await adminRequest('get', '/api/v1/admin/classes');
+    expect(
+      (after.body.items as Array<{ id: string }>).some((c) => c.id === cls.id),
+    ).toBe(false);
+  });
+
+  it('olmayan sınıf güncelleme/silme 404 döner', async () => {
+    expect((await adminRequest('patch', '/api/v1/admin/classes/yok').send({ name: 'X' })).status).toBe(404);
+    expect((await adminRequest('delete', '/api/v1/admin/classes/yok')).status).toBe(404);
+  });
+});
+
+describe('Ders', () => {
+  it('oluşturur ve aynı ad 409 döner', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/courses').send({
+      name: 'Geometri',
+    });
+    expect(created.status).toBe(201);
+
+    const clash = await adminRequest('post', '/api/v1/admin/courses').send({
+      name: 'geometrİ',
+    });
+    expect(clash.status).toBe(409);
+  });
+
+  it('PATCH ad değiştirir; atanmamış ders silinebilir', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/courses');
+    const course = (list.body.items as Array<{ id: string; name: string }>).find(
+      (c) => c.name === 'Geometri',
+    );
+    if (!course) throw new Error('Geometri bulunamadı');
+
+    const patched = await adminRequest('patch', `/api/v1/admin/courses/${course.id}`).send({
+      name: 'Geometri-2',
+    });
+    expect(patched.status).toBe(200);
+
+    const del = await adminRequest('delete', `/api/v1/admin/courses/${course.id}`);
+    expect(del.status).toBe(204);
+  });
+});
+
+describe('Atamalar (class_courses)', () => {
+  let classId: string;
+  let courseId: string;
+  let yearId: string;
+
+  beforeAll(async () => {
+    const years = await adminRequest('get', '/api/v1/admin/academic-years');
+    yearId = (years.body.items as Array<{ id: string; name: string }>).find(
+      (y) => y.name === YEAR.name,
+    )!.id;
+
+    const created = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: yearId,
+      name: 'PİSAGOR',
+    });
+    classId = created.body.id as string;
+
+    const course = await adminRequest('post', '/api/v1/admin/courses').send({
+      name: 'Fizik',
+    });
+    courseId = course.body.id as string;
+  });
+
+  it('oluşturur (ders günü + saat + öğretmen)', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/class-courses').send({
+      class_id: classId,
+      course_id: courseId,
+      teacher_id: 'test-teacher',
+      day_of_week: 3,
+      lesson_time: '10:30',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      class_name: 'PİSAGOR',
+      course_name: 'Fizik',
+      teacher_name: 'Test Teacher',
+      day_of_week: 3,
+    });
+  });
+
+  it('aynı sınıf-ders çifti ikinci kez 409 döner', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/class-courses').send({
+      class_id: classId,
+      course_id: courseId,
+      teacher_id: 'test-teacher',
+      day_of_week: 5,
+      lesson_time: '09:00',
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('öğretmen olmayan kullanıcıya atanamaz (404)', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/class-courses').send({
+      class_id: classId,
+      course_id: courseId,
+      teacher_id: 'test-admin',
+      day_of_week: 5,
+      lesson_time: '09:00',
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('PATCH ders günü/saati/öğretmen değiştirir', async () => {
+    const list = await adminRequest('get', `/api/v1/admin/class-courses?classId=${classId}`);
+    const cc = (list.body.items as Array<{ id: string }>)[0];
+
+    const patched = await adminRequest('patch', `/api/v1/admin/class-courses/${cc.id}`).send({
+      day_of_week: 4,
+      lesson_time: '13:00',
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toMatchObject({ day_of_week: 4, lesson_time: '13:00' });
+  });
+
+  it('sınıf filtresi listeyi süzer; silinebilir', async () => {
+    const list = await adminRequest('get', `/api/v1/admin/class-courses?classId=${classId}`);
+    expect((list.body.items as unknown[]).length).toBe(1);
+
+    const cc = (list.body.items as Array<{ id: string }>)[0];
+    const del = await adminRequest('delete', `/api/v1/admin/class-courses/${cc.id}`);
+    expect(del.status).toBe(204);
+  });
+
+  it('geçersiz saat 400 döner', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/class-courses').send({
+      class_id: classId,
+      course_id: courseId,
+      teacher_id: 'test-teacher',
+      day_of_week: 1,
+      lesson_time: '10:30:00',
+    });
+    expect(res.status).toBe(400);
+  });
+});

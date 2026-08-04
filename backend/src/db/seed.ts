@@ -271,6 +271,7 @@ export function seedDatabase(adminPassword: string): void {
     insert('courses', {
       id,
       name,
+      name_normalized: normalizeTurkish(name),
       deleted_at: null,
     });
   });
@@ -284,6 +285,7 @@ export function seedDatabase(adminPassword: string): void {
       id,
       academic_year_id: yearId,
       name,
+      name_normalized: normalizeTurkish(name),
       deleted_at: null,
     });
   });
