@@ -555,10 +555,38 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
 > açmayı engelleyebilir). Bu yüzden toplu mod, sıradaki veliyi gösteren bir
 > "gönder ve sonraki" akışı olarak tasarlanır — koordinatör listeyi tek
 > tuşla ilerletir.
+>
+> **Popup engelleme deseni (zorunlu):** `window.open` yalnızca doğrudan
+> kullanıcı jesti içinde çağrıldığında izin verilir; `send` yanıtı gelince
+> açmak engellenir. Desen:
+> 1. "Gönder" tıklandığı anda **senkron boş sekme** açılır:
+>    `const w = window.open('', '_blank')`.
+> 2. `send` yanıtı dönünce `w.location.href = waMeUrl` atanır. Yanıt çok
+>    hızlıysa sekmede kısa bir "yükleniyor" anı görülebilir — bilinçlidir.
+> 3. Hata (örn. 409 KVKK) gelirse sekme `w.close()` ile kapatılır, hata
+>    satırda gösterilir.
+> 4. `w` null ise (popup engellenmiş) sekme açılmaz; bunun yerine kullanıcıya
+>    `wa.me` linki kopyalanabilir buton olarak sunulur.
 
 **Eksik rapor durumu:** Bir hafta içinde 4 dersten 3'ü doldurulmuşsa admin
 yine de gönderebilir; digest yalnızca dolu dersleri içerir ve eksik ders
 "Bu hafta rapor girilmedi" olarak görünür.
+
+**Gönderim öncesi kontrol (KVKK — spec §9):** `send` çağrısı iki ayrı ön
+kontrol yapar, ikisi de `409 CONFLICT` döner:
+- `guardians.whatsapp_phone` boş/null ise → "Veli için WhatsApp numarası
+  tanımlı değil."
+- `guardians.consent_at` null ise → "Velinin KVKK açık rızası alınmamış."
+İki kontrol farklı hata mesajı üretir; karıştırılmaz.
+
+**`reports.status = 'sent'` kaskadı (zorunlu):** Bir digest `sent` yapıldığı
+anda, aynı transaction içinde o öğrencinin **sınıfı + haftasındaki tüm
+digest'ler** `sent` olduysa, o sınıf+haftanın `status = 'completed'` raporları
+`status = 'sent'` yapılır. Bu kaskad **gönderimden ayrı bir istek değildir**;
+`send` handler'ının kendi transaction'ında çalışır. Sonuç: veliye ulaşmış bir
+haftanın raporları §2'deki "sent → öğretmen düzenleyemez (403)" kuralına
+fiilen girer. Eksik derslerin raporları `completed` kalmaya devam eder
+(gönderilmediği için).
 
 **Yeniden gönderim:** Öğretmen raporu düzeltirse velinin linki değişmez.
 Admin dilerse yeniden gönderir:
@@ -597,13 +625,21 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
 - Öğretmene göre gruplama seçeneği ("Kim geride kalmış?").
 - Tam matris (satır = sınıf, sütun = ders) ikincil bir sekmede, yatay
   kaydırmalı olarak bulunur.
+- **"Tüm raporlar" görünümü (admin'in "tüm raporları görme" hakkının
+  karşılığı):** eksik listesinin yanında aynı sayfada ikincil bir sekme.
+  Durum filtresi (`draft` / `completed` / `sent`) ve sınıf/hafta filtresiyle
+  raporlar listelenir; satıra tıklandığında rapor **salt-okunur** açılır
+  (üst alanlar + devamsızlık/puan/not tablosu; hiçbir düzenleme UI'ı yok).
+  Bu görünüm canlı rapor verisini gösterir — digest `snapshot`'ı değil.
 
 ---
 
 ## 6. Ekranlar
 
 **Admin**
-- Dashboard: haftalık özet + eksik rapor listesi, bekleyen gönderimler
+- Dashboard (panel): haftalık özet + eksik rapor listesi, bekleyen gönderimler,
+  **tüm raporlar görünümü** (durum/sınıf/hafta filtresi + satıra tıklayınca
+  salt-okunur içerik — §5.5)
 - Eğitim yılı / hafta yönetimi
 - Sınıf, ders, öğretmen ataması (`class_courses`, ders günü dahil)
 - Öğrenci ve veli yönetimi, sınıf atama (enrollment) — 200 kayıt olduğu için
