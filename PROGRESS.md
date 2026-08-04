@@ -84,7 +84,7 @@ ve migration #2 olarak yazıldı.
 
 ### Commit
 
-`Aşama 2a — kimlik doğrulama ve yetki (JWT + OTP + middleware + rol koruması)`
+`cef93b2` — Aşama 2a: JWT + OTP kimlik doğrulama, auth/adminOnly/rateLimit middleware, rol bazlı frontend koruması, migration #2 (otp_codes)
 
 ### Güncel dosya yapısı
 
