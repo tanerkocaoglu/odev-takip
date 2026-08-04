@@ -5,6 +5,7 @@ import adminRoutes from './admin.js';
 import teacherRoutes from './teacher.js';
 import studentRoutes from './student.js';
 import filesRoutes from './files.js';
+import publicRoutes from './public.js';
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.use('/admin', adminRoutes);
 router.use('/teacher', teacherRoutes);
 router.use('/student', studentRoutes);
 router.use('/files', filesRoutes);
+router.use('/public', publicRoutes);
 
 // Tüm rotalar /api/v1 prefix'iyle başlar; bu router'a monte edilir.
 router.get('/health', (_req, res) => {
