@@ -522,3 +522,208 @@ describe('Admin ekleme', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('Veli', () => {
+  it('oluşturur; aynı telefon 409; arama çalışır', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/guardians').send({
+      full_name: 'Örnek Kişi 1',
+      phone: '+90 533 000 11 22',
+      whatsapp_phone: '+90 533 000 22 33',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.whatsapp_phone).toBe('+905330002233');
+
+    const clash = await adminRequest('post', '/api/v1/admin/guardians').send({
+      full_name: 'Başka Veli',
+      phone: '+905330001122',
+    });
+    expect(clash.status).toBe(409);
+
+    const search = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    expect(search.body.total).toBe(1);
+    expect((search.body.items as Array<{ full_name: string }>)[0].full_name).toBe(
+      'Örnek Kişi 1',
+    );
+  });
+
+  it('PATCH whatsapp_phone günceller; boş yapılabilir', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const guardian = (list.body.items as Array<{ id: string }>)[0];
+
+    const patched = await adminRequest('patch', `/api/v1/admin/guardians/${guardian.id}`).send({
+      whatsapp_phone: null,
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.whatsapp_phone).toBeNull();
+  });
+
+  it('çocuğu olan veli silinemez (409); çocuksuz veli silinir + audit', async () => {
+    // Çocuklu: test-student bağlı veli (guardians.id = test-guardian-rec)
+    const delGuardian = await adminRequest(
+      'delete',
+      '/api/v1/admin/guardians/test-guardian-rec',
+    );
+    expect(delGuardian.status).toBe(409);
+
+    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const guardian = (list.body.items as Array<{ id: string }>)[0];
+
+    const del = await adminRequest('delete', `/api/v1/admin/guardians/${guardian.id}`);
+    expect(del.status).toBe(204);
+
+    const { db } = await import('./db/index.js');
+    const log = db
+      .prepare(
+        `SELECT action FROM audit_logs WHERE entity_id = ? ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(guardian.id) as { action: string };
+    expect(log.action).toBe('guardian.delete');
+  });
+});
+
+describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
+  let yearId: string;
+  let week2Id: string;
+  let classAId: string;
+  let classBId: string;
+  let guardianId: string;
+
+  beforeAll(async () => {
+    const years = await adminRequest('get', '/api/v1/admin/academic-years');
+    yearId = (years.body.items as Array<{ id: string; name: string }>).find(
+      (y) => y.name === YEAR.name,
+    )!.id;
+
+    const weeks = await adminRequest('get', `/api/v1/admin/weeks?academicYearId=${yearId}`);
+    const existingWeek2 = (weeks.body.items as Array<{ id: string; week_no: number }>).find(
+      (w) => w.week_no === 2,
+    );
+    if (existingWeek2) {
+      week2Id = existingWeek2.id;
+    } else {
+      const w2 = await adminRequest('post', '/api/v1/admin/weeks').send({
+        academic_year_id: yearId,
+        week_no: 2,
+        start_date: '2026-09-08',
+        end_date: '2026-09-14',
+        label: '08 - 14 Eylül',
+      });
+      week2Id = w2.body.id as string;
+    }
+
+    const a = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: yearId,
+      name: 'SEVA',
+    });
+    classAId = a.body.id as string;
+
+    const b = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: yearId,
+      name: 'OMEGA',
+    });
+    classBId = b.body.id as string;
+
+    const g = await adminRequest('post', '/api/v1/admin/guardians').send({
+      full_name: 'Veli Öğrenci',
+      phone: '+905339990001',
+    });
+    guardianId = g.body.id as string;
+  });
+
+  it('öğrenci oluşturur (users + students + enrollment tek akış)', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/students').send({
+      full_name: 'Test Öğrenci Yeni',
+      phone: '+905339990002',
+      guardian_id: guardianId,
+      class_id: classAId,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.class_name).toBe('SEVA');
+  });
+
+  it('arama veli adıyla da çalışır; sayfalama total doğru', async () => {
+    const search = await adminRequest('get', '/api/v1/admin/students?q=veli+ogrenci');
+    expect(search.status).toBe(200);
+    expect(search.body.total).toBe(1);
+
+    const byClass = await adminRequest('get', `/api/v1/admin/students?classId=${classAId}`);
+    expect(byClass.body.total).toBe(1);
+  });
+
+  it('sınıf değişikliği: hafta 2 seçilince yeni start = hafta 2, eski end = hafta 1 sonu', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/students?q=test+ogrenci+yeni');
+    const student = (list.body.items as Array<{ id: string; student_id: string }>)[0];
+
+    const res = await adminRequest(
+      'post',
+      `/api/v1/admin/students/${student.id}/change-class`,
+    ).send({ class_id: classBId, week_id: week2Id });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      class_id: classBId,
+      start_date: '2026-09-08', // week 2 başlangıcı
+      previous_enrollment_end: '2026-09-07', // week 1 sonu
+    });
+
+    // Eski sınıfta görünmez, yeni sınıfta görünür
+    const inA = await adminRequest('get', `/api/v1/admin/students?classId=${classAId}`);
+    expect(inA.body.total).toBe(0);
+    const inB = await adminRequest('get', `/api/v1/admin/students?classId=${classBId}`);
+    expect(inB.body.total).toBe(1);
+
+    // Audit log
+    const { db } = await import('./db/index.js');
+    const log = db
+      .prepare(
+        `SELECT action, diff FROM audit_logs WHERE entity_type = 'student' ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get() as { action: string; diff: string };
+    expect(log.action).toBe('student.class_change');
+    expect(JSON.parse(log.diff)).toMatchObject({
+      from_class_id: classAId,
+      to_class_id: classBId,
+    });
+  });
+
+  it('aynı sınıfa taşıma ve yıl dışı hafta 409/400 döner', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/students?q=test+ogrenci+yeni');
+    const student = (list.body.items as Array<{ id: string }>)[0];
+
+    const same = await adminRequest(
+      'post',
+      `/api/v1/admin/students/${student.id}/change-class`,
+    ).send({ class_id: classBId, week_id: week2Id });
+    expect(same.status).toBe(409);
+
+    // 2027-2028 yılındaki sınıf ile 2026 haftası → 400
+    const years = await adminRequest('get', '/api/v1/admin/academic-years');
+    const otherYear = (years.body.items as Array<{ id: string; name: string }>).find(
+      (y) => y.name === '2027-2028',
+    )!;
+    const otherClass = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: otherYear.id,
+      name: 'YENİ YIL SINIFI',
+    });
+    const wrong = await adminRequest(
+      'post',
+      `/api/v1/admin/students/${student.id}/change-class`,
+    ).send({ class_id: otherClass.body.id, week_id: week2Id });
+    expect(wrong.status).toBe(400);
+  });
+
+  it('silinen öğrenci listeden kaybolur ve giriş yapamaz', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/students').send({
+      full_name: 'Silinecek Öğrenci',
+      phone: '+905339990003',
+      guardian_id: guardianId,
+      class_id: classBId,
+    });
+    const studentId = created.body.id as string;
+
+    const del = await adminRequest('delete', `/api/v1/admin/students/${studentId}`);
+    expect(del.status).toBe(204);
+
+    const search = await adminRequest('get', '/api/v1/admin/students?q=silinecek');
+    expect(search.body.total).toBe(0);
+  });
+});

@@ -23,6 +23,18 @@ import { hashPassword } from '../utils/hash.js';
 import { normalizePhone } from '../utils/phone.js';
 import { writeAuditLog } from '../services/audit.js';
 import { parsePagination, paged } from '../utils/pagination.js';
+import { getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
+
+/** Yerel takvimde bir gün öncesi (YYYY-MM-DD) — UTC çıkarımı yapılmaz. */
+function prevDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - 1);
+  const py = date.getFullYear();
+  const pm = String(date.getMonth() + 1).padStart(2, '0');
+  const pd = String(date.getDate()).padStart(2, '0');
+  return `${py}-${pm}-${pd}`;
+}
 
 const router = Router();
 
@@ -924,5 +936,597 @@ router.post(
     res.status(201).json(row);
   }),
 );
+
+// ---------- Veli ----------
+
+const guardianSchema = z.object({
+  full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
+  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
+  whatsapp_phone: z.string().trim().min(10).optional().nullable(),
+  phone_secondary: z.string().trim().min(10).optional().nullable(),
+});
+
+router.get('/guardians', (req, res) => {
+  const pagination = parsePagination(req.query);
+  const q = typeof req.query.q === 'string' ? normalizeTurkish(req.query.q.trim()) : '';
+
+  const where = [`u.role = 'guardian'`, `u.deleted_at IS NULL`];
+  const values: Array<string | number> = [];
+  if (q) {
+    where.push(`u.full_name_normalized LIKE ?`);
+    values.push(`%${q}%`);
+  }
+
+  const total = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM users u WHERE ${where.join(' AND ')}`,
+      )
+      .get(...values) as { c: number }
+  ).c;
+
+  const rows = db
+    .prepare(
+      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.phone, u.email, u.is_active,
+              g.whatsapp_phone, g.phone_secondary, g.consent_at,
+              (SELECT COUNT(*) FROM students s
+                WHERE s.guardian_id = g.id AND s.deleted_at IS NULL) AS child_count
+       FROM users u
+       JOIN guardians g ON g.user_id = u.id AND g.deleted_at IS NULL
+       WHERE ${where.join(' AND ')}
+       ORDER BY u.full_name
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...values, pagination.limit, pagination.offset);
+
+  res.json(paged(rows, total, pagination));
+});
+
+router.post('/guardians', (req, res) => {
+  const input = guardianSchema.parse(req.body);
+  const phone = normalizePhone(input.phone);
+  const whatsapp = input.whatsapp_phone ? normalizePhone(input.whatsapp_phone) : null;
+  const secondary = input.phone_secondary ? normalizePhone(input.phone_secondary) : null;
+
+  const clash = db
+    .prepare(`SELECT id FROM users WHERE phone = ? AND deleted_at IS NULL`)
+    .get(phone);
+  if (clash) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Bu telefon ile kayıtlı bir kullanıcı var.',
+    );
+  }
+
+  const userId = randomUUID();
+  const guardianId = randomUUID();
+  const now = new Date().toISOString();
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, phone, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, 'guardian', 1, 1, NULL, ?)`,
+    ).run(userId, input.full_name, normalizeTurkish(input.full_name), phone, now);
+
+    db.prepare(
+      `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
+       VALUES (?, ?, ?, ?, NULL, NULL)`,
+    ).run(guardianId, userId, whatsapp, secondary);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  const row = db
+    .prepare(
+      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.phone, g.whatsapp_phone, g.phone_secondary
+       FROM users u JOIN guardians g ON g.user_id = u.id WHERE u.id = ?`,
+    )
+    .get(userId);
+  res.status(201).json(row);
+});
+
+const guardianPatchSchema = z.object({
+  full_name: z.string().trim().min(1).optional(),
+  phone: z.string().trim().min(10).optional(),
+  whatsapp_phone: z.string().trim().min(10).optional().nullable(),
+  phone_secondary: z.string().trim().min(10).optional().nullable(),
+});
+
+router.patch('/guardians/:id', (req, res) => {
+  const { id } = req.params;
+  const input = guardianPatchSchema.parse(req.body);
+
+  const current = db
+    .prepare(
+      `SELECT g.id, g.user_id FROM users u
+       JOIN guardians g ON g.user_id = u.id AND g.deleted_at IS NULL
+       WHERE g.id = ? AND u.role = 'guardian' AND u.deleted_at IS NULL`,
+    )
+    .get(id) as { id: string; user_id: string } | undefined;
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
+  }
+
+  const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
+  if (phone !== undefined) {
+    const clash = db
+      .prepare(
+        `SELECT id FROM users WHERE phone = ? AND id != ? AND deleted_at IS NULL`,
+      )
+      .get(phone, current.user_id);
+    if (clash) {
+      throw new AppError(
+        'CONFLICT',
+        409,
+        'Bu telefon ile kayıtlı bir kullanıcı var.',
+      );
+    }
+  }
+
+  const userSets: string[] = [];
+  const userValues: Array<string | number> = [];
+  if (input.full_name !== undefined) {
+    userSets.push(`full_name = ?`, `full_name_normalized = ?`);
+    userValues.push(input.full_name, normalizeTurkish(input.full_name));
+  }
+  if (phone !== undefined) {
+    userSets.push(`phone = ?`);
+    userValues.push(phone);
+  }
+  if (userSets.length > 0) {
+    userValues.push(current.user_id);
+    db.prepare(`UPDATE users SET ${userSets.join(', ')} WHERE id = ?`).run(...userValues);
+  }
+
+  const guardianSets: string[] = [];
+  const guardianValues: Array<string | null> = [];
+  for (const key of ['whatsapp_phone', 'phone_secondary'] as const) {
+    const value = input[key];
+    if (value !== undefined) {
+      guardianSets.push(`${key} = ?`);
+      guardianValues.push(value ? normalizePhone(value) : null);
+    }
+  }
+  if (guardianSets.length > 0) {
+    guardianValues.push(current.id);
+    db.prepare(
+      `UPDATE guardians SET ${guardianSets.join(', ')} WHERE id = ?`,
+    ).run(...guardianValues);
+  }
+
+  const row = db
+    .prepare(
+      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.phone, g.whatsapp_phone, g.phone_secondary
+       FROM users u JOIN guardians g ON g.user_id = u.id WHERE g.id = ?`,
+    )
+    .get(id);
+  res.json(row);
+});
+
+router.delete('/guardians/:id', (req, res) => {
+  const { id } = req.params;
+  const current = db
+    .prepare(
+      `SELECT g.id, g.user_id FROM users u
+       JOIN guardians g ON g.user_id = u.id AND g.deleted_at IS NULL
+       WHERE g.id = ? AND u.role = 'guardian' AND u.deleted_at IS NULL`,
+    )
+    .get(id) as { id: string; user_id: string } | undefined;
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
+  }
+
+  // Çocuğu olan veli silinemez.
+  const children = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM students
+       WHERE guardian_id = ? AND deleted_at IS NULL`,
+    )
+    .get(current.id) as { c: number };
+  if (children.c > 0) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Bu velinin kayıtlı öğrencileri var, silinemez.',
+    );
+  }
+
+  const now = new Date().toISOString();
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `UPDATE users SET deleted_at = ?, token_version = token_version + 1 WHERE id = ?`,
+    ).run(now, current.user_id);
+    db.prepare(`UPDATE guardians SET deleted_at = ? WHERE id = ?`).run(now, current.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  writeAuditLog({
+    actorId: req.user!.id,
+    action: 'guardian.delete',
+    entityType: 'guardian',
+    entityId: current.id,
+  });
+
+  res.status(204).end();
+});
+
+// ---------- Öğrenci ----------
+
+const studentSchema = z.object({
+  full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
+  phone: z.string().trim().min(10, 'Geçerli bir telefon numarası girin.'),
+  guardian_id: z.string().trim().min(1),
+  class_id: z.string().trim().min(1),
+});
+
+router.get('/students', (req, res) => {
+  const pagination = parsePagination(req.query);
+  const q = typeof req.query.q === 'string' ? normalizeTurkish(req.query.q.trim()) : '';
+  const classId = typeof req.query.classId === 'string' ? req.query.classId : undefined;
+
+  const where = [
+    `u.role = 'student'`,
+    `u.deleted_at IS NULL`,
+    `s.deleted_at IS NULL`,
+  ];
+  const values: Array<string | number> = [];
+  if (q) {
+    where.push(`(u.full_name_normalized LIKE ? OR gu.full_name_normalized LIKE ?)`);
+    values.push(`%${q}%`, `%${q}%`);
+  }
+  if (classId) {
+    where.push(`e.class_id = ?`);
+    values.push(classId);
+  }
+
+  const total = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS c
+         FROM users u
+         JOIN students s ON s.user_id = u.id AND s.deleted_at IS NULL
+         JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
+         LEFT JOIN users gu ON gu.id = (
+           SELECT g.user_id FROM guardians g WHERE g.id = s.guardian_id AND g.deleted_at IS NULL
+         )
+         WHERE ${where.join(' AND ')}`,
+      )
+      .get(...values) as { c: number }
+  ).c;
+
+  const rows = db
+    .prepare(
+      `SELECT u.id, u.full_name, u.phone, u.is_active,
+              s.id AS student_id, s.guardian_id,
+              gu.full_name AS guardian_name,
+              c.name AS class_name, e.class_id
+       FROM users u
+       JOIN students s ON s.user_id = u.id AND s.deleted_at IS NULL
+       JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
+       LEFT JOIN guardians g ON g.id = s.guardian_id AND g.deleted_at IS NULL
+       LEFT JOIN users gu ON gu.id = g.user_id
+       JOIN classes c ON c.id = e.class_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY u.full_name
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...values, pagination.limit, pagination.offset);
+
+  res.json(paged(rows, total, pagination));
+});
+
+router.post('/students', (req, res) => {
+  const input = studentSchema.parse(req.body);
+  const phone = normalizePhone(input.phone);
+
+  const clash = db
+    .prepare(`SELECT id FROM users WHERE phone = ? AND deleted_at IS NULL`)
+    .get(phone);
+  if (clash) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Bu telefon ile kayıtlı bir kullanıcı var.',
+    );
+  }
+
+  const guardian = db
+    .prepare(
+      `SELECT g.id FROM guardians g
+       JOIN users u ON u.id = g.user_id
+       WHERE g.id = ? AND g.deleted_at IS NULL AND u.deleted_at IS NULL`,
+    )
+    .get(input.guardian_id);
+  if (!guardian) {
+    throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
+  }
+
+  const cls = db
+    .prepare(`SELECT id FROM classes WHERE id = ? AND deleted_at IS NULL`)
+    .get(input.class_id);
+  if (!cls) {
+    throw new AppError('NOT_FOUND', 404, 'Sınıf bulunamadı.');
+  }
+
+  const userId = randomUUID();
+  const studentId = randomUUID();
+  const enrollmentId = randomUUID();
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, phone, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
+    ).run(userId, input.full_name, normalizeTurkish(input.full_name), phone, now);
+
+    db.prepare(
+      `INSERT INTO students (id, user_id, guardian_id, deleted_at)
+       VALUES (?, ?, ?, NULL)`,
+    ).run(studentId, userId, input.guardian_id);
+
+    db.prepare(
+      `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+       VALUES (?, ?, ?, ?, NULL)`,
+    ).run(enrollmentId, studentId, input.class_id, today);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  const row = db
+    .prepare(
+      `SELECT u.id, u.full_name, u.phone, s.id AS student_id, c.name AS class_name
+       FROM users u
+       JOIN students s ON s.user_id = u.id
+       JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
+       JOIN classes c ON c.id = e.class_id
+       WHERE u.id = ?`,
+    )
+    .get(userId);
+  res.status(201).json(row);
+});
+
+const studentPatchSchema = z.object({
+  full_name: z.string().trim().min(1).optional(),
+  phone: z.string().trim().min(10).optional(),
+  guardian_id: z.string().trim().min(1).optional(),
+});
+
+router.patch('/students/:id', (req, res) => {
+  const { id } = req.params;
+  const input = studentPatchSchema.parse(req.body);
+
+  const current = db
+    .prepare(
+      `SELECT s.id AS student_id FROM users u
+       JOIN students s ON s.user_id = u.id AND s.deleted_at IS NULL
+       WHERE u.id = ? AND u.role = 'student' AND u.deleted_at IS NULL`,
+    )
+    .get(id);
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Öğrenci bulunamadı.');
+  }
+
+  if (input.guardian_id !== undefined) {
+    const guardian = db
+      .prepare(
+        `SELECT g.id FROM guardians g
+         JOIN users u ON u.id = g.user_id
+         WHERE g.id = ? AND g.deleted_at IS NULL AND u.deleted_at IS NULL`,
+      )
+      .get(input.guardian_id);
+    if (!guardian) {
+      throw new AppError('NOT_FOUND', 404, 'Veli bulunamadı.');
+    }
+  }
+
+  const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
+  if (phone !== undefined) {
+    const clash = db
+      .prepare(`SELECT id FROM users WHERE phone = ? AND id != ? AND deleted_at IS NULL`)
+      .get(phone, id);
+    if (clash) {
+      throw new AppError(
+        'CONFLICT',
+        409,
+        'Bu telefon ile kayıtlı bir kullanıcı var.',
+      );
+    }
+  }
+
+  const userSets: string[] = [];
+  const userValues: Array<string | number> = [];
+  if (input.full_name !== undefined) {
+    userSets.push(`full_name = ?`, `full_name_normalized = ?`);
+    userValues.push(input.full_name, normalizeTurkish(input.full_name));
+  }
+  if (phone !== undefined) {
+    userSets.push(`phone = ?`);
+    userValues.push(phone);
+  }
+  if (userSets.length > 0) {
+    userValues.push(id);
+    db.prepare(`UPDATE users SET ${userSets.join(', ')} WHERE id = ?`).run(...userValues);
+  }
+
+  if (input.guardian_id !== undefined) {
+    db.prepare(`UPDATE students SET guardian_id = ? WHERE user_id = ?`).run(
+      input.guardian_id,
+      id,
+    );
+  }
+
+  const row = db
+    .prepare(
+      `SELECT u.id, u.full_name, u.phone, s.id AS student_id, s.guardian_id
+       FROM users u JOIN students s ON s.user_id = u.id WHERE u.id = ?`,
+    )
+    .get(id);
+  res.json(row);
+});
+
+// Sınıf değişikliği — hafta sınırında (spec.md §3.1):
+// Admin bir hafta seçer; seçilen haftanın start_date'i yeni enrollment'ın
+// start_date'i, önceki ders haftasının end_date'i eski enrollment'ın
+// end_date'i olur. Serbest tarih girilmez — kural UI seviyesinde zorlanır.
+const changeClassSchema = z.object({
+  class_id: z.string().trim().min(1),
+  week_id: z.string().trim().min(1),
+});
+
+router.post('/students/:id/change-class', (req, res) => {
+  const { id } = req.params;
+  const input = changeClassSchema.parse(req.body);
+
+  const current = db
+    .prepare(
+      `SELECT s.id AS student_id FROM users u
+       JOIN students s ON s.user_id = u.id AND s.deleted_at IS NULL
+       WHERE u.id = ? AND u.role = 'student' AND u.deleted_at IS NULL`,
+    )
+    .get(id) as { student_id: string } | undefined;
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Öğrenci bulunamadı.');
+  }
+
+  const targetClass = db
+    .prepare(`SELECT id, academic_year_id FROM classes WHERE id = ? AND deleted_at IS NULL`)
+    .get(input.class_id) as { id: string; academic_year_id: string } | undefined;
+  if (!targetClass) {
+    throw new AppError('NOT_FOUND', 404, 'Sınıf bulunamadı.');
+  }
+
+  const week = db
+    .prepare(`SELECT * FROM weeks WHERE id = ?`)
+    .get(input.week_id) as WeekRecord | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  if (week.academic_year_id !== targetClass.academic_year_id) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Seçilen hafta ile hedef sınıf aynı eğitim yılında olmalı.',
+    );
+  }
+
+  const activeEnrollment = db
+    .prepare(
+      `SELECT id, class_id FROM enrollments
+       WHERE student_id = ? AND end_date IS NULL`,
+    )
+    .get(current.student_id) as { id: string; class_id: string } | undefined;
+  if (!activeEnrollment) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Bu öğrencinin aktif sınıf kaydı yok.',
+    );
+  }
+  if (activeEnrollment.class_id === targetClass.id) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Öğrenci zaten bu sınıfta.',
+    );
+  }
+
+  // Önceki ders haftası yoksa (yılın ilk haftası) eski kayıt, haftanın
+  // başlangıcından bir gün önce kapatılır.
+  const allWeeks = db
+    .prepare(`SELECT * FROM weeks WHERE academic_year_id = ?`)
+    .all(week.academic_year_id) as unknown as WeekRecord[];
+  const previousWeek = getPreviousWeek(allWeeks, week);
+
+  const newStart = week.start_date;
+  const oldEnd = previousWeek ? previousWeek.end_date : prevDay(week.start_date);
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(`UPDATE enrollments SET end_date = ? WHERE id = ?`).run(
+      oldEnd,
+      activeEnrollment.id,
+    );
+    db.prepare(
+      `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+       VALUES (?, ?, ?, ?, NULL)`,
+    ).run(randomUUID(), current.student_id, targetClass.id, newStart);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  writeAuditLog({
+    actorId: req.user!.id,
+    action: 'student.class_change',
+    entityType: 'student',
+    entityId: current.student_id,
+    diff: {
+      from_class_id: activeEnrollment.class_id,
+      to_class_id: targetClass.id,
+      week_id: week.id,
+      old_end_date: oldEnd,
+      new_start_date: newStart,
+    },
+  });
+
+  res.json({
+    message: 'Sınıf değişikliği kaydedildi.',
+    previous_class_id: activeEnrollment.class_id,
+    class_id: targetClass.id,
+    start_date: newStart,
+    previous_enrollment_end: oldEnd,
+  });
+});
+
+router.delete('/students/:id', (req, res) => {
+  const { id } = req.params;
+  const current = db
+    .prepare(
+      `SELECT s.id AS student_id FROM users u
+       JOIN students s ON s.user_id = u.id AND s.deleted_at IS NULL
+       WHERE u.id = ? AND u.role = 'student' AND u.deleted_at IS NULL`,
+    )
+    .get(id);
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Öğrenci bulunamadı.');
+  }
+
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(`UPDATE users SET deleted_at = ?, token_version = token_version + 1 WHERE id = ?`).run(now, id);
+    db.prepare(`UPDATE students SET deleted_at = ? WHERE user_id = ?`).run(now, id);
+    // Aktif enrollment kapatılır (tarihli geçmiş korunur).
+    db.prepare(
+      `UPDATE enrollments SET end_date = ?
+       WHERE student_id = ? AND end_date IS NULL`,
+    ).run(today, current.student_id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  res.status(204).end();
+});
 
 export default router;
