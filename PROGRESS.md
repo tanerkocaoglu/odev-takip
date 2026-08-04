@@ -5,6 +5,171 @@
 
 ---
 
+## Aşama 4 — Ödev ve teslim ✅
+
+### Süreç özeti
+
+`homeworks` kaydı raporla birlikte draft olarak zaten oluşuyordu (Aşama 3);
+öğrenci "Ödevlerim" ekranında yalnızca `completed`/`sent` raporların ödevleri
+görünür (karar noktası 1). Teslim dosyaları `submissions.files` JSON'undan
+ayrılıp tek doğru kaynak olan `submission_files` tablosuna taşındı (migration
+#4 — karar noktası 2). Multer + heic-convert + sharp ile HEIC→JPEG ve
+görsel küçültme (2000px, q80) yapılır; PDF aynen saklanır. Dosyalara
+`express.static` yerine korumalı `GET /api/v1/files/:key` rotası üzerinden
+erişilir (rol × sahiplik matrisi). Öğretmen teslim kontrol ekranı bir ödevin
+tüm teslimlerini gezdirir ve "İncelendi" işaretler. `is_late`, submitted_at'ın
+Europe/Istanbul yerel günü > due_date ise 1 olur (kullanıcı kararı).
+
+### Yapılanlar
+
+**Spec + şema**
+- `spec.md` §3.2: `submissions.files` JSON kaldırıldı; **`submission_files`**
+  (id, submission_id, key UNIQUE, filename, size, mime, ext) tek doğru kaynak
+  olarak eklendi (migration #4'ten önce spec güncellendi — kural #4).
+- Migration #4: `ALTER TABLE submissions DROP COLUMN files` +
+  `CREATE TABLE submission_files` + indeks; #1-3'e dokunulmadı (dondurulmuş).
+
+**Backend (`services/storage.ts`, `middleware/upload.ts`)**
+- `saveUpload`: mime/uzantı çözümleme → HEIC ise `heic-convert` (JPEG buffer;
+  başarısızlıkta Türkçe hata "Bu fotoğraf formatı işlenemedi, lütfen JPEG
+  olarak yükleyin.") → sharp (`rotate()` + `resize` 2000px `inside` +
+  `jpeg({quality:80})`) → `backend/uploads`'a yaz. PDF aynen. Ham dosya
+  saklanmaz. Key: `{timestamp}-{randomHex}.{ext}`.
+- `localPathFor(key)`: sıkı key regex'i ile path traversal koruması.
+- Multer `memoryStorage`, `fileFilter` (jpg/jpeg/png/heic/pdf), 10 MB/dosya,
+  10 dosya. Multer limit ihlalleri `errorHandler`'da 400 VALIDATION_ERROR'a
+  çevrildi.
+- `utils/time.ts`: `localDateISO` (Europe/Istanbul) + `isLateSubmission`.
+- **`routes/student.ts`** (tamamı `requireAuth`, student rolü):
+  - `GET /student/homeworks` — enrollment eşleşmesi + `completed/sent` +
+    `description <> ''`; puan/not/rapor asla dönmez; teslim dosyalarıyla.
+  - `POST /student/homeworks/:id/submit` — çoklu dosya; `is_late` otomatik;
+    yeniden yüklemede eski dosyalar değiştirilir (commit sonrası diskten silinir).
+- **`routes/teacher.ts` ekleri:**
+  - `GET /teacher/submissions` (seçici: teslimi olan ödevler + sayım) ve
+    `?homework_id=` (teslim detayı + dosyalar).
+  - `PATCH /teacher/submissions/:id` — **zincir yetki handler ilk satırında:**
+    submission → homework → class_course → `teacher_id = req.user.id`
+    (kullanıcı kararı 2).
+  - `buildReportPayload`'a teslim rozeti + dosya önizleme anahtarları eklendi.
+- **`routes/files.ts`** — `GET /files/:key`: `auth` + yetki matrisi (öğrenci:
+  kendi; öğretmen: kendi ödevinin; veli: çocuğunun; admin: hepsi);
+  `files_purged_at` → 404; yerel `res.sendFile()`; `express.static` kullanılmaz.
+- `routes/index.ts` — student + files mount.
+- Bağımlılıklar `backend/package.json`'a: multer, sharp, heic-convert,
+  @types/multer; `UPLOADS_DIR` env'i ile testler ayrı temp dizin kullanır.
+
+**Frontend**
+- `services/api.ts`: `studentApi` (homeworks, submit — FormData'da Content-Type
+  set edilmez), `teacherApi` teslim uçları, `fileUrl(key)`.
+- `pages/student/HomeworkListPage.tsx` ("Ödevlerim", `comfortable`): ders/
+  öğretmen/hafta/açıklama/son tarih + teslim rozetleri (yüklendi/geç/yüklenmedi),
+  çoklu dosya seçimi (uzantı + 10MB + 10 dosya doğrulaması), not, "Gönder",
+  yüklenen dosya linkleri. Puan/not yok.
+- `pages/teacher/SubmissionsReviewPage.tsx` ("Teslim kontrol"): seçici panel +
+  teslim listesi, dosya açma, "İncelendi olarak işaretle".
+- `ReportEntryPage`: öğrenci satırında teslim rozeti (mobil kart dahil) —
+  tıklayınca dosyayı açar.
+- `App.tsx` + `AppLayout`: `/student` rotası + "Ödevlerim"/"Teslimler" nav;
+  `DashboardPage` giriş sonrası role göre yönlendirir (student→/student vb.).
+
+**Testler**
+- `storage.test.ts` (6): key formatı, PNG→JPEG küçültme, PDF aynen, HEIC hata
+  mesajı, mime yoksa uzantıdan çözüm, path traversal.
+- `student.test.ts` (21): tamamlanmış ödev listesi (draft/başka sınıf gizli,
+  puan sızması yok), yükleme → JPEG saklama, `is_late` (Istanbul), yeniden
+  yükleme, boş/hatalı tip/10MB 400'leri, **dosya yetki matrisi** (öğrenci/
+  öğretmen/admin/veli 200; başka öğrenci + başka öğretmen 403), teslim listesi,
+  PATCH reviewed (zincir yetki + başka öğretmen 403).
+- Frontend `student.test.tsx` (6): studentApi birim + HomeworkListPage
+  (rozetler, boş durum, geç rozet, yükleme akışı).
+
+### Doğrulamalar (adım adım kanıt)
+
+**Statik**
+- `npm run typecheck` (kök + backend) → ✅ `tsc --noEmit` temiz
+- `npm run lint` → ✅ `eslint .` temiz; `npm run build` → ✅ (vite)
+
+**Backend testleri** — ✅ 155/155 (12 dosya; önceki 128 + yeni 27)
+- `src/student.test.ts` (21) + `src/storage.test.ts` (6) ayrıca doğrulandı.
+- Taze `test.db` + `db:reset` üzerinde sıralı tam paket ✅.
+- `migration-backfill.test.ts` güncellendi: rewind #2 durumuna `submission_files`
+  düşürme + `submissions.files` geri eklemeyi de içerir; #4 sonrası `user_version`
+  beklentisi 4.
+
+**Frontend testleri** — ✅ 26/26 (4 dosya; önceki 20 + yeni 6)
+- `src/student.test.tsx` (6); `App.test.tsx`'in öğretmen /admin testi rol
+  yönlendirmesine göre güncellendi ("Bu hafta doldurulacaklar").
+
+**Canlı sunucu (gerçek app.db, `db:reset`) — 19/19 adım ✅**
+1. `GET /student/homeworks` 200 → tamamlanmış ödev listede; yanıtta
+   puan/not/konu sızmıyor.
+2. `POST /submit` PNG → 200, `is_late=true` (seed week-19 ödevi geçmiş);
+   dosya diskte JPEG olarak saklandı (270 B, `<200 KB` küçültme kanıtı).
+3. Dosya erişimi: sahip öğrenci ✅ 200 · öğretmen (kendi ödevi) ✅ 200 ·
+   admin ✅ 200 · **başka öğrenci ✅ 403** · **başka öğretmen ✅ 403**.
+4. Öğretmen `GET /teacher/submissions?homework_id` ✅ teslimi görüyor;
+   `PATCH reviewed` ✅ 200; başka öğretmenle ✅ 403 (zincir yetki).
+5. Rapor giriş payload'ında öğrenci satırı teslim rozeti ✅ (dosya anahtarıyla).
+6. Temizlik: teslim + dosya silindi, ardından `db:reset` ile app.db temizlendi.
+
+### Çözülen sorunlar
+
+- **Test DB bozulması (migration-backfill):** Rewind #2 durumuna #4'ün
+  `DROP COLUMN files`'ı hesaba katmıyordu; test.db "v3 + files yok +
+  submission_files var" tutarsız durumuna düşüyordu. Rewind'a `DROP TABLE
+  submission_files` + `ALTER TABLE submissions ADD COLUMN files` eklendi;
+  `user_version` beklentisi 4'e çekildi.
+- **`resetDb` FK sırası:** `submission_files` listeye `submissions`'tan önce
+  eklendi (yoksa DELETE submissions FK ihlali veriyordu); schema.test.ts
+  temizlik listesi de güncellendi.
+- **Express 5 param tipi:** `asyncHandler`'da `req.params.id` `string|string[]`
+  oluyordu → `asyncHandler<{ id: string }>`.
+- **`heic-convert` tipi:** paketin tipi yok → `backend/src/heic-convert.d.ts`.
+- **Multer hataları 500 düşüyordu:** `MulterError` (10 MB / 10 dosya)
+  `errorHandler`'da 400 VALIDATION_ERROR'a çevrildi.
+- **Seed kimlik ayrımı:** canlı doğrulamada `users.id` (`seed-user-student-001`)
+  ile `students.id` (`seed-student-001`) farklı — token `id` users.id,
+  `student_id` students.id olmalı.
+- **`is_late` test beklentisi:** due_date geçmişte olan ödeve yükleme gerçekten
+  geç sayılır; "normal teslim" testi due'yu geleceğe alarak düzeltildi.
+
+### Commit
+
+`9b0cf0a` — Aşama 4: ödev ve teslim (submission_files migration #4, storage/
+sharp/HEIC, korumalı dosya rotası, student rotaları, teslim kontrol, rozetler,
+testler + spec.md güncellemesi)
+
+### Güncel dosya yapısı (Aşama 4 ekleri)
+
+```
+/backend/src
+  /middleware/upload.ts        (yeni — multer memory + tipler + limitler)
+  /routes/student.ts           (yeni — Ödevlerim + submit)
+  /routes/files.ts             (yeni — korumalı dosya rotası)
+  /services/storage.ts         (yeni — key + HEIC/sharp + yerel disk)
+  /utils/time.ts               (yeni — Istanbul yerel gün + isLate)
+  heic-convert.d.ts            (yeni — tip bildirimi)
+  storage.test.ts student.test.ts   (yeni)
+  /db/migrations.ts            (+ #4 submission_files)
+  /db/migration-backfill.test.ts /db/schema.test.ts  (rewind güncellendi)
+  /routes/teacher.ts           (+ teslim listesi/reviewed + rozet payload)
+  /routes/index.ts             (+ student/files mount)
+  errors.ts                    (+ MulterError → 400)
+  vitest.config.ts             (+ UPLOADS_DIR)
+/src
+  /pages/student/HomeworkListPage.tsx        (yeni)
+  /pages/teacher/SubmissionsReviewPage.tsx   (yeni)
+  /pages/teacher/ReportEntryPage.tsx         (+ teslim rozetleri)
+  /services/api.ts (+ studentApi, teacherApi teslim, fileUrl)
+  /types.ts (+ submission/homework tipleri)
+  App.tsx AppLayout.tsx DashboardPage.tsx    (rol yönlendirme + rotalar)
+  student.test.tsx (yeni)
+spec.md  (§3.2 submissions.files → submission_files)
+```
+
+---
+
 ## Aşama 3 — Toplu rapor giriş ekranı ✅
 
 ### Süreç özeti
