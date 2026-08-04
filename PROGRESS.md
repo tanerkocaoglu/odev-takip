@@ -5,6 +5,133 @@
 
 ---
 
+## Aşama 2a retrofit — OTP kaldırıldı, username + şifre girişi ✅
+
+### Süreç özeti
+
+OTP/telefon tabanlı veli/öğrenci girişi tamamen kaldırıldı; yerine otomatik
+üretilen `username` + admin'in belirlediği başlangıç şifresi geldi
+(spec.md §2.1, §3.1). `users.phone` → `users.username` (migration #5),
+`otp_codes` tablosu düşürüldü, `guardians.whatsapp_phone` zorunlu yapıldı
+(fallback yok). Tek `/auth/login` endpoint'i `identifier` (email veya username)
+alıp rolü buna göre çözer; admin/öğretmen tarafı işlevsel olarak değişmedi.
+Veli/öğrenci için şifre unutma çıkışı `POST /students/:id/reset-password` ve
+`POST /guardians/:id/reset-password` ile kapatıldı (öğretmen deseni, tv+1,
+audit).
+
+### Yapılanlar
+
+**Spec + şema**
+- spec.md §2.1/§3.1 (kullanıcı tarafından güncellendi): OTP yok; `users.username`;
+  `guardians.whatsapp_phone` NOT NULL.
+- **Migration #5 (`username_login`):** `DROP INDEX idx_users_phone` → `DROP COLUMN
+  phone` → `ADD COLUMN username` → `idx_users_username` + `idx_users_email`
+  (kısmi) → `DROP TABLE otp_codes`. Dondurulmuş #1-4'e dokunulmadı.
+- Backfill: migration yalnızca şema (UNIQUE indeks NULL'a izin verir); mevcut
+  (seed) satırların username/şifresi seed'in "boşluk doldurma" geçişiyle atanır.
+- **NOT (Aşama 6 adayı):** `users.password_hash` ve `guardians.whatsapp_phone`
+  DB seviyesinde **NOT NULL değildir** — yalnızca uygulama seviyesinde (Zod +
+  tüm yazma yolları) zorlanıyor. SQLite'ta mevcut sütun NOT NULL'a
+  `ALTER` ile çevrilemez; üretime geçmeden önce tablo yeniden kurulumu
+  (12 adımlı rebuild, migration runner'da `PRAGMA foreign_keys` düzenlemesi
+  gerekir) ile kapatılmalı.
+
+**Backend**
+- Silindi: `services/otp.ts`, `services/sms.ts`, `services/otp.test.ts`,
+  `SMS_PROVIDER_KEY` env'i.
+- `routes/auth.ts` yeniden yazıldı: tek `POST /auth/login { identifier,
+  password }`; email→admin/teacher, username→guardian/student çözümü;
+  bulunamayan hesapta **sahte hash'e `verifyPassword`** (zamanlama sızıntısı
+  önlenir); brute-force identifier bazlı (IP+hesap); `/otp/*` kaldırıldı;
+  `/me` ve `publicUser` `username` döner.
+- `utils/username.ts` (yeni): `nextUsername('student'|'guardian')` →
+  `ogrenci<n>` / `veli<n>` (max+1; çakışmada n++, UNIQUE indeks güvence).
+- `routes/admin.ts`: öğretmen/admin/öğrenci `phone` kaldırıldı (spec §9);
+  veli/öğrenci create'e `password` eklendi (admin girer, asenkron hash) ve
+  otomatik `username`; `whatsapp_phone` create'te **zorunlu**, PATCH'te
+  **opsiyonel-ama-null-olamaz** (kısmi güncelleme bozulmaz);
+  **`POST /guardians/:id/reset-password`** + **`POST /students/:id/reset-password`**
+  eklendi (tv+1, audit `guardian.password_reset` / `student.password_reset`).
+- Seed async (`hashPassword`): yeni `SEED_USER_PASSWORD` env'i (admin şifresinden
+  ayrı); öğrenci/veli `username` + şifre; `fillUsername`/`fillPasswordHash` ile
+  eski DB backfill'i (yalnızca NULL'ken, idempotent; admin güncellenmez).
+- `utils/env.ts`, `.env.example`, `.env` güncellendi.
+
+**Frontend**
+- `types.ts`: `User.phone` → `username`; `LoginRequest { identifier, password }`;
+  OTP tipleri silindi; Teacher/Guardian/Student `phone` → `username`.
+- `api.ts`: `authApi.login` tek uç; OTP uçları silindi; admin guardian/student
+  create `password` + whatsapp zorunlu; reset-password uçları.
+- `AuthContext`: `loginWithOtp` kaldırıldı; tek `login(identifier, password)`.
+- `LoginPage`: tek form ("E-posta veya kullanıcı adı" + "Şifre"); rol seçici,
+  OTP iki aşaması ve sayaç kaldırıldı.
+- Admin sayfaları: Teachers/Students/Guardians `phone` gösterimi → `username`;
+  create formlarına başlangıç şifresi; satırlarda "Şifre sıfırla" + modal;
+  veli formunda WhatsApp zorunlu.
+
+**Testler**
+- `auth.test.ts` yeniden yazıldı (4 rol username/email login, yanlış/olmayan
+  hesap 401, brute-force, tv uyumsuzluğu, yetki matrisi).
+- `admin.test.ts`: teacher/admin `phone` kalktı; guardian/student create
+  `password` + otomatik `username` + whatsapp zorunlu; PATCH whatsapp null → 400;
+  guardian/öğrenci reset-password testleri.
+- `test/helpers.ts`: `otp_codes` temizlik listesinden çıktı; test kullanıcıları
+  username+şifreli.
+- `teacher.test.ts` / `student.test.ts`: ham INSERT'lerde `phone` → `username`.
+- `schema.test.ts`: `otp_codes` listeden çıktı; `await seedDatabase(admin, user)`;
+  username unique + password_hash dolu testi.
+- `migration-backfill.test.ts`: rewind'e #5 geri sarımı (users `phone`/`idx`,
+  `otp_codes` yeniden kurulur) + `user_version` 5.
+- Frontend `api.test.ts` / `App.test.tsx`: identifier login, tek form, username.
+
+### Doğrulamalar
+
+| Kontrol | Sonuç |
+|---|---|
+| Backend testleri (taze test.db) | ✅ 141/141 (11 dosya) |
+| Frontend testleri | ✅ 25/25 (4 dosya) |
+| typecheck (kök + backend) + lint + build | ✅ |
+| Canlı (gerçek app.db, `db:reset`): admin/öğretmen e-posta + `ogrenci1`/`veli1` username → 200 + JWT | ✅ |
+| Yanlış şifre ve olmayan identifier → 401 (aynı mesaj) | ✅ |
+| `/auth/otp/request` → 404 (rota kaldırıldı) | ✅ |
+| `user_version` = 5 | ✅ |
+
+### Çözülen sorunlar
+
+- **PowerShell `Set-Content` UTF-8 mojibake:** `admin.test.ts`'i PowerShell'le
+  düzenlerken dosya UTF-8 olarak değil sistem kod sayfasıyla okunup yeniden
+  yazıldı; tüm Türkçe karakterler bozuldu (arama/çakışma testleri başarısız
+  oldu). Dosya git'ten geri alınıp düzenlemeler UTF-8 güvenli edit aracıyla
+  yeniden yapıldı.
+- **Migration-backfill rewind #5'i kapsamıyordu:** v2 geri sarımı yalnızca
+  classes/courses/submissions'ı düzeltiyordu; #5 eklenince users + otp_codes
+  geri sarımı da eklendi.
+- **Test DB kalıntısı:** bozuk durumdaki `test.db` sıralı koşuda hata veriyordu;
+  temizlenerek taze şemadan koşuldu.
+
+### Commit
+
+(Aşama 2a retrofit commit hash'i)
+
+### Güncel dosya yapısı
+
+```
+backend/src
+  /db/migrations.ts        (+ migration #5 username_login)
+  /utils/username.ts       (yeni — otomatik ogrenci<n>/veli<n>)
+  /routes/auth.ts          (yeniden yazıldı — tek identifier login)
+  /routes/admin.ts         (username + password + whatsapp zorunlu + reset-password)
+  /services/otp.ts sms.ts otp.test.ts   (silindi)
+  /test/helpers.ts         (username + şifre; otp_codes'suz temizlik)
+  /db/migration-backfill.test.ts  (#5 geri sarımı; user_version 5)
+src
+  /pages/LoginPage.tsx     (tek form)
+  /pages/admin/*           (username + başlangıç şifresi + şifre sıfırlama)
+  /services/api.ts types.ts context/AuthContext.tsx  (identifier login)
+```
+
+---
+
 ## Aşama 4 — Ödev ve teslim ✅
 
 ### Süreç özeti

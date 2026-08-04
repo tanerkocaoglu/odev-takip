@@ -77,21 +77,31 @@ matrisler değil (bkz. §5.5). Asıl büyüyen kaynak dosya depolamadır (§8).
 
 ---
 
-## 2.1 OTP kuralları (veli ve öğrenci girişi)
+## 2.1 Giriş ve kullanıcı adı kuralları
 
-| Parametre | Değer |
-|---|---|
-| Hane sayısı | 6 basamak (100000–999999) |
-| Geçerlilik süresi | 10 dakika |
-| İstek aralığı (rate limit) | Aynı telefona 2 dakika içinde ikinci OTP gönderilemez |
-| Hatalı deneme hakkı | 5; aşımında OTP geçersiz kılınır, yeni OTP alınması gerekir |
-| `SMS_PROVIDER_KEY` boşsa | OTP `console.log` ile yazılır (geliştirme modu) |
+Tüm roller **kullanıcı adı/e-posta + şifre** ile giriş yapar. SMS/OTP
+kullanılmaz — hem sürekli bir maliyet kalemi hem de gereksiz bir telefon
+numarası bağımlılığı yaratıyordu (bkz. §9 KVKK).
 
-OTP doğrulaması sunucu tarafında yapılır; doğrulama başarılıysa JWT döner.
+- **Admin / öğretmen:** `email` + şifre (değişmedi).
+- **Veli / öğrenci:** `username` + şifre.
+
+**`username` üretimi — otomatik, admin elle girmez:**
+- Öğrenci: `ogrenci<n>` — `n`, mevcut öğrenci kullanıcı adları arasındaki en
+  yüksek sıra numarasının +1'i.
+- Veli: `veli<n>` — aynı mantık, veli kapsamında.
+- Üretilen ad zaten doluysa (örn. eşzamanlı iki kayıt) `n` bir artırılarak
+  yeniden denenir; `username` `UNIQUE` kısıtı bunu garanti eder.
+- Admin, kayıt sonrası `username`'i isterse değiştirebilir (yine unique).
+
+**Şifre:** Öğretmen kaydında olduğu gibi, öğrenci/veli için de **admin
+oluşturma anında bir başlangıç şifresi girer.** Şifremi unuttum akışı yoktur
+(e-posta/SMS kanalı yok) — unutulursa admin `reset-password` ile yeni şifre
+belirler; bu işlem `token_version`'ı artırır (eski oturumlar biter).
 
 **JWT ömrü (rol bazlı):** admin/öğretmen 7 gün, veli/öğrenci 30 gün.
-**Login brute-force koruması:** e-posta+şifre girişinde 15 dakikada 5
-başarısız denemeden sonra `429 RATE_LIMITED` döner (IP + hesap bazlı).
+**Login brute-force koruması:** girişte 15 dakikada 5 başarısız denemeden
+sonra `429 RATE_LIMITED` döner (IP + hesap bazlı).
 
 ---
 
@@ -115,9 +125,9 @@ CREATE TABLE users (
   id                   TEXT PRIMARY KEY,
   full_name            TEXT NOT NULL,
   full_name_normalized TEXT NOT NULL,   -- küçük harf + Türkçe karakter sadeleştirme
-  phone                TEXT NOT NULL,   -- giriş anahtarı (OTP); UNIQUE indeks aşağıda
-  email                TEXT,            -- sadece admin/öğretmen için
-  password_hash        TEXT,            -- admin/öğretmen; veli/öğrenci OTP kullanır
+  username             TEXT,            -- veli/öğrenci giriş anahtarı; UNIQUE indeks aşağıda
+  email                TEXT,            -- admin/öğretmen giriş anahtarı
+  password_hash        TEXT NOT NULL,   -- tüm roller şifreyle girer
   role                 TEXT NOT NULL CHECK (role IN ('admin','teacher','guardian','student')),
   is_active            INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   token_version        INTEGER NOT NULL DEFAULT 1,  -- JWT iptali için
@@ -125,7 +135,8 @@ CREATE TABLE users (
   created_at           TEXT NOT NULL
 ) STRICT;
 
-CREATE UNIQUE INDEX idx_users_phone ON users(phone) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_users_username ON users(username) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_users_email ON users(email) WHERE deleted_at IS NULL AND email IS NOT NULL;
 CREATE INDEX idx_users_normalized ON users(full_name_normalized);
 ```
 > `token_version`: `auth` middleware her istekte JWT payload'ındaki `tv` ile
@@ -137,33 +148,12 @@ CREATE INDEX idx_users_normalized ON users(full_name_normalized);
 > duyarsızdır. Yazma anında `toLocaleLowerCase('tr')` + aksan sadeleştirmesi,
 > **yalnızca sunucuda** üretilir.
 
-**`otp_codes`** — veli/öğrenci OTP doğrulama kayıtları (güvenlik verisi)
-```sql
-CREATE TABLE otp_codes (
-  id            TEXT PRIMARY KEY,
-  user_id       TEXT NOT NULL REFERENCES users(id),
-  code          TEXT NOT NULL,        -- 6 hane
-  is_valid      INTEGER NOT NULL DEFAULT 1 CHECK (is_valid IN (0,1)),
-  attempts      INTEGER NOT NULL DEFAULT 0,   -- hatalı deneme sayısı
-  expires_at    TEXT NOT NULL,        -- ISO 8601; gönderim anında +10 dk
-  last_sent_at  TEXT NOT NULL,        -- ISO 8601; 2 dk rate limit
-  used_at       TEXT,                 -- başarılı doğrulama zamanı
-  created_at    TEXT NOT NULL
-) STRICT;
-
-CREATE INDEX idx_otp_codes_user ON otp_codes(user_id, created_at);
-```
-> Kurallar (§2.1): yeni OTP isteği, kullanıcının kullanılmamış (`is_valid = 1`)
-> tüm eski OTP kayıtlarını `is_valid = 0` yaparak geçersiz kılar; başarılı
-> doğrulama `used_at` doldurur ve `is_valid = 0` yapar; 5. hatalı denemede de
-> `is_valid = 0` (yeni OTP alınması gerekir). Tek kullanımlıktır.
-
 **`guardians`** — veli detayı (1 hesap = 1 veli, N öğrenci)
 ```sql
 CREATE TABLE guardians (
   id              TEXT PRIMARY KEY,
   user_id         TEXT NOT NULL REFERENCES users(id),
-  whatsapp_phone  TEXT,   -- WhatsApp gönderimi; null ise users.phone kullanılır
+  whatsapp_phone  TEXT NOT NULL,   -- WhatsApp gönderimi; sistemde tek telefon alanı
   phone_secondary TEXT,   -- ikinci ebeveyn, yalnızca bilgi amaçlı
   consent_at      TEXT,   -- KVKK açık rıza zamanı (ISO 8601)
   deleted_at      TEXT
@@ -171,8 +161,10 @@ CREATE TABLE guardians (
 
 CREATE UNIQUE INDEX idx_guardians_user ON guardians(user_id) WHERE deleted_at IS NULL;
 ```
-> `whatsapp_phone` boşsa sistem `users.phone`'a gönderir. Admin ekranında
-> "Boş bırakılırsa giriş numarasına gönderilir" notu gösterilir.
+> `whatsapp_phone` zorunludur — `users.username` girişte kullanılır, telefon
+> numarası taşımaz, bu yüzden fallback yoktur. Veli kaydı bu alan olmadan
+> oluşturulamaz. Sistemde telefon numarasının tutulduğu **tek** yer burasıdır;
+> `consent_at` ile korunur (§9).
 
 **`students`**
 ```sql
@@ -549,7 +541,7 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
    ```
    https://wa.me/<numara>?text=<urlencoded mesaj>
    ```
-   Numara: `guardians.whatsapp_phone` — boşsa `users.phone`.
+   Numara: `guardians.whatsapp_phone` (zorunlu alan, fallback yok — §2.1/§3.1).
 5. Mesaj içeriği kısa tutulur, tam rapor linkten okunur:
    ```
    Sayın {veli adı}, {öğrenci adı} için {hafta etiketi} haftalık
@@ -666,7 +658,7 @@ Projenin benimsenmesi bu ekrana bağlı. Gereksinimler:
 | UI | Tailwind + shadcn/ui |
 | Backend | Node.js + Express (REST API) |
 | DB | SQLite (`node:sqlite` — ORM yok, ham SQL) |
-| Auth | JWT (jsonwebtoken) — admin/öğretmen: e-posta+şifre; veli/öğrenci: telefon+OTP |
+| Auth | JWT (jsonwebtoken) — admin/öğretmen: e-posta+şifre; veli/öğrenci: username+şifre |
 | Doğrulama | Zod |
 | Dosya (geliştirme) | Yerel disk, `backend/uploads` |
 | Dosya (üretim) | Cloudflare R2, presigned upload |
@@ -752,6 +744,10 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 
 - Veli kaydında açık rıza zamanı (`consent_at`) tutulur; rıza alınmadan
   WhatsApp gönderimi yapılmaz.
+- **Telefon numarası yalnızca `guardians.whatsapp_phone`'da tutulur** —
+  amacı (WhatsApp bildirimi) açık, rızaya bağlı ve süre sınırlıdır. Öğretmen
+  ve öğrenci kayıtlarında telefon numarası hiç tutulmaz; giriş `username`
+  iledir (§2.1). Bu, veri minimizasyonu ilkesinin doğrudan uygulamasıdır.
 - Aydınlatma metni giriş ekranında ve `/r/{token}` sayfasının altında.
 - Öğrenci notları hassas veri kabul edilir; erişimler `audit_logs`'a yazılır.
 - Saklama süreleri §8'de.
@@ -765,7 +761,7 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 |---|---|---|
 | 0 | Vite + React + TypeScript iskeleti, Express + TypeScript backend, `/api/v1` prefix, migration runner (Aşama 1'e kadar #1 düzenlenebilir), `PRAGMA WAL + foreign_keys`, temel layout | `npm run dev` çalışıyor, `/api/v1/health` 200 dönüyor |
 | 1 | STRICT tablolar + kısmi indeksler (§3.1) — migration #1 yalnızca şema; ayrı CLI seed script'i (ilk admin dahil); `backend/src/utils` altında Türkçe normalizasyon ve hafta hesap util'leri; migration #1 dondurulur | Seed çalışıyor, foreign key ihlali testi geçiyor, normalizasyon/hafta testleri geçiyor |
-| 2a | JWT kimlik doğrulama (e-posta+şifre, telefon+OTP — §2.1), `token_version` karşılaştırması, `auth`+`adminOnly` middleware, rol bazlı route koruması (ProtectedRoute), yetki birim testleri | 4 rolle giriş yapılabiliyor, token_version uyumsuzluğunda 401, yetki testleri geçiyor |
+| 2a | JWT kimlik doğrulama (e-posta+şifre, username+şifre — §2.1), otomatik `username` üretimi, `token_version` karşılaştırması, `auth`+`adminOnly` middleware, rol bazlı route koruması (ProtectedRoute), yetki birim testleri. **Retrofit notu:** OTP/telefon tabanlı girişten username+şifreye geçildi (bkz. Aşama 2a-retrofit) | 4 rolle giriş yapılabiliyor, token_version uyumsuzluğunda 401, yetki testleri geçiyor |
 | 2b | Admin CRUD: eğitim yılı, hafta, sınıf, ders, class_courses ataması, öğrenci-veli yönetimi, arama (`full_name_normalized`) + sayfalama | Admin bir eğitim yılını seed'e dokunmadan sıfırdan kurabiliyor |
 | 3 | Toplu rapor giriş ekranı, `reports`+`report_entries`, önceki ödev çekme, otomatik kaydetme, klavye nav, supertest entegrasyon testi | Bir öğretmen 8 kişilik sınıfın haftalık raporunu klavyeden çıkmadan doldurabiliyor |
 | 4 | `homeworks`+son tarih, HEIC dönüşümü (heic-convert→sharp), multer+sharp, `GET /api/v1/files/:key` korumalı rota (flag yok), öğrenci yükleme + öğretmen teslim kontrol ekranı | Öğrenci HEIC/JPEG yüklüyor, küçültülerek kaydediliyor, dosyaya yetkisiz erişim 403 dönüyor |

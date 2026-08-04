@@ -124,7 +124,9 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
 - Tüm birincil anahtarlar: `crypto.randomUUID()` — harici paket yok.
 - **`weekly_digests.token` UUID DEĞİLDİR.** Kimlik doğrulamasız bir sayfayı
   açtığı için fiilen paroladır: `crypto.randomBytes(32).toString('base64url')`.
-- OTP: `crypto.randomInt(100000, 1000000)` — `Math.random()` kullanılmaz.
+- **`username` üretimi:** `ogrenci<n>` / `veli<n>` — `n`, o roldeki en yüksek
+  mevcut sıra numarasının +1'i; çakışmada `n` artırılarak yeniden denenir
+  (`spec.md` §2.1). SMS/OTP kullanılmaz.
 
 **Girdi doğrulama ve hata formatı**
 - Her gelen request body Zod şemasıyla parse edilir. `any` kullanılmaz.
@@ -160,15 +162,6 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
 - Form durumları: yükleniyor, hata, boş durum — üçü de mutlaka ele alınır.
 - **Görsel kararlar "Tasarım kuralları" bölümünde sabitlenmiştir.** Yeni bir
   renk, boyut veya font tanımlama; oradaki token'ları kullan.
-
-**OTP (veli ve öğrenci girişi)**
-- 6 haneli, 10 dakika geçerli.
-- Aynı telefona 2 dakika içinde ikinci OTP gönderilemez (rate limit).
-- 5 hatalı denemede OTP geçersiz kılınır; yeni OTP alınması gerekir.
-- `SMS_PROVIDER_KEY` boşsa OTP `console.log`'a yazılır (geliştirme modu).
-- SMS gönderimi tek bir fonksiyon arkasındadır: `sendSms(phone, message)`.
-  Sağlayıcı seçimi (Netgsm, İleti Merkezi, Twilio vb.) yalnızca bu fonksiyonun
-  içini değiştirir; çağıran kod sağlayıcıyı bilmez.
 
 **Zaman**
 - Gün hesapları (`day_of_week`, `due_date`) yerel takvime göre yapılır;
@@ -369,7 +362,7 @@ PORT=3001
 BASE_URL=http://localhost:5173   # /r/{token} linkleri bununla üretilir
 JWT_SECRET=<rastgele-gizli-anahtar>
 ADMIN_PASSWORD=<admin-şifresi>
-SMS_PROVIDER_KEY=             # boşsa OTP konsola yazılır
+SEED_USER_PASSWORD=<seed öğrenci/veli şifresi>   # yalnızca seed/demo verisi
 STORAGE_DRIVER="local"        # local | r2
 # üretimde:
 # R2_ENDPOINT= R2_BUCKET= R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY=
@@ -442,8 +435,8 @@ hafta/normalizasyon testleri geçiyor.
 
 ## Aşama 2a — Kimlik doğrulama ve yetki
 
-- JWT: admin/öğretmen e-posta+şifre, veli/öğrenci telefon+OTP
-  (`spec.md` §2.1 OTP kuralları — 6 hane, 10 dk, 5 deneme, 2 dk aralık)
+- JWT: admin/öğretmen e-posta+şifre, veli/öğrenci username+şifre
+  (`spec.md` §2.1 — otomatik `username` üretimi, admin başlangıç şifresi girer)
 - JWT payload: `{ id, role, teacher_id?, student_id?, guardian_id?, tv }`
 - `auth` middleware: `tv` vs `users.token_version` — eşit değilse 401
 - `auth` + `adminOnly` middleware'leri — `spec.md` §2 tablosunun birebir karşılığı
@@ -458,7 +451,8 @@ dönüyor, yetki testleri geçiyor.
 ## Aşama 2b — Admin CRUD
 
 - Eğitim yılı, hafta, sınıf, ders, `class_courses` ataması (ders günü dahil)
-- Öğrenci ve veli yönetimi, enrollment, `whatsapp_phone` alanı
+- Öğrenci ve veli yönetimi, enrollment; veli kaydında `whatsapp_phone`
+  **zorunlu** (fallback yok — `spec.md` §3.1), öğrenci/veli `username` otomatik üretilir
 - Arama (`full_name_normalized`) + sayfalama (200 kayıt)
 
 **Bitti kriteri:** Admin bir eğitim yılını seed'e dokunmadan sıfırdan kurabiliyor.
