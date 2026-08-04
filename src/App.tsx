@@ -16,6 +16,8 @@ import GuardiansPage from './pages/admin/GuardiansPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
 import ReportEntryPage from './pages/teacher/ReportEntryPage';
 import ReportHistoryPage from './pages/teacher/ReportHistoryPage';
+import SubmissionsReviewPage from './pages/teacher/SubmissionsReviewPage';
+import HomeworkListPage from './pages/student/HomeworkListPage';
 
 export default function App() {
   return (
@@ -59,10 +61,21 @@ export default function App() {
       >
         <Route index element={<TeacherDashboardPage />} />
         <Route path="reports/history" element={<ReportHistoryPage />} />
+        <Route path="submissions" element={<SubmissionsReviewPage />} />
         <Route
           path="reports/:classCourseId/:weekId"
           element={<ReportEntryPage />}
         />
+      </Route>
+      <Route
+        path="/student"
+        element={
+          <ProtectedRoute roles={['student']}>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<HomeworkListPage />} />
       </Route>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/r/:token" element={<TokenReportPage />} />

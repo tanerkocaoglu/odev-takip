@@ -3,12 +3,16 @@ import { db } from '../db/index.js';
 import authRoutes from './auth.js';
 import adminRoutes from './admin.js';
 import teacherRoutes from './teacher.js';
+import studentRoutes from './student.js';
+import filesRoutes from './files.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
 router.use('/teacher', teacherRoutes);
+router.use('/student', studentRoutes);
+router.use('/files', filesRoutes);
 
 // Tüm rotalar /api/v1 prefix'iyle başlar; bu router'a monte edilir.
 router.get('/health', (_req, res) => {

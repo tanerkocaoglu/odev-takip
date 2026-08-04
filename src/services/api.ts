@@ -19,10 +19,14 @@ import type {
   Paged,
   ReportSaveInput,
   Student,
+  StudentHomework,
+  StudentHomeworkList,
   Teacher,
   TeacherDashboard,
+  TeacherHomeworkWithSubmissions,
   TeacherReportHistory,
   TeacherReportPayload,
+  TeacherSubmission,
   User,
   Week,
 } from '../types';
@@ -58,8 +62,11 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  // FormData (dosya yükleme) gönderilirken Content-Type set edilmez — tarayıcı
+  // boundary'i kendisi koyar; elle set edilirse multipart bozulur.
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...(init.headers as Record<string, string> | undefined),
   };
   const token = getToken();
@@ -311,4 +318,42 @@ export const teacherApi = {
     apiFetch<TeacherReportPayload>(`/teacher/reports/${reportId}/complete`, {
       method: 'POST',
     }),
+  /** Teslimi olan ödevler (teslim kontrol seçici) — spec.md §6. */
+  submissionHomeworks: () =>
+    apiFetch<{ items: TeacherHomeworkWithSubmissions[] }>('/teacher/submissions'),
+  /** Bir ödevin tüm teslimleri. */
+  submissions: (homeworkId: string) =>
+    apiFetch<{ items: TeacherSubmission[] }>(
+      `/teacher/submissions?homework_id=${encodeURIComponent(homeworkId)}`,
+    ),
+  /** Teslimi "İncelendi" işaretler. */
+  markReviewed: (submissionId: string) =>
+    apiFetch<{ id: string; status: string; reviewed_by: string; reviewed_at: string }>(
+      `/teacher/submissions/${submissionId}`,
+      { method: 'PATCH', body: JSON.stringify({ status: 'reviewed' }) },
+    ),
+};
+
+// ---------- Öğrenci ödev ve teslim (Aşama 4) ----------
+
+/** Korumalı dosya URL'si — /api/v1/files/:key (spec.md §8). */
+export function fileUrl(key: string): string {
+  return `${BASE_URL}/files/${key}`;
+}
+
+export const studentApi = {
+  homeworks: () => apiFetch<StudentHomeworkList>('/student/homeworks'),
+  submit: (homeworkId: string, files: File[], note?: string) => {
+    const form = new FormData();
+    for (const file of files) {
+      form.append('files', file);
+    }
+    if (note) {
+      form.append('note', note);
+    }
+    return apiFetch<{ item: StudentHomework }>(`/student/homeworks/${homeworkId}/submit`, {
+      method: 'POST',
+      body: form,
+    });
+  },
 };

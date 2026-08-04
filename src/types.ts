@@ -184,6 +184,12 @@ export interface ReportEntry {
   homework_score: number | null;
   interest_score: number | null;
   teacher_note: string | null;
+  /** Geçen haftanın ödevine teslim durumu — rozet + dosya önizleme (Aşama 4). */
+  submission: {
+    is_late: number;
+    status: string;
+    files: Array<{ key: string; filename: string }>;
+  } | null;
 }
 
 export interface TeacherReportHeader {
@@ -246,4 +252,60 @@ export interface TeacherReportHistoryItem {
 
 export interface TeacherReportHistory {
   items: TeacherReportHistoryItem[];
+}
+
+// ---------- Ödev ve teslim (Aşama 4) ----------
+
+export interface SubmissionFile {
+  key: string;
+  filename: string;
+  size: number;
+  mime: string;
+  ext: string;
+}
+
+export interface HomeworkSubmission {
+  id: string;
+  submitted_at: string;
+  is_late: boolean;
+  status: 'submitted' | 'reviewed';
+  files: SubmissionFile[];
+}
+
+export interface StudentHomework {
+  id: string;
+  description: string;
+  due_date: string;
+  course_name: string;
+  teacher_name: string;
+  class_name: string;
+  week: { week_no: number; start_date: string; end_date: string; label: string };
+  submission: HomeworkSubmission | null;
+}
+
+export interface StudentHomeworkList {
+  items: StudentHomework[];
+}
+
+export interface TeacherSubmission {
+  id: string;
+  student_id: string;
+  student_name: string;
+  note: string | null;
+  submitted_at: string;
+  is_late: boolean;
+  status: 'submitted' | 'reviewed';
+  reviewed_at: string | null;
+  files: SubmissionFile[];
+}
+
+export interface TeacherHomeworkWithSubmissions {
+  id: string;
+  due_date: string;
+  course_name: string;
+  class_name: string;
+  week_no: number;
+  week_start: string;
+  week_label: string;
+  submission_count: number;
 }

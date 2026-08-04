@@ -321,6 +321,33 @@ registerMigration(3, 'name_normalized', () => {
   );
 });
 
+/**
+ * Migration #4 — teslim dosyaları (Aşama 4).
+ * `submissions.files` JSON alanı kaldırılır; `submission_files` tek doğru
+ * kaynaktır (spec.md §3.2). `key` küresel benzersiz; dosya erişim rotası
+ * key → submission_files → submissions → homeworks zinciriyle sahiplik doğrular.
+ */
+registerMigration(4, 'submission_files', () => {
+  // STRICT tabloda DROP COLUMN: `files` NOT NULL + indekssiz/CHECK'siz olduğu
+  // için SQLite'ın DROP COLUMN kısıtlarına takılmaz.
+  db.exec(`ALTER TABLE submissions DROP COLUMN files`);
+
+  db.exec(`
+    CREATE TABLE submission_files (
+      id            TEXT PRIMARY KEY,
+      submission_id TEXT NOT NULL REFERENCES submissions(id),
+      key           TEXT NOT NULL,
+      filename      TEXT NOT NULL,
+      size          INTEGER NOT NULL,
+      mime          TEXT NOT NULL,
+      ext           TEXT NOT NULL,
+      UNIQUE (key)
+    ) STRICT;
+
+    CREATE INDEX idx_submission_files_sub ON submission_files(submission_id);
+  `);
+});
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

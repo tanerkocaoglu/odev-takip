@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { MulterError } from 'multer';
 
 export type ApiErrorCode =
   | 'VALIDATION_ERROR'
@@ -67,6 +68,20 @@ export function errorHandler(
       body.error = { ...(body.error as object), fields: err.fields };
     }
     res.status(err.status).json(body);
+    return;
+  }
+
+  // Multer limit ihlalleri (10 MB / 10 dosya) — Türkçe, tek biçimli hata.
+  if (err instanceof MulterError) {
+    const message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Dosya başına en fazla 10 MB yükleyebilirsiniz.'
+        : err.code === 'LIMIT_FILE_COUNT'
+          ? 'Teslim başına en fazla 10 dosya yükleyebilirsiniz.'
+          : 'Dosya yüklenemedi.';
+    res.status(400).json({
+      error: { code: 'VALIDATION_ERROR', message },
+    });
     return;
   }
 

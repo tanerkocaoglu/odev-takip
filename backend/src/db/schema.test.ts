@@ -27,6 +27,7 @@ beforeAll(() => {
   const tables = [
     'audit_logs',
     'weekly_digests',
+    'submission_files',
     'submissions',
     'report_entries',
     'homeworks',
@@ -83,7 +84,9 @@ describe('foreign key ihlali', () => {
 });
 
 describe('seed', () => {
-  it('seed kayıtları beklenen hacimde üretir', () => {
+  // ~416 kullanıcı için scrypt hash — yavaş bir CLI işlemidir; varsayılan
+  // 5 sn timeout yetmez.
+  it('seed kayıtları beklenen hacimde üretir', { timeout: 60_000 }, () => {
     seedDatabase('test-admin-password');
 
     // 1 admin + 10 öğretmen + 205 öğrenci (200 + 5 kardeş) + 200 veli = 416

@@ -15,6 +15,7 @@ const CLEAN_TABLES = [
   'otp_codes',
   'audit_logs',
   'weekly_digests',
+  'submission_files',
   'submissions',
   'report_entries',
   'homeworks',

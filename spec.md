@@ -368,7 +368,6 @@ CREATE TABLE submissions (
   id              TEXT PRIMARY KEY,
   homework_id     TEXT NOT NULL REFERENCES homeworks(id),
   student_id      TEXT NOT NULL REFERENCES students(id),
-  files           TEXT NOT NULL,   -- JSON: [{key, filename, size, mime}]
   note            TEXT,
   submitted_at    TEXT NOT NULL,
   is_late         INTEGER NOT NULL DEFAULT 0 CHECK (is_late IN (0,1)),
@@ -382,6 +381,28 @@ CREATE TABLE submissions (
 
 CREATE INDEX idx_submissions_student ON submissions(student_id);
 ```
+> Yüklenen dosyaların meta bilgisi (`key`, `filename`, `size`, `mime`) `submissions`
+> üzerinde JSON olarak tutulmaz; **`submission_files` tek doğru kaynaktır** (migration #4).
+
+**`submission_files`** — teslim dosyaları (migration #4; Aşama 4)
+```sql
+CREATE TABLE submission_files (
+  id            TEXT PRIMARY KEY,
+  submission_id TEXT NOT NULL REFERENCES submissions(id),
+  key           TEXT NOT NULL,   -- storage anahtarı; GET /api/v1/files/:key
+  filename      TEXT NOT NULL,   -- orijinal kullanıcı dosya adı
+  size          INTEGER NOT NULL, -- bayt; küçültme sonrası gerçek boyut
+  mime          TEXT NOT NULL,
+  ext           TEXT NOT NULL,   -- key uzantısı (jpg, pdf, ...)
+  UNIQUE (key)
+) STRICT;
+
+CREATE INDEX idx_submission_files_sub ON submission_files(submission_id);
+```
+> `key` küresel benzersizdir; dosya erişim rotası key → `submission_files` →
+> `submissions` → `homeworks` zinciriyle sahiplik doğrular (spec.md §8).
+> `files_purged_at` doluysa ilgili `submission_files` kayıtları kaldırılmıştır
+> (saklama politikası §8).
 
 ### 3.3 Bildirim ve denetim
 

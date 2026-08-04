@@ -61,6 +61,30 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
                 Bu hafta
               </NavLink>
             )}
+            {user?.role === 'teacher' && (
+              <NavLink
+                to="/teacher/submissions"
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-sm font-medium text-accent'
+                    : 'text-sm font-medium text-muted hover:text-text'
+                }
+              >
+                Teslimler
+              </NavLink>
+            )}
+            {user?.role === 'student' && (
+              <NavLink
+                to="/student"
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-sm font-medium text-accent'
+                    : 'text-sm font-medium text-muted hover:text-text'
+                }
+              >
+                Ödevlerim
+              </NavLink>
+            )}
             {user && (
               <>
                 <span className="hidden text-sm text-muted sm:inline">

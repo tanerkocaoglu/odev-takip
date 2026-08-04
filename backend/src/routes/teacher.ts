@@ -132,7 +132,68 @@ function buildReportPayload(reportId: string): unknown {
        WHERE re.report_id = ?
        ORDER BY u.full_name_normalized`,
     )
-    .all(reportId);
+    .all(reportId) as Array<{
+    student_id: string;
+    student_name: string;
+    attendance: string;
+    homework_score: number | null;
+    interest_score: number | null;
+    teacher_note: string | null;
+  }>;
+
+  // Teslim rozetleri: geçen haftanın ödevi (prev_homework) için öğrenci
+  // bazında teslim durumu (spec.md §5.1 "Teslim durumu" rozeti). Rapor giriş
+  // ekranı bu veriden beslenir (CLAUDE.md Aşama 4).
+  let prevSubmissions = new Map<
+    string,
+    { is_late: number; status: string; files: Array<{ key: string; filename: string }> }
+  >();
+  if (report.prev_homework_id) {
+    const rows = db
+      .prepare(
+        `SELECT s.id AS submission_id, s.student_id, s.is_late, s.status
+         FROM submissions s WHERE s.homework_id = ?`,
+      )
+      .all(report.prev_homework_id) as Array<{
+      submission_id: string;
+      student_id: string;
+      is_late: number;
+      status: string;
+    }>;
+    const fileRows = db
+      .prepare(
+        `SELECT sf.submission_id, sf.key, sf.filename
+         FROM submission_files sf
+         JOIN submissions s ON s.id = sf.submission_id
+         WHERE s.homework_id = ?`,
+      )
+      .all(report.prev_homework_id) as Array<{
+      submission_id: string;
+      key: string;
+      filename: string;
+    }>;
+    const filesBySubmission = new Map<string, Array<{ key: string; filename: string }>>();
+    for (const f of fileRows) {
+      const list = filesBySubmission.get(f.submission_id) ?? [];
+      list.push({ key: f.key, filename: f.filename });
+      filesBySubmission.set(f.submission_id, list);
+    }
+    prevSubmissions = new Map(
+      rows.map((r) => [
+        r.student_id,
+        {
+          is_late: r.is_late,
+          status: r.status,
+          files: filesBySubmission.get(r.submission_id) ?? [],
+        },
+      ]),
+    );
+  }
+
+  const entriesWithSubmission = entries.map((e) => ({
+    ...e,
+    submission: prevSubmissions.get(e.student_id) ?? null,
+  }));
 
   return {
     report: {
@@ -159,7 +220,7 @@ function buildReportPayload(reportId: string): unknown {
       day_of_week: report.day_of_week,
       lesson_time: report.lesson_time,
     },
-    entries,
+    entries: entriesWithSubmission,
   };
 }
 
@@ -742,6 +803,240 @@ router.get('/reports', (req, res) => {
   }>;
 
   res.json({ items: rows });
+});
+
+// ---------- Teslim kontrol (Aşama 4) ----------
+
+/**
+ * Öğretmenin bir ödeve sahipliğini doğrular: homework → class_course →
+ * teacher_id = req.user.id (admin tümü). Yoksa 404, yetkisizse 403.
+ */
+function loadOwnedHomework(user: AuthUser, homeworkId: string): {
+  id: string;
+  class_course_id: string;
+  course_name: string;
+  class_name: string;
+} {
+  const row = db
+    .prepare(
+      `SELECT h.id, h.class_course_id, cc.teacher_id,
+              co.name AS course_name, cl.name AS class_name
+       FROM homeworks h
+       JOIN class_courses cc ON cc.id = h.class_course_id
+       JOIN courses co ON co.id = cc.course_id
+       JOIN classes cl ON cl.id = cc.class_id
+       WHERE h.id = ?`,
+    )
+    .get(homeworkId) as
+    | {
+        id: string;
+        class_course_id: string;
+        teacher_id: string;
+        course_name: string;
+        class_name: string;
+      }
+    | undefined;
+  if (!row) {
+    throw new AppError('NOT_FOUND', 404, 'Ödev bulunamadı.');
+  }
+  if (user.role !== 'admin' && (user.role !== 'teacher' || row.teacher_id !== user.id)) {
+    throw new AppError('FORBIDDEN', 403, 'Bu ödevin teslimlerine erişim yetkiniz yok.');
+  }
+  return {
+    id: row.id,
+    class_course_id: row.class_course_id,
+    course_name: row.course_name,
+    class_name: row.class_name,
+  };
+}
+
+/**
+ * GET /teacher/submissions — `?homework_id=` verilirse o ödevin tüm teslimleri
+ * (öğrenci adı, dosyalar, durum); verilmezse öğretmenin teslimi olan ödev
+ * listesi (sayım ile) — "Ödev teslim kontrol ekranı" seçici (spec.md §6).
+ */
+router.get('/submissions', (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'teacher' && user.role !== 'admin') {
+    throw new AppError('FORBIDDEN', 403, 'Bu ekrana erişim yetkiniz yok.');
+  }
+
+  const homeworkId = typeof req.query.homework_id === 'string' ? req.query.homework_id : null;
+
+  if (homeworkId) {
+    loadOwnedHomework(user, homeworkId);
+    const rows = db
+      .prepare(
+        `SELECT s.id, s.student_id, s.note, s.submitted_at, s.is_late, s.status,
+                s.reviewed_by, s.reviewed_at, u.full_name AS student_name
+         FROM submissions s
+         JOIN students st ON st.id = s.student_id
+         JOIN users u ON u.id = st.user_id
+         WHERE s.homework_id = ?
+         ORDER BY u.full_name_normalized`,
+      )
+      .all(homeworkId) as Array<{
+      id: string;
+      student_id: string;
+      note: string | null;
+      submitted_at: string;
+      is_late: number;
+      status: string;
+      reviewed_by: string | null;
+      reviewed_at: string | null;
+      student_name: string;
+    }>;
+
+    const filesBySubmission = loadFilesBySubmission(rows.map((r) => r.id));
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id,
+        student_id: r.student_id,
+        student_name: r.student_name,
+        note: r.note,
+        submitted_at: r.submitted_at,
+        is_late: r.is_late === 1,
+        status: r.status,
+        reviewed_at: r.reviewed_at,
+        files: filesBySubmission.get(r.id) ?? [],
+      })),
+    });
+    return;
+  }
+
+  // Seçici: öğretmenin teslimi olan ödevleri (en yeni hafta üstte).
+  const rows =
+    user.role === 'teacher'
+      ? (db
+          .prepare(
+            `SELECT h.id, h.due_date, co.name AS course_name, cl.name AS class_name,
+                    w.week_no, w.start_date AS week_start, w.label AS week_label,
+                    (SELECT COUNT(*) FROM submissions s WHERE s.homework_id = h.id) AS submission_count
+             FROM homeworks h
+             JOIN class_courses cc ON cc.id = h.class_course_id
+             JOIN courses co ON co.id = cc.course_id
+             JOIN classes cl ON cl.id = cc.class_id
+             JOIN weeks w ON w.id = h.week_id
+             WHERE cc.teacher_id = ? AND cc.deleted_at IS NULL
+               AND EXISTS (SELECT 1 FROM submissions s WHERE s.homework_id = h.id)
+             ORDER BY w.start_date DESC, co.name`,
+          )
+          .all(user.id) as unknown as Array<{
+          id: string;
+          due_date: string;
+          course_name: string;
+          class_name: string;
+          week_no: number;
+          week_start: string;
+          week_label: string;
+          submission_count: number;
+        }>)
+      : (db
+          .prepare(
+            `SELECT h.id, h.due_date, co.name AS course_name, cl.name AS class_name,
+                    w.week_no, w.start_date AS week_start, w.label AS week_label,
+                    (SELECT COUNT(*) FROM submissions s WHERE s.homework_id = h.id) AS submission_count
+             FROM homeworks h
+             JOIN class_courses cc ON cc.id = h.class_course_id
+             JOIN courses co ON co.id = cc.course_id
+             JOIN classes cl ON cl.id = cc.class_id
+             JOIN weeks w ON w.id = h.week_id
+             WHERE cc.deleted_at IS NULL
+               AND EXISTS (SELECT 1 FROM submissions s WHERE s.homework_id = h.id)
+             ORDER BY w.start_date DESC, co.name`,
+          )
+          .all() as unknown as Array<{
+          id: string;
+          due_date: string;
+          course_name: string;
+          class_name: string;
+          week_no: number;
+          week_start: string;
+          week_label: string;
+          submission_count: number;
+        }>);
+
+  res.json({ items: rows });
+});
+
+/** Teslim dosyalarını submission_id'ye göre gruplar. */
+function loadFilesBySubmission(submissionIds: string[]): Map<string, unknown[]> {
+  const map = new Map<string, unknown[]>();
+  if (submissionIds.length === 0) return map;
+  const placeholders = submissionIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT submission_id, key, filename, size, mime, ext
+       FROM submission_files WHERE submission_id IN (${placeholders})`,
+    )
+    .all(...submissionIds) as Array<{
+    submission_id: string;
+    key: string;
+    filename: string;
+    size: number;
+    mime: string;
+    ext: string;
+  }>;
+  for (const row of rows) {
+    const list = map.get(row.submission_id) ?? [];
+    list.push({
+      key: row.key,
+      filename: row.filename,
+      size: row.size,
+      mime: row.mime,
+      ext: row.ext,
+    });
+    map.set(row.submission_id, list);
+  }
+  return map;
+}
+
+const patchSubmissionSchema = z.object({
+  status: z.literal('reviewed', { message: 'Yalnızca "reviewed" durumu işaretlenebilir.' }),
+});
+
+/**
+ * PATCH /teacher/submissions/:id — teslimi "reviewed" işaretler (spec.md §6
+ * "Ödev teslim kontrol ekranı"). Yetki zinciri handler ilk satırında:
+ * submission → homework → class_course → teacher_id = req.user.id (admin tümü).
+ */
+router.patch('/submissions/:id', (req, res) => {
+  const user = req.user!;
+  const input = patchSubmissionSchema.parse(req.body);
+
+  // Zincir yetki — submission → homework → class_course → teacher_id.
+  const submission = db
+    .prepare(
+      `SELECT s.id, s.homework_id, cc.teacher_id
+       FROM submissions s
+       JOIN homeworks h ON h.id = s.homework_id
+       JOIN class_courses cc ON cc.id = h.class_course_id
+       WHERE s.id = ?`,
+    )
+    .get(req.params.id) as
+    | { id: string; homework_id: string; teacher_id: string }
+    | undefined;
+  if (!submission) {
+    throw new AppError('NOT_FOUND', 404, 'Teslim bulunamadı.');
+  }
+  if (
+    user.role !== 'admin' &&
+    (user.role !== 'teacher' || submission.teacher_id !== user.id)
+  ) {
+    throw new AppError('FORBIDDEN', 403, 'Bu teslimi işaretleme yetkiniz yok.');
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE submissions SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?`,
+  ).run(input.status, user.id, now, submission.id);
+
+  res.json({
+    id: submission.id,
+    status: input.status,
+    reviewed_by: user.id,
+    reviewed_at: now,
+  });
 });
 
 export default router;

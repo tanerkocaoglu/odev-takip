@@ -78,11 +78,18 @@ describe('App — admin erişimi', () => {
     localStorage.clear();
   });
 
-  it('öğretmen /admin e erişemez, ana sayfaya yönlendirilir', async () => {
+  it('öğretmen /admin e erişemez, kendi paneline yönlendirilir', async () => {
     localStorage.setItem('ds_token', 'teacher-token');
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(userResponse('teacher')),
+      vi
+        .fn()
+        .mockResolvedValueOnce(userResponse('teacher'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ week: null, items: [] }),
+        }),
     );
 
     render(
@@ -95,7 +102,7 @@ describe('App — admin erişimi', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('heading', { name: 'Ana sayfa' }),
+        screen.getByRole('heading', { name: 'Bu hafta doldurulacaklar' }),
       ).toBeInTheDocument();
     });
   });

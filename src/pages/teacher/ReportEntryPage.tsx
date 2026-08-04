@@ -14,7 +14,7 @@ import type {
   TeacherReportPayload,
 } from '../../types';
 import { ATTENDANCE_LABELS, DAY_LABELS } from '../../types';
-import { teacherApi, ApiClientError } from '../../services/api';
+import { teacherApi, fileUrl, ApiClientError } from '../../services/api';
 import { Field, FormError, LoadingState, PrimaryButton } from '../../components/admin/ui';
 
 const inputClass =
@@ -366,7 +366,29 @@ export default function ReportEntryPage() {
                 entry.attendance === 'absent' || entry.attendance === 'excused';
               return (
                 <tr key={entry.student_id} className="border-b border-border last:border-b-0">
-                  <td className="text-[13px] text-text">{entry.student_name}</td>
+                  <td className="text-[13px] text-text">
+                    <span>{entry.student_name}</span>
+                    {entry.submission && (
+                      <a
+                        href={fileUrl(entry.submission.files[0]?.key ?? '')}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={
+                          'mt-0.5 flex w-fit items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ' +
+                          (entry.submission.is_late
+                            ? 'bg-amber/10 text-sub-late'
+                            : 'bg-green/10 text-sub-uploaded')
+                        }
+                      >
+                        {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
+                      </a>
+                    )}
+                    {!entry.submission && (
+                      <span className="mt-0.5 flex w-fit items-center rounded-full bg-red/10 px-1.5 py-0.5 text-[11px] font-medium text-sub-missing">
+                        Yüklenmedi
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <select
                       ref={setCellRef(`${row}-0`)}
@@ -458,6 +480,25 @@ export default function ReportEntryPage() {
                       {mobileIndex + 1} / {entries.length}
                     </span>
                   </div>
+                  {entry.submission ? (
+                    <a
+                      href={fileUrl(entry.submission.files[0]?.key ?? '')}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={
+                        'inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
+                        (entry.submission.is_late
+                          ? 'bg-amber/10 text-sub-late'
+                          : 'bg-green/10 text-sub-uploaded')
+                      }
+                    >
+                      {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'} · ödevi aç
+                    </a>
+                  ) : (
+                    <span className="inline-flex w-fit items-center rounded-full bg-red/10 px-2 py-0.5 text-xs font-medium text-sub-missing">
+                      Yüklenmedi
+                    </span>
+                  )}
                   <Field label="Devamsızlık" htmlFor="m-att">
                     <select
                       id="m-att"

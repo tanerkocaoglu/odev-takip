@@ -31,6 +31,11 @@ beforeAll(() => {
   db.exec(
     `CREATE UNIQUE INDEX idx_courses_name ON courses(name) WHERE deleted_at IS NULL`,
   );
+  // #2 çağında submissions.files vardı (migration #1) ve submission_files
+  // tablosu YOKTU; #4 onları tersine çevirecek — geri sarım eski şemayı
+  // birebir yansıtmalı.
+  db.exec(`DROP TABLE submission_files`);
+  db.exec(`ALTER TABLE submissions ADD COLUMN files TEXT NOT NULL DEFAULT ''`);
   db.exec(`PRAGMA user_version = 2`);
 
   // ---- Eski şemayla (kolonsuz) veri ekle ----
@@ -74,7 +79,8 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(version.user_version).toBe(3);
+    // #3 backfill + ardından #4 (submission_files) de koşar.
+    expect(version.user_version).toBe(4);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {

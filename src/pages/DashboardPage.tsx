@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import type { HealthResponse } from '../types';
 import { useAuth } from '../context/AuthContext';
 
@@ -45,6 +46,17 @@ export default function DashboardPage() {
       .then((data) => setHealth(data))
       .catch(() => setHealth(null));
   }, []);
+
+  // Rol bazlı paneller hazır: giriş sonrası ana sayfa role göre yönlendirir.
+  const roleHome =
+    user?.role === 'student'
+      ? '/student'
+      : user?.role === 'teacher'
+        ? '/teacher'
+        : user?.role === 'admin'
+          ? '/admin'
+          : null;
+  if (roleHome) return <Navigate to={roleHome} replace />;
 
   return (
     <div className="space-y-6">
