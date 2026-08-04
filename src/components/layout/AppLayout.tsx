@@ -49,6 +49,18 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
                 Yönetim
               </NavLink>
             )}
+            {user?.role === 'teacher' && (
+              <NavLink
+                to="/teacher"
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-sm font-medium text-accent'
+                    : 'text-sm font-medium text-muted hover:text-text'
+                }
+              >
+                Bu hafta
+              </NavLink>
+            )}
             {user && (
               <>
                 <span className="hidden text-sm text-muted sm:inline">

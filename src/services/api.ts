@@ -17,8 +17,11 @@ import type {
   OtpRequestInput,
   OtpVerifyInput,
   Paged,
+  ReportSaveInput,
   Student,
   Teacher,
+  TeacherDashboard,
+  TeacherReportPayload,
   User,
   Week,
 } from '../types';
@@ -283,4 +286,25 @@ export const adminApi = {
     remove: (id: string) =>
       apiFetch<void>(`/admin/students/${id}`, { method: 'DELETE' }),
   },
+};
+
+// ---------- Öğretmen raporları (Aşama 3) ----------
+
+export const teacherApi = {
+  dashboard: () => apiFetch<TeacherDashboard>('/teacher/dashboard'),
+  /** Get-or-create: rapor + satırlar + draft homeworks döner. */
+  openReport: (classCourseId: string, weekId: string) =>
+    apiFetch<TeacherReportPayload>('/teacher/reports', {
+      method: 'POST',
+      body: JSON.stringify({ class_course_id: classCourseId, week_id: weekId }),
+    }),
+  saveReport: (reportId: string, input: ReportSaveInput) =>
+    apiFetch<TeacherReportPayload>(`/teacher/reports/${reportId}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  completeReport: (reportId: string) =>
+    apiFetch<TeacherReportPayload>(`/teacher/reports/${reportId}/complete`, {
+      method: 'POST',
+    }),
 };

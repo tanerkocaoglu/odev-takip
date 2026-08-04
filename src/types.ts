@@ -141,3 +141,86 @@ export interface Student {
 }
 
 export const DAY_LABELS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'] as const;
+
+// ---------- Öğretmen raporları (Aşama 3) ----------
+
+export type Attendance = 'present' | 'absent' | 'late' | 'excused';
+
+export const ATTENDANCE_LABELS: Record<Attendance, string> = {
+  present: 'Geldi',
+  late: 'Geç kaldı',
+  absent: 'Gelmedi',
+  excused: 'İzinli',
+};
+
+export interface TeacherDashboardWeek {
+  id: string;
+  week_no: number;
+  start_date: string;
+  end_date: string;
+  label: string;
+}
+
+export interface TeacherDashboardItem {
+  class_course_id: string;
+  class_name: string;
+  course_name: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  report_id: string | null;
+  status: string | null;
+  is_overdue: boolean;
+}
+
+export interface TeacherDashboard {
+  week: TeacherDashboardWeek | null;
+  items: TeacherDashboardItem[];
+}
+
+export interface ReportEntry {
+  student_id: string;
+  student_name: string;
+  attendance: Attendance;
+  homework_score: number | null;
+  interest_score: number | null;
+  teacher_note: string | null;
+}
+
+export interface TeacherReportHeader {
+  id: string;
+  class_course_id: string;
+  week_id: string;
+  status: 'draft' | 'completed' | 'sent';
+  completed_at: string | null;
+  updated_at: string;
+  topic_covered: string | null;
+  prev_homework_text: string | null;
+  homework: { description: string | null; due_date: string } | null;
+  week: { week_no: number; start_date: string; end_date: string; label: string };
+  class_name: string;
+  course_name: string;
+  teacher_name: string;
+  day_of_week: number;
+  lesson_time: string | null;
+}
+
+export interface TeacherReportPayload {
+  report: TeacherReportHeader;
+  entries: ReportEntry[];
+}
+
+export interface ReportEntryInput {
+  student_id: string;
+  attendance: Attendance;
+  homework_score: number | null;
+  interest_score: number | null;
+  teacher_note: string | null;
+}
+
+export interface ReportSaveInput {
+  topic_covered?: string | null;
+  prev_homework_text?: string | null;
+  homework_description?: string | null;
+  due_date?: string | null;
+  entries?: ReportEntryInput[];
+}
