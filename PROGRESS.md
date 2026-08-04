@@ -96,7 +96,7 @@ raporları `completed` durumunda.
 
 `5744e57` — Aşama 0: frontend/backend iskeleti, tasarım token'ları, migration runner, /api/v1 health
 `669a58b` — PROGRESS.md: Aşama 0 commit hash eklendi
-*(Aşama 1 commit hash'i eklenmek üzere)*
+`524d432` — Aşama 1: veri modeli (migration #1), normalizasyon/hafta/hash util'leri, idempotent seed, FK + idempotentlik testleri
 
 ### Güncel dosya yapısı
 
