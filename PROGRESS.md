@@ -5,6 +5,123 @@
 
 ---
 
+## Aşama 2b — Admin CRUD ✅
+
+### Süreç özeti
+
+Admin; eğitim yılı, hafta, sınıf, ders, öğretmen-sınıf-ders atamaları,
+öğrenci-veli yönetimi ve enrollment'ları API + web arayüzü üzerinden
+yönetebiliyor. Sınıf değişikliği **hafta sınırında** zorlanıyor (admin hafta
+seçer, tarihler sistem tarafından kurulur). İsim aramaları için
+`classes`/`courses` tablolarına `name_normalized` eklendi (migration #3).
+Hassas yönetim işlemleri `audit_logs`'a yazılıyor.
+
+### Yapılanlar
+
+**Spec + şema**
+- `spec.md` §3.1: `classes.name_normalized` + `courses.name_normalized`
+  (isim araması/çakışma ASCII'ye indirgenmiş ad üzerinden).
+- Migration #3: kolonlar + JS backfill (`normalizeTurkish`) + UNIQUE
+  indekslerin normalized'a taşınması; seed güncellendi.
+
+**Backend (`routes/admin.ts`, tamamı `requireAuth` + `adminOnly`)**
+- Yardımcılar: `utils/pagination.ts` (page/pageSize clamp, `paged`),
+  `utils/phone.ts` (normalizePhone — auth.ts'ten taşındı),
+  `services/audit.ts` (`writeAuditLog` + `isUniqueViolation`),
+  `utils/asyncHandler.ts` (Express 4 async hata taşıma; generic P).
+- Eğitim yılı: GET/POST/PATCH; tek aktif (is_active geçişi transaction);
+  ad çakışması 409.
+- Hafta: GET (yıl filtresi), POST (`week_no` UNIQUE → 409; aralık yıl
+  dışına taşamaz → 400), PATCH **yalnızca tarih/label — `week_no`
+  düzenlenemez** (kullanıcı düzeltmesi), DELETE (raporlu hafta 409).
+- Sınıf/ders: GET (normalized arama), POST/PATCH/DELETE; UNIQUE çakışma
+  Türkçe harf duyarsız 409; silme korumaları (aktif enrollment'lı sınıf,
+  atanmış ders → 409).
+- Atamalar: GET (JOIN adlar), POST (sınıf+ders çifti UNIQUE → 409,
+  `teacher_id` öğretmen olmalı), PATCH (gün/saat/öğretmen), DELETE (raporlu
+  atama 409).
+- Öğretmen: GET (arama + sayfalama), POST (şifre **admin girer**, asenkron
+  `hashPassword`), PATCH, `reset-password` (`token_version` +1 + audit),
+  DELETE (aktif atamalı öğretmen 409 + audit).
+- Admin ekleme: `POST /admins` + audit `user.create` (spec §2).
+- Veli: GET (arama + sayfalama + çocuk sayısı; kimlik `guardians.id` —
+  students FK'sıyla tutarlı), POST (users+guardians transaction), PATCH
+  (`whatsapp_phone` null yapılabilir), DELETE (çocuğu olan veli 409 + audit).
+- Öğrenci: GET (ad **veya veli adı** araması + sınıf filtresi + sayfalama),
+  POST (users+students+enrollments tek transaction), PATCH, DELETE (soft +
+  tv+1 + aktif enrollment kapanır), **`change-class`**: admin `week_id`
+  seçer → yeni enrollment `start_date` = hafta başı, eski enrollment
+  `end_date` = önceki ders haftası sonu (`getPreviousWeek`; ilk haftaysa
+  hafta başı - 1 gün); yıl uyuşmazlığı 400, aynı sınıf 409 + audit
+  `student.class_change`.
+
+**Frontend**
+- `services/api.ts`: `adminApi` (tüm uçlar) + `query()` helper.
+- `hooks/useList.ts`: arama + sayfalama + yenileme state yönetimi.
+- `components/admin/`: `AdminLayout` (8 sekme), `Modal`, `Pagination`,
+  `ui.tsx` (Field/SearchBox/EmptyState/butonlar — token'lardan türetilir).
+- 8 sayfa: Eğitim yılı (tek aktif), Haftalar, Sınıflar, Dersler, Atamalar,
+  Öğretmenler (şifre oluşturma + sıfırlama), Öğrenciler (veli aramalı
+  seçici + hafta seçimli sınıf değiştirme modalı), Veliler (whatsapp notu).
+- `App.tsx`: `/admin` → `ProtectedRoute roles={['admin']}`; AppLayout'da
+  admin'e özel "Yönetim" linki.
+
+### Doğrulamalar
+
+| Kontrol | Sonuç |
+|---|---|
+| Backend testleri (103) — sıfırdan kurulum zinciri, arama/sayfalama, 409'lar, yetki, tv+1, audit | ✅ (fresh test.db) |
+| Frontend testleri (12) — adminApi, admin erişim engeli (öğretmen → ana sayfa), admin yönetim sayfası | ✅ |
+| `npm run typecheck` (kök + backend) + `npm run lint` + `npm run build` | ✅ |
+| Canlı: admin ile 2028-2029 yılını sıfırdan kurma (yıl→hafta→sınıf→ders→veli→öğrenci→öğretmen→atama) | ✅ |
+| Hafta sınırında sınıf değişikliği: week 2 seçilince start 08-09, eski end 07-09 | ✅ |
+
+### Çözülen sorunlar
+
+- **Guardian kimlik tutarsızlığı:** API `users.id` dönerken
+  `students.guardian_id` FK'sı `guardians.id` bekliyordu → öğrenci
+  oluşturma 404. Guardian rotaları `guardians.id` bazlına çekildi.
+- **Express 5 `req.params` tipi:** generic'siz handler'da `string |
+  string[]` → `asyncHandler` generic yapıldı (`Request<{id: string}>`).
+- **`react-hooks/set-state-in-effect`:** useEffect + async load deseninde
+  yanlış alarm ürettiği için eslint config'de kapatıldı (React docs fetch
+  deseni).
+- **Migration runner sıralama bug'ı** (Aşama 2a'dan): fresh DB'de #3 dahil
+  üç migration sıralı koştu — düzeltme doğrulandı.
+- **Windows db kilidi:** canlı doğrulama sonrası arka planda kalan tsx
+  process'i app.db'yi kilitliyordu (EPERM) — process temizliği eklendi.
+
+### Commit
+
+`Aşama 2b` — 6 commit (adım 1-5 + final):
+- adım 1: pagination/phone/audit yardımcıları + eğitim yılı + hafta
+- adım 2: sınıf + ders + atamalar + migration #3 (name_normalized)
+- adım 3: öğretmen + admin + audit
+- adım 4: öğrenci + veli + enrollment + hafta sınırında sınıf değişikliği
+- adım 5: admin frontend (8 sayfa)
+- adım 6: bitti kriteri doğrulaması + PROGRESS.md (bu commit)
+
+### Güncel dosya yapısı
+
+```
+/backend/src
+  /routes/admin.ts                (yeni — tüm admin CRUD)
+  /services/audit.ts              (yeni)
+  /utils/pagination.ts phone.ts asyncHandler.ts   (yeni)
+  /db/migrations.ts               (+ migration #3 name_normalized)
+  /db/seed.ts                     (name_normalized alanları)
+  /src/admin.test.ts              (yeni — 39 test)
+/src
+  /hooks/useList.ts               (yeni)
+  /components/admin/              (yeni: AdminLayout, Modal, Pagination, ui)
+  /pages/admin/                   (yeni: 8 CRUD sayfası)
+  /services/api.ts                (+ adminApi)
+  /types.ts                       (+ admin tipleri)
+  App.tsx AppLayout.tsx App.test.tsx  (admin rotaları + erişim testleri)
+```
+
+---
+
 ## Aşama 2a — Kimlik doğrulama ve yetki ✅
 
 ### Süreç özeti
