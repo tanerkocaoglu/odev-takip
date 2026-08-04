@@ -5,6 +5,95 @@
 
 ---
 
+## Aşama 3 — Toplu rapor giriş ekranı ✅
+
+### Süreç özeti
+
+Öğretmen "Bu hafta doldurulacaklar" listesinden rapor açıyor; get-or-create
+rapor, aktif enrollment'lardan öğrenci satırlarını ve taslak ödev satırını
+otomatik üretiyor. Rapor giriş ekranı klavye navigasyonlu (Enter/ok) tablo,
+2 sn debounce'lu autosave, devamsız satırda puanların zorunlu null olması,
+toplu doldurma çubuğu ve mobilde kart görünümü içeriyor. "Raporu tamamla"
+eksik puan ve son hafta due_date doğrulamasından geçerek `completed` yapıyor.
+
+### Yapılanlar
+
+**Backend (`routes/teacher.ts` — tamamı `requireAuth`; admin de doldurabilir)**
+- `GET /dashboard`: güncel hafta (aktif yılın `start_date <= bugün` son kaydı;
+  yoksa ilk kayda düşer); öğretmen sorgusu `teacher_id = req.user.id` filtreli;
+  `day_of_week + lesson_time` sıralı; completed/sent düşer; günü geçmiş
+  taslaklar `is_overdue` bayrağıyla üstte (önce `is_overdue`, sonra gün).
+- `POST /reports` get-or-create: yoksa tek akışta rapor + hafta başında aktif
+  enrollment'lardan `report_entries` + draft `homeworks` satırı (`description`
+  boş, `due_date` sunucuda `calculateDueDate()`; son haftada null → homework
+  satırı oluşturulmaz). `prev_homework_text`, önceki ders haftasının aynı
+  atamadaki ödev açıklamasından otomatik dolar (yoksa boş serbest metin).
+- `PUT /reports/:id` autosave: topic, verilmiş ödev (`prev_homework_id` null +
+  `prev_homework_text` elle değişince — tablo CHECK bunu zorlar), yapılacak
+  ödev + `due_date`; **normal haftada due_date boşaltılamaz** (kullanıcı
+  düzeltmesi: boş gelirse önceki değer korunur; yalnızca son hafta senaryosunda
+  null kabul edilir); devamsız (`absent`/`excused`) satırda puanlar zorunlu
+  null; `completed` düzenlemesinde `audit_logs.report.update` yazılır.
+- `POST /reports/:id/complete`: devamsız olmayan her satırda iki puan da dolu
+  olmalı (eksik → 400 `VALIDATION_ERROR` + `fields`); son hafta due_date null
+  ise 400; başarılıysa `status='completed'` + `completed_at`.
+- Yetki: her handler ilk satırında — öğretmen yalnızca kendi `class_course`
+  (`assertCanFill`), admin tümü; `sent` rapora PUT/complete 403.
+
+**Seed**
+- Haftalar göreceli üretilir: week 20 = bu hafta, week 21 = sonraki hafta —
+  dashboard her zaman "dolacak bir hafta" ve `calculateDueDate()` her zaman
+  sonuç üretir (Aşama 3 akışı her zaman test edilebilir).
+
+**Frontend**
+- `pages/teacher/TeacherDashboardPage`: "Bu hafta doldurulacaklar", günü
+  geçmişler amber rozetle üstte, tamamlananlar listede yok, boş durum metni.
+- `pages/teacher/ReportEntryPage` (spec §6.1): üst alanlar (verilmiş ödev,
+  işlenen konu, yapılacak ödev, son tarih — date input), son haftada
+  "Yılın son haftası — teslim tarihini siz belirleyin" uyarısı + boş tarih;
+  compact tablo (13px, `tabular-nums`): devamsızlık, ödev puanı, ilgi puanı,
+  not; klavye nav (Enter/oklar), devamsızlık → puanlar disable + null,
+  toplu doldurma ("Tümünü geldi yap", "Tümü için puan Uygula"), 2 sn debounce
+  autosave + "Kaydediliyor…/Kaydedildi", "Raporu tamamla", satır içi hata
+  (fields → alan altında); mobilde öğrenci başına kart + Önceki/Sonraki.
+- `components/admin/ui`'deki şablonlar (Field, LoadingState, EmptyState,
+  FormError, PrimaryButton) kullanıldı; tasarım token'larından sapma yok.
+
+**Testler**
+- `backend/src/teacher.test.ts` (22 test): oluştur → doldur → eksik puanla
+  tamamla (400) → tamamla (200); yabancı öğretmen 403; `sent` düzenleme 403;
+  prev homework otomatik dolumu; devamsız satır null zorlaması; **son hafta
+  fixture** (sahne akademik yıl + tek hafta, seed'e dokunmadan) → due_date
+  null → complete 400 → tarih girilince 200.
+- `src/teacher.test.tsx` (8 test): dashboard listeleme + gecikme bayrağı;
+  rapor giriş ekranı otomatik kaydetme, devamsızlık-disable, toplu doldurma.
+
+### Doğrulamalar
+
+| Kontrol | Sonuç |
+|---|---|
+| Backend testleri (128) | ✅ `teacher.test.ts` 22 dahil |
+| Frontend testleri (20) | ✅ `teacher.test.tsx` 8 dahil |
+| `npm run typecheck` (kök + backend) | ✅ |
+| `npm run lint` | ✅ |
+| **Canlı bitti kriteri** (öğretmen girişi → dashboard → rapor aç → puan doldur → tamamla) | ✅ `completed` |
+
+### Çözülen sorunlar
+
+- **Header merge sırası:** doğrulama script'inde `...opts` headers'ı
+  `content-type`'ın üzerine yazıyordu → JSON body tanınmıyordu; headers her
+  zaman sonradan merge edilecek şekilde düzeltildi.
+- **Eski seed:** canlı DB'de eski hafta verisi dashboard'u `week 1` fallback'ine
+  düşürüyordu; `db:reset` ile göreceli haftalar (20/21) yüklendi → `week 20`.
+
+### Commit
+
+`38a9f2f` — Aşama 3 (adım 1): öğretmen dashboard + rapor get-or-create
+`e962f42` — Aşama 3 (adım 2): PUT autosave + POST complete + son hafta fixture testleri
+`921fe6b` — Aşama 3 (adım 3-4): öğretmen dashboard + rapor giriş ekranı frontend'i
+
+---
+
 ## Aşama 2b — Admin CRUD ✅
 
 ### Süreç özeti
