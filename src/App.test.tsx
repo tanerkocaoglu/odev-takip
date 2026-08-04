@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
@@ -13,7 +13,7 @@ function userResponse(role: 'admin' | 'teacher') {
         id: 'test-user',
         full_name: role === 'admin' ? 'Yönetici' : 'Öğretmen',
         role,
-        phone: '+905001112233',
+        username: null,
         email: 'x@test.local',
       },
     }),
@@ -52,23 +52,8 @@ describe('App — girişsiz', () => {
     expect(
       screen.getByRole('heading', { name: 'Dershane Ödev Takip' }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('E-posta')).toBeInTheDocument();
+    expect(screen.getByLabelText('E-posta veya kullanıcı adı')).toBeInTheDocument();
     expect(screen.getByLabelText('Şifre')).toBeInTheDocument();
-  });
-
-  it('rol seçimi veliye geçince telefon + OTP formu görünür', () => {
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </MemoryRouter>,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Veli' }));
-    expect(screen.getByLabelText('Telefon numarası')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Kod gönder' }),
-    ).toBeInTheDocument();
   });
 });
 
@@ -134,8 +119,10 @@ describe('App — admin erişimi', () => {
         screen.getByRole('heading', { name: 'Yönetim' }),
       ).toBeInTheDocument();
     });
-    expect(
-      screen.getByText('Henüz eğitim yılı tanımlanmamış.'),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText('Henüz eğitim yılı tanımlanmamış.'),
+      ).toBeInTheDocument();
+    });
   });
 });

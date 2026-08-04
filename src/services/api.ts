@@ -14,8 +14,6 @@ import type {
   Course,
   Guardian,
   LoginRequest,
-  OtpRequestInput,
-  OtpVerifyInput,
   Paged,
   ReportSaveInput,
   Student,
@@ -101,20 +99,9 @@ export async function apiFetch<T>(
 }
 
 export const authApi = {
+  /** Tek giriş noktası: admin/öğretmen e-posta, veli/öğrenci username. */
   login(input: LoginRequest): Promise<AuthResponse> {
     return apiFetch<AuthResponse>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  },
-  requestOtp(input: OtpRequestInput): Promise<{ message: string }> {
-    return apiFetch<{ message: string }>('/auth/otp/request', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  },
-  verifyOtp(input: OtpVerifyInput): Promise<AuthResponse> {
-    return apiFetch<AuthResponse>('/auth/otp/verify', {
       method: 'POST',
       body: JSON.stringify(input),
     });
@@ -226,12 +213,12 @@ export const adminApi = {
   teachers: {
     list: (params: { q?: string; page?: number; pageSize?: number } = {}) =>
       apiFetch<Paged<Teacher>>(`/admin/teachers${query(params)}`),
-    create: (input: { full_name: string; email: string; phone: string; password: string }) =>
+    create: (input: { full_name: string; email: string; password: string }) =>
       apiFetch<Teacher>('/admin/teachers', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    patch: (id: string, input: { full_name?: string; email?: string; phone?: string }) =>
+    patch: (id: string, input: { full_name?: string; email?: string }) =>
       apiFetch<Teacher>(`/admin/teachers/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(input),
@@ -249,9 +236,9 @@ export const adminApi = {
       apiFetch<Paged<Guardian>>(`/admin/guardians${query(params)}`),
     create: (input: {
       full_name: string;
-      phone: string;
-      whatsapp_phone?: string | null;
+      whatsapp_phone: string;
       phone_secondary?: string | null;
+      password: string;
     }) =>
       apiFetch<Guardian>('/admin/guardians', {
         method: 'POST',
@@ -261,8 +248,7 @@ export const adminApi = {
       id: string,
       input: Partial<{
         full_name: string;
-        phone: string;
-        whatsapp_phone: string | null;
+        whatsapp_phone: string;
         phone_secondary: string | null;
       }>,
     ) =>
@@ -270,21 +256,31 @@ export const adminApi = {
         method: 'PATCH',
         body: JSON.stringify(input),
       }),
+    resetPassword: (id: string, password: string) =>
+      apiFetch<{ message: string }>(`/admin/guardians/${id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      }),
     remove: (id: string) =>
       apiFetch<void>(`/admin/guardians/${id}`, { method: 'DELETE' }),
   },
   students: {
     list: (params: { q?: string; page?: number; pageSize?: number; classId?: string } = {}) =>
       apiFetch<Paged<Student>>(`/admin/students${query(params)}`),
-    create: (input: { full_name: string; phone: string; guardian_id: string; class_id: string }) =>
+    create: (input: { full_name: string; guardian_id: string; class_id: string; password: string }) =>
       apiFetch<Student>('/admin/students', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    patch: (id: string, input: { full_name?: string; phone?: string; guardian_id?: string }) =>
+    patch: (id: string, input: { full_name?: string; guardian_id?: string }) =>
       apiFetch<Student>(`/admin/students/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(input),
+      }),
+    resetPassword: (id: string, password: string) =>
+      apiFetch<{ message: string }>(`/admin/students/${id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password }),
       }),
     changeClass: (id: string, input: { class_id: string; week_id: string }) =>
       apiFetch<{ message: string }>(`/admin/students/${id}/change-class`, {

@@ -27,7 +27,7 @@ export default function StudentsPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [guardianId, setGuardianId] = useState('');
   const [classId, setClassId] = useState('');
   const [guardianQuery, setGuardianQuery] = useState('');
@@ -41,6 +41,11 @@ export default function StudentsPage() {
   const [weeks, setWeeks] = useState<Week[]>([]);
   const [moveSubmitting, setMoveSubmitting] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+
+  const [resetStudent, setResetStudent] = useState<Student | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     adminApi.academicYears.list().then(async (yearData) => {
@@ -73,7 +78,7 @@ export default function StudentsPage() {
 
   function openCreate() {
     setFullName('');
-    setPhone('');
+    setPassword('');
     setGuardianId('');
     setGuardianQuery('');
     setGuardianResults([]);
@@ -88,9 +93,9 @@ export default function StudentsPage() {
     try {
       await adminApi.students.create({
         full_name: fullName.trim(),
-        phone: phone.trim(),
         guardian_id: guardianId,
         class_id: classId,
+        password,
       });
       setFormOpen(false);
       await reload();
@@ -124,6 +129,22 @@ export default function StudentsPage() {
       setMoveError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
     } finally {
       setMoveSubmitting(false);
+    }
+  }
+
+  async function handleReset(event: FormEvent) {
+    event.preventDefault();
+    if (!resetStudent) return;
+    setResetSubmitting(true);
+    setResetError(null);
+    try {
+      await adminApi.students.resetPassword(resetStudent.id, resetPassword);
+      setResetStudent(null);
+      setResetPassword('');
+    } catch (err) {
+      setResetError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setResetSubmitting(false);
     }
   }
 
@@ -176,7 +197,7 @@ export default function StudentsPage() {
                 <th className="px-3 py-2">Ad</th>
                 <th className="px-3 py-2">Veli</th>
                 <th className="px-3 py-2">Sınıf</th>
-                <th className="px-3 py-2">Telefon</th>
+                <th className="px-3 py-2">Kullanıcı adı</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -186,8 +207,19 @@ export default function StudentsPage() {
                   <td className="px-3 py-2 font-medium text-text">{student.full_name}</td>
                   <td className="px-3 py-2 text-muted">{student.guardian_name ?? '—'}</td>
                   <td className="px-3 py-2 text-muted">{student.class_name}</td>
-                  <td className="tabular px-3 py-2 text-muted">{student.phone}</td>
+                  <td className="tabular px-3 py-2 text-muted">{student.username}</td>
                   <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetStudent(student);
+                        setResetPassword('');
+                        setResetError(null);
+                      }}
+                      className="mr-3 text-sm font-medium text-muted hover:text-text"
+                    >
+                      Şifre sıfırla
+                    </button>
                     <button
                       type="button"
                       onClick={() => openMove(student)}
@@ -216,17 +248,6 @@ export default function StudentsPage() {
               className={inputClass}
             />
           </Field>
-          <Field label="Telefon (giriş için)" htmlFor="st-phone">
-            <input
-              id="st-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-              className={inputClass}
-              placeholder="+90 5XX XXX XX XX"
-            />
-          </Field>
           <Field label="Veli (arayın ve seçin)" htmlFor="st-guardian-search">
             <input
               id="st-guardian-search"
@@ -252,7 +273,7 @@ export default function StudentsPage() {
                       : 'text-text hover:bg-bg')
                   }
                 >
-                  {g.full_name} · {g.phone}
+                  {g.full_name} · {g.username}
                 </button>
               ))
             )}
@@ -271,6 +292,17 @@ export default function StudentsPage() {
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label="Başlangıç şifresi (öğrenciye iletin)" htmlFor="st-password">
+            <input
+              id="st-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className={inputClass}
+            />
           </Field>
           <FormError message={formError} />
           <div className="flex justify-end gap-2">
@@ -328,6 +360,37 @@ export default function StudentsPage() {
             <SecondaryButton onClick={() => setMoveStudent(null)}>İptal</SecondaryButton>
             <PrimaryButton type="submit" disabled={moveSubmitting || !moveClassId}>
               {moveSubmitting ? 'Taşınıyor…' : 'Sınıfı değiştir'}
+            </PrimaryButton>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={resetStudent !== null}
+        title={`${resetStudent?.full_name ?? ''} — şifre sıfırla`}
+        onClose={() => setResetStudent(null)}
+      >
+        <form onSubmit={handleReset} className="space-y-4">
+          <p className="text-sm text-muted">
+            Kullanıcı adı: {resetStudent?.username}. Eski oturumlar bu işlemle
+            sona erer.
+          </p>
+          <Field label="Yeni şifre (öğrenciye iletin)" htmlFor="st-reset">
+            <input
+              id="st-reset"
+              type="password"
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+              required
+              minLength={6}
+              className={inputClass}
+            />
+          </Field>
+          <FormError message={resetError} />
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={() => setResetStudent(null)}>İptal</SecondaryButton>
+            <PrimaryButton type="submit" disabled={resetSubmitting}>
+              {resetSubmitting ? 'Sıfırlanıyor…' : 'Şifreyi sıfırla'}
             </PrimaryButton>
           </div>
         </form>

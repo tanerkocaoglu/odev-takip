@@ -24,8 +24,8 @@ interface AuthContextValue {
   user: User | null;
   /** İlk yüklemede token doğrulanıyor mu? */
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  loginWithOtp: (phone: string, code: string) => Promise<void>;
+  /** Tek giriş: admin/öğretmen e-posta, veli/öğrenci username. */
+  login: (identifier: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -66,16 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      const res = await authApi.login({ email, password });
-      applyAuth(res.token, res.user);
-    },
-    [applyAuth],
-  );
-
-  const loginWithOtp = useCallback(
-    async (phone: string, code: string) => {
-      const res = await authApi.verifyOtp({ phone, code });
+    async (identifier: string, password: string) => {
+      const res = await authApi.login({ identifier, password });
       applyAuth(res.token, res.user);
     },
     [applyAuth],
@@ -87,8 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, loginWithOtp, logout }),
-    [user, loading, login, loginWithOtp, logout],
+    () => ({ user, loading, login, logout }),
+    [user, loading, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

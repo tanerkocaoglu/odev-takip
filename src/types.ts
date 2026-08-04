@@ -15,7 +15,9 @@ export interface User {
   id: string;
   full_name: string;
   role: Role;
-  phone: string;
+  /** Veli/öğrenci giriş anahtarı (admin/öğretmen için null). */
+  username: string | null;
+  /** Admin/öğretmen giriş anahtarı (veli/öğrenci için null). */
   email: string | null;
 }
 
@@ -24,18 +26,10 @@ export interface AuthResponse {
   user: User;
 }
 
+/** Tek giriş noktası — admin/öğretmen e-posta, veli/öğrenci username gönderir. */
 export interface LoginRequest {
-  email: string;
+  identifier: string;
   password: string;
-}
-
-export interface OtpRequestInput {
-  phone: string;
-}
-
-export interface OtpVerifyInput {
-  phone: string;
-  code: string;
 }
 
 /** API hata formatı — CLAUDE.md: Tüm hata yanıtları tek biçimdedir */
@@ -115,7 +109,6 @@ export interface Teacher {
   id: string;
   full_name: string;
   email: string;
-  phone: string;
   is_active: number;
 }
 
@@ -123,8 +116,8 @@ export interface Guardian {
   id: string;
   user_id: string;
   full_name: string;
-  phone: string;
-  whatsapp_phone: string | null;
+  username: string;
+  whatsapp_phone: string;
   phone_secondary: string | null;
   child_count?: number;
 }
@@ -133,7 +126,7 @@ export interface Student {
   id: string;
   student_id: string;
   full_name: string;
-  phone: string;
+  username: string;
   guardian_id: string | null;
   guardian_name: string | null;
   class_id: string;

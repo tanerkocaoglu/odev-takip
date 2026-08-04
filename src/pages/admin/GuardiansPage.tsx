@@ -23,16 +23,21 @@ export default function GuardiansPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [resetId, setResetId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   function openCreate() {
     setEditId(null);
     setFullName('');
-    setPhone('');
     setWhatsappPhone('');
+    setPassword('');
     setFormError(null);
     setFormOpen(true);
   }
@@ -40,8 +45,7 @@ export default function GuardiansPage() {
   function openEdit(guardian: Guardian) {
     setEditId(guardian.id);
     setFullName(guardian.full_name);
-    setPhone(guardian.phone);
-    setWhatsappPhone(guardian.whatsapp_phone ?? '');
+    setWhatsappPhone(guardian.whatsapp_phone);
     setFormError(null);
     setFormOpen(true);
   }
@@ -51,18 +55,16 @@ export default function GuardiansPage() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const whatsapp = whatsappPhone.trim() || null;
       if (editId) {
         await adminApi.guardians.patch(editId, {
           full_name: fullName.trim(),
-          phone: phone.trim(),
-          whatsapp_phone: whatsapp,
+          whatsapp_phone: whatsappPhone.trim(),
         });
       } else {
         await adminApi.guardians.create({
           full_name: fullName.trim(),
-          phone: phone.trim(),
-          whatsapp_phone: whatsapp,
+          whatsapp_phone: whatsappPhone.trim(),
+          password,
         });
       }
       setFormOpen(false);
@@ -71,6 +73,22 @@ export default function GuardiansPage() {
       setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleReset(event: FormEvent) {
+    event.preventDefault();
+    if (!resetId) return;
+    setResetSubmitting(true);
+    setResetError(null);
+    try {
+      await adminApi.guardians.resetPassword(resetId, resetPassword);
+      setResetId(null);
+      setResetPassword('');
+    } catch (err) {
+      setResetError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setResetSubmitting(false);
     }
   }
 
@@ -102,7 +120,7 @@ export default function GuardiansPage() {
             <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
               <tr>
                 <th className="px-3 py-2">Ad</th>
-                <th className="px-3 py-2">Telefon</th>
+                <th className="px-3 py-2">Kullanıcı adı</th>
                 <th className="px-3 py-2">WhatsApp</th>
                 <th className="px-3 py-2">Çocuk</th>
                 <th className="px-3 py-2" />
@@ -112,14 +130,21 @@ export default function GuardiansPage() {
               {items.map((guardian) => (
                 <tr key={guardian.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 font-medium text-text">{guardian.full_name}</td>
-                  <td className="tabular px-3 py-2 text-muted">{guardian.phone}</td>
-                  <td className="tabular px-3 py-2 text-muted">
-                    {guardian.whatsapp_phone ?? (
-                      <span className="text-xs text-muted">giriş numarası</span>
-                    )}
-                  </td>
+                  <td className="tabular px-3 py-2 text-muted">{guardian.username}</td>
+                  <td className="tabular px-3 py-2 text-muted">{guardian.whatsapp_phone}</td>
                   <td className="tabular px-3 py-2 text-muted">{guardian.child_count ?? 0}</td>
                   <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetId(guardian.id);
+                        setResetPassword('');
+                        setResetError(null);
+                      }}
+                      className="mr-3 text-sm font-medium text-muted hover:text-text"
+                    >
+                      Şifre sıfırla
+                    </button>
                     <button
                       type="button"
                       onClick={() => openEdit(guardian)}
@@ -152,32 +177,67 @@ export default function GuardiansPage() {
               className={inputClass}
             />
           </Field>
-          <Field label="Telefon (giriş için)" htmlFor="g-phone">
-            <input
-              id="g-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-              className={inputClass}
-              placeholder="+90 5XX XXX XX XX"
-            />
-          </Field>
-          <Field label="WhatsApp numarası" htmlFor="g-whatsapp">
+          <Field label="WhatsApp numarası (zorunlu)" htmlFor="g-whatsapp">
             <input
               id="g-whatsapp"
               type="tel"
               value={whatsappPhone}
               onChange={(e) => setWhatsappPhone(e.target.value)}
+              required
               className={inputClass}
-              placeholder="Boş bırakılırsa giriş numarasına gönderilir"
+              placeholder="+90 5XX XXX XX XX"
             />
           </Field>
+          {!editId && (
+            <Field label="Başlangıç şifresi (veliye iletin)" htmlFor="g-password">
+              <input
+                id="g-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                className={inputClass}
+              />
+            </Field>
+          )}
+          {editId && (
+            <p className="text-xs text-muted">
+              Kullanıcı adı: otomatik üretilir (veli…). Şifre değişimi için "Şifre sıfırla".
+            </p>
+          )}
           <FormError message={formError} />
           <div className="flex justify-end gap-2">
             <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
             <PrimaryButton type="submit" disabled={submitting}>
               {submitting ? 'Kaydediliyor…' : 'Kaydet'}
+            </PrimaryButton>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={resetId !== null}
+        title="Şifre sıfırla"
+        onClose={() => setResetId(null)}
+      >
+        <form onSubmit={handleReset} className="space-y-4">
+          <Field label="Yeni şifre (veliye iletin)" htmlFor="g-reset">
+            <input
+              id="g-reset"
+              type="password"
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+              required
+              minLength={6}
+              className={inputClass}
+            />
+          </Field>
+          <FormError message={resetError} />
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={() => setResetId(null)}>İptal</SecondaryButton>
+            <PrimaryButton type="submit" disabled={resetSubmitting}>
+              {resetSubmitting ? 'Sıfırlanıyor…' : 'Şifreyi sıfırla'}
             </PrimaryButton>
           </div>
         </form>

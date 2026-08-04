@@ -23,7 +23,6 @@ export default function TeachersPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -36,7 +35,6 @@ export default function TeachersPage() {
   function openCreate() {
     setFullName('');
     setEmail('');
-    setPhone('');
     setPassword('');
     setFormError(null);
     setFormOpen(true);
@@ -50,7 +48,6 @@ export default function TeachersPage() {
       await adminApi.teachers.create({
         full_name: fullName.trim(),
         email: email.trim(),
-        phone: phone.trim(),
         password,
       });
       setFormOpen(false);
@@ -107,7 +104,6 @@ export default function TeachersPage() {
               <tr>
                 <th className="px-3 py-2">Ad</th>
                 <th className="px-3 py-2">E-posta</th>
-                <th className="px-3 py-2">Telefon</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -116,7 +112,6 @@ export default function TeachersPage() {
                 <tr key={teacher.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 font-medium text-text">{teacher.full_name}</td>
                   <td className="px-3 py-2 text-muted">{teacher.email}</td>
-                  <td className="tabular px-3 py-2 text-muted">{teacher.phone}</td>
                   <td className="px-3 py-2 text-right">
                     <button
                       type="button"
@@ -158,17 +153,6 @@ export default function TeachersPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className={inputClass}
-            />
-          </Field>
-          <Field label="Telefon" htmlFor="t-phone">
-            <input
-              id="t-phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-              className={inputClass}
-              placeholder="+90 5XX XXX XX XX"
             />
           </Field>
           <Field label="Şifre (öğretmene iletin)" htmlFor="t-password">

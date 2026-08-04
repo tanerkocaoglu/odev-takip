@@ -105,19 +105,17 @@ describe('authApi', () => {
     const fetchMock = mockFetch(200, { token: 't', user: { id: '1' } });
     vi.stubGlobal('fetch', fetchMock);
 
-    const res = await authApi.login({ email: 'a@b.c', password: 'x' });
+    const res = await authApi.login({ identifier: 'a@b.c', password: 'x' });
 
     expect(res).toMatchObject({ token: 't' });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(`${BASE_URL}/auth/login`);
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ email: 'a@b.c', password: 'x' });
+    expect(JSON.parse(String(init.body))).toEqual({ identifier: 'a@b.c', password: 'x' });
     vi.unstubAllGlobals();
   });
 
-  it('requestOtp / verifyOtp / me uçları tanımlıdır', () => {
-    expect(typeof authApi.requestOtp).toBe('function');
-    expect(typeof authApi.verifyOtp).toBe('function');
+  it('me ucu tanımlıdır', () => {
     expect(typeof authApi.me).toBe('function');
   });
 });
