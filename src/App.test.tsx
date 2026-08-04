@@ -1,8 +1,24 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+
+function userResponse(role: 'admin' | 'teacher') {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      user: {
+        id: 'test-user',
+        full_name: role === 'admin' ? 'Yönetici' : 'Öğretmen',
+        role,
+        phone: '+905001112233',
+        email: 'x@test.local',
+      },
+    }),
+  };
+}
 
 // Token yoksa '/' /login'e yönlendirir (ProtectedRoute).
 describe('App — girişsiz', () => {
@@ -52,6 +68,67 @@ describe('App — girişsiz', () => {
     expect(screen.getByLabelText('Telefon numarası')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Kod gönder' }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('App — admin erişimi', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('öğretmen /admin e erişemez, ana sayfaya yönlendirilir', async () => {
+    localStorage.setItem('ds_token', 'teacher-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(userResponse('teacher')),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Ana sayfa' }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('admin /admin de yönetim sayfasını görür', async () => {
+    localStorage.setItem('ds_token', 'admin-token');
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(userResponse('admin'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [] }),
+        }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Yönetim' }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText('Henüz eğitim yılı tanımlanmamış.'),
     ).toBeInTheDocument();
   });
 });

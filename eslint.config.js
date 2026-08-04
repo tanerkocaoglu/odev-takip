@@ -19,6 +19,9 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Veri çekme deseni (useEffect + async load) için yanlış alarm üretiyor —
+      // useEffect içinden load() çağrısı senkron setState gibi görünüyor.
+      'react-hooks/set-state-in-effect': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

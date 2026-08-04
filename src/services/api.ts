@@ -6,12 +6,21 @@
  */
 
 import type {
+  AcademicYear,
   ApiError,
   AuthResponse,
+  ClassCourse,
+  ClassItem,
+  Course,
+  Guardian,
   LoginRequest,
   OtpRequestInput,
   OtpVerifyInput,
+  Paged,
+  Student,
+  Teacher,
   User,
+  Week,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1';
@@ -101,5 +110,177 @@ export const authApi = {
   },
   me(): Promise<{ user: User }> {
     return apiFetch<{ user: User }>('/auth/me');
+  },
+};
+
+// ---------- Admin CRUD (Aşama 2b) ----------
+
+function query(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value));
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export const adminApi = {
+  academicYears: {
+    list: () => apiFetch<{ items: AcademicYear[] }>('/admin/academic-years'),
+    create: (input: Omit<AcademicYear, 'id' | 'is_active'> & { is_active?: boolean }) =>
+      apiFetch<AcademicYear>('/admin/academic-years', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (
+      id: string,
+      input: Partial<Omit<AcademicYear, 'id' | 'is_active'>> & { is_active?: boolean },
+    ) =>
+      apiFetch<AcademicYear>(`/admin/academic-years/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+  },
+  weeks: {
+    list: (academicYearId?: string) =>
+      apiFetch<{ items: Week[] }>(
+        `/admin/weeks${query({ academicYearId })}`,
+      ),
+    create: (input: Omit<Week, 'id'>) =>
+      apiFetch<Week>('/admin/weeks', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (id: string, input: Partial<Omit<Week, 'id' | 'week_no'>>) =>
+      apiFetch<Week>(`/admin/weeks/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/weeks/${id}`, { method: 'DELETE' }),
+  },
+  classes: {
+    list: (params: { academicYearId?: string; q?: string } = {}) =>
+      apiFetch<{ items: ClassItem[] }>(`/admin/classes${query(params)}`),
+    create: (input: { academic_year_id: string; name: string }) =>
+      apiFetch<ClassItem>('/admin/classes', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (id: string, input: { name?: string }) =>
+      apiFetch<ClassItem>(`/admin/classes/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/classes/${id}`, { method: 'DELETE' }),
+  },
+  courses: {
+    list: (q?: string) =>
+      apiFetch<{ items: Course[] }>(`/admin/courses${query({ q })}`),
+    create: (input: { name: string }) =>
+      apiFetch<Course>('/admin/courses', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (id: string, input: { name?: string }) =>
+      apiFetch<Course>(`/admin/courses/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/courses/${id}`, { method: 'DELETE' }),
+  },
+  classCourses: {
+    list: (classId?: string) =>
+      apiFetch<{ items: ClassCourse[] }>(
+        `/admin/class-courses${query({ classId })}`,
+      ),
+    create: (input: Omit<ClassCourse, 'id' | 'class_name' | 'course_name' | 'teacher_name'>) =>
+      apiFetch<ClassCourse>('/admin/class-courses', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (
+      id: string,
+      input: Partial<Pick<ClassCourse, 'teacher_id' | 'day_of_week' | 'lesson_time'>>,
+    ) =>
+      apiFetch<ClassCourse>(`/admin/class-courses/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/class-courses/${id}`, { method: 'DELETE' }),
+  },
+  teachers: {
+    list: (params: { q?: string; page?: number; pageSize?: number } = {}) =>
+      apiFetch<Paged<Teacher>>(`/admin/teachers${query(params)}`),
+    create: (input: { full_name: string; email: string; phone: string; password: string }) =>
+      apiFetch<Teacher>('/admin/teachers', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (id: string, input: { full_name?: string; email?: string; phone?: string }) =>
+      apiFetch<Teacher>(`/admin/teachers/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    resetPassword: (id: string, password: string) =>
+      apiFetch<{ message: string }>(`/admin/teachers/${id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/teachers/${id}`, { method: 'DELETE' }),
+  },
+  guardians: {
+    list: (params: { q?: string; page?: number; pageSize?: number } = {}) =>
+      apiFetch<Paged<Guardian>>(`/admin/guardians${query(params)}`),
+    create: (input: {
+      full_name: string;
+      phone: string;
+      whatsapp_phone?: string | null;
+      phone_secondary?: string | null;
+    }) =>
+      apiFetch<Guardian>('/admin/guardians', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (
+      id: string,
+      input: Partial<{
+        full_name: string;
+        phone: string;
+        whatsapp_phone: string | null;
+        phone_secondary: string | null;
+      }>,
+    ) =>
+      apiFetch<Guardian>(`/admin/guardians/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/guardians/${id}`, { method: 'DELETE' }),
+  },
+  students: {
+    list: (params: { q?: string; page?: number; pageSize?: number; classId?: string } = {}) =>
+      apiFetch<Paged<Student>>(`/admin/students${query(params)}`),
+    create: (input: { full_name: string; phone: string; guardian_id: string; class_id: string }) =>
+      apiFetch<Student>('/admin/students', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (id: string, input: { full_name?: string; phone?: string; guardian_id?: string }) =>
+      apiFetch<Student>(`/admin/students/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    changeClass: (id: string, input: { class_id: string; week_id: string }) =>
+      apiFetch<{ message: string }>(`/admin/students/${id}/change-class`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/students/${id}`, { method: 'DELETE' }),
   },
 };

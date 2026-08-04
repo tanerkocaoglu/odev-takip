@@ -60,3 +60,84 @@ export interface HealthResponse {
   version: string;
   timestamp: string;
 }
+
+// ---------- Admin CRUD (Aşama 2b) ----------
+
+export interface Paged<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AcademicYear {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  is_active: number;
+}
+
+export interface Week {
+  id: string;
+  academic_year_id: string;
+  week_no: number;
+  start_date: string;
+  end_date: string;
+  label: string;
+}
+
+export interface ClassItem {
+  id: string;
+  academic_year_id: string;
+  name: string;
+  academic_year_name?: string;
+}
+
+export interface Course {
+  id: string;
+  name: string;
+}
+
+export interface ClassCourse {
+  id: string;
+  class_id: string;
+  course_id: string;
+  teacher_id: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  class_name?: string;
+  course_name?: string;
+  teacher_name?: string;
+}
+
+export interface Teacher {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  is_active: number;
+}
+
+export interface Guardian {
+  id: string;
+  user_id: string;
+  full_name: string;
+  phone: string;
+  whatsapp_phone: string | null;
+  phone_secondary: string | null;
+  child_count?: number;
+}
+
+export interface Student {
+  id: string;
+  student_id: string;
+  full_name: string;
+  phone: string;
+  guardian_id: string | null;
+  guardian_name: string | null;
+  class_id: string;
+  class_name: string;
+}
+
+export const DAY_LABELS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'] as const;

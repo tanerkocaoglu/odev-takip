@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -8,7 +9,7 @@ const ROLE_LABELS: Record<string, string> = {
   student: 'Öğrenci',
 };
 
-export default function AppLayout() {
+export default function AppLayout({ children }: { children?: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -36,6 +37,18 @@ export default function AppLayout() {
             >
               Ana sayfa
             </NavLink>
+            {user?.role === 'admin' && (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-sm font-medium text-accent'
+                    : 'text-sm font-medium text-muted hover:text-text'
+                }
+              >
+                Yönetim
+              </NavLink>
+            )}
             {user && (
               <>
                 <span className="hidden text-sm text-muted sm:inline">
@@ -54,7 +67,7 @@ export default function AppLayout() {
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
     </div>
   );
