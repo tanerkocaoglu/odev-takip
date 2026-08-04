@@ -35,6 +35,7 @@ beforeAll(() => {
     'academic_years',
     'students',
     'guardians',
+    'otp_codes',
     'users',
   ];
   for (const t of tables) {

@@ -8,6 +8,10 @@ export default defineConfig({
     // Testler gerçek app.db'ye dokunmasın — ayrı geçici DB kullan.
     env: {
       DB_PATH: path.join(import.meta.dirname, 'db', 'test.db'),
+      JWT_SECRET: 'test-secret-2a',
     },
+    // Testler aynı SQLite dosyasını (test.db) kullanıyor — dosyaları sıralı
+    // çalıştır (paralel temizlik yarışını önler).
+    fileParallelism: false,
   },
 });

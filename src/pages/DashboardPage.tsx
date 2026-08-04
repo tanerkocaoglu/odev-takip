@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { HealthResponse } from '../types';
+import { useAuth } from '../context/AuthContext';
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Yönetici',
+  teacher: 'Öğretmen',
+  guardian: 'Veli',
+  student: 'Öğrenci',
+};
 
 function StatusBadge({ status }: { status: 'draft' | 'completed' | 'sent' }) {
   const styles = {
@@ -28,6 +36,7 @@ function StatusBadge({ status }: { status: 'draft' | 'completed' | 'sent' }) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [health, setHealth] = useState<HealthResponse | null>(null);
 
   useEffect(() => {
@@ -40,6 +49,19 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-text">Ana sayfa</h1>
+
+      {user && (
+        <section className="rounded-md border border-border bg-surface p-6">
+          <p className="text-sm text-muted">
+            Hoş geldin,{' '}
+            <span className="font-semibold text-text">{user.full_name}</span>.
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Giriş türü: <span className="font-medium text-text">{ROLE_LABELS[user.role]}</span>.
+            Rolünüze özel panel sonraki aşamalarda eklenecek.
+          </p>
+        </section>
+      )}
 
       <section className="rounded-md border border-border bg-surface p-6">
         <h2 className="text-base font-semibold text-text">

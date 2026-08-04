@@ -1,5 +1,4 @@
-// Global tip tanımları — Aşama 0 iskeleti
-// Sonraki aşamalarda spec.md'deki veri modeliyle genişletilecek.
+// Global tip tanımları — backend API'sinin birebir karşılığı.
 
 export type Role = 'admin' | 'teacher' | 'guardian' | 'student';
 
@@ -16,7 +15,27 @@ export interface User {
   id: string;
   full_name: string;
   role: Role;
-  is_active: boolean;
+  phone: string;
+  email: string | null;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface OtpRequestInput {
+  phone: string;
+}
+
+export interface OtpVerifyInput {
+  phone: string;
+  code: string;
 }
 
 /** API hata formatı — CLAUDE.md: Tüm hata yanıtları tek biçimdedir */

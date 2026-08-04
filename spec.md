@@ -89,6 +89,10 @@ matrisler değil (bkz. §5.5). Asıl büyüyen kaynak dosya depolamadır (§8).
 
 OTP doğrulaması sunucu tarafında yapılır; doğrulama başarılıysa JWT döner.
 
+**JWT ömrü (rol bazlı):** admin/öğretmen 7 gün, veli/öğrenci 30 gün.
+**Login brute-force koruması:** e-posta+şifre girişinde 15 dakikada 5
+başarısız denemeden sonra `429 RATE_LIMITED` döner (IP + hesap bazlı).
+
 ---
 
 ## 3. Veri modeli
@@ -132,6 +136,27 @@ CREATE INDEX idx_users_normalized ON users(full_name_normalized);
 > `full_name_normalized` zorunlu: SQLite'ın `LIKE`'ı sadece ASCII için harf
 > duyarsızdır. Yazma anında `toLocaleLowerCase('tr')` + aksan sadeleştirmesi,
 > **yalnızca sunucuda** üretilir.
+
+**`otp_codes`** — veli/öğrenci OTP doğrulama kayıtları (güvenlik verisi)
+```sql
+CREATE TABLE otp_codes (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id),
+  code          TEXT NOT NULL,        -- 6 hane
+  is_valid      INTEGER NOT NULL DEFAULT 1 CHECK (is_valid IN (0,1)),
+  attempts      INTEGER NOT NULL DEFAULT 0,   -- hatalı deneme sayısı
+  expires_at    TEXT NOT NULL,        -- ISO 8601; gönderim anında +10 dk
+  last_sent_at  TEXT NOT NULL,        -- ISO 8601; 2 dk rate limit
+  used_at       TEXT,                 -- başarılı doğrulama zamanı
+  created_at    TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX idx_otp_codes_user ON otp_codes(user_id, created_at);
+```
+> Kurallar (§2.1): yeni OTP isteği, kullanıcının kullanılmamış (`is_valid = 1`)
+> tüm eski OTP kayıtlarını `is_valid = 0` yaparak geçersiz kılar; başarılı
+> doğrulama `used_at` doldurur ve `is_valid = 0` yapar; 5. hatalı denemede de
+> `is_valid = 0` (yeni OTP alınması gerekir). Tek kullanımlıktır.
 
 **`guardians`** — veli detayı (1 hesap = 1 veli, N öğrenci)
 ```sql

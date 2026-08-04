@@ -5,6 +5,109 @@
 
 ---
 
+## Aşama 2a — Kimlik doğrulama ve yetki ✅
+
+### Süreç özeti
+
+JWT kimlik doğrulama (admin/öğretmen e-posta+şifre, veli/öğrenci telefon+OTP),
+`token_version` karşılaştırmalı `auth` middleware'i, `adminOnly`, login
+brute-force rate limit, rol bazlı frontend koruması ve 4 rol × yetki test
+matrisi eklendi. OTP kayıtları için `spec.md`'ye `otp_codes` tablosu eklendi
+ve migration #2 olarak yazıldı.
+
+### Yapılanlar
+
+**Spec + şema**
+- `spec.md` §3.1: `otp_codes` tablosu (is_valid, attempts, expires_at,
+  last_sent_at, used_at); §2.1: JWT ömrü (admin/öğretmen 7 gün, veli/öğrenci
+  30 gün) + login brute-force kuralı (15 dk / 5 deneme → 429).
+- Migration #2 `otp_codes` (migration #1 donduruldu).
+
+**Backend**
+- `utils/token.ts` — JWT sign/verify; payload `{ id, role, teacher_id?,
+  student_id?, guardian_id?, tv }`; ömür rol bazlı (`as const satisfies`).
+- `services/sms.ts` — `sendSms(phone, message)`; `SMS_PROVIDER_KEY` boşsa
+  konsola yazar.
+- `services/otp.ts` — `requestOtp` (6 hane, 10 dk, 2 dk rate limit, yeni
+  istekte kullanılmamış eski OTP'ler `is_valid = 0`), `verifyOtp`
+  (invalid/expired/locked; 5. denemede OTP ölür; tek kullanımlık).
+- `middleware/auth.ts` — Bearer JWT + `users.token_version` karşılaştırması
+  + `deleted_at`/`is_active` kontrolü; rol DB'den okunur (payload'a
+  güvenilmez).
+- `middleware/adminOnly.ts` — admin dışı 403.
+- `middleware/rateLimit.ts` — in-memory sabit pencere; `clearRateLimits()`
+  testlerde; login'de IP + e-posta anahtarıyla 15 dk / 5 deneme.
+- `routes/auth.ts` — `POST /auth/login` (scrypt doğrulama **asenkron**
+  `verifyPassword` — seed'deki `scryptSync` login'de KULLANILMAZ),
+  `POST /auth/otp/request`, `POST /auth/otp/verify`, `GET /auth/me`.
+  Hesap var/yok sızıntısı önlenir (login: tek mesaj; otp/verify: genel mesaj).
+- `types.ts` — `AuthUser` + Express `Request.user` global bildirimi.
+- `index.ts` — `loadEnv()` eklendi (JWT_SECRET için zorunluydu).
+
+**Frontend**
+- `services/api.ts` — fetch sarmalayıcı (Bearer, `ApiClientError`,
+  401'de token temizleme), `authApi` uçları.
+- `context/AuthContext.tsx` — token localStorage, açılışta `/auth/me`
+  doğrulaması, `login` / `loginWithOtp` / `logout`.
+- `components/ProtectedRoute.tsx` — token yoksa `/login`, rol uyuşmazsa `/`.
+- `pages/LoginPage.tsx` — rol seçimi; admin/öğretmen e-posta+şifre;
+  veli/öğrenci telefon → OTP iki aşama (kod iste → kodu gir, 120 sn sayaç);
+  alan altı hata, yükleniyor durumu.
+- `App.tsx` — `/` ProtectedRoute + AppLayout; `*` → `/`; `AppLayout`'a
+  kullanıcı adı + rol + çıkış.
+
+### Doğrulamalar
+
+| Kontrol | Sonuç |
+|---|---|
+| Backend testleri (64) — login, OTP akışları, rate limit, tv uyumsuzluğu, yetki matrisi | ✅ |
+| Frontend testleri (10) — api client, LoginPage, ProtectedRoute yönlendirme | ✅ |
+| `npm run typecheck` (kök + backend) | ✅ |
+| `npm run lint` | ✅ |
+| `db:reset` (migration #1→#2 sıralı, fresh DB) | ✅ |
+| Canlı: admin login + `/auth/me`, öğretmen yanlış şifre 401, OTP request→verify (kod konsola loglandı) | ✅ |
+
+### Çözülen sorunlar
+
+- **Migration runner sıralama bug'ı:** `runMigrations` `currentVersion`'ı
+  döngü başında bir kez okuyordu; 2+ migration birlikte koşunca (ör. fresh
+  DB'de #1 → #2) "beklenen 1, alınan 2" hatası fırlatıyordu. Aşama 1'de
+  test.db hep güncel olduğundan gizliydi. Döngü içinde `nextVersion`
+  güncellenerek düzeltildi.
+- **Express 4 hata akışı:** Test router'ı `createApp`'in `errorHandler`'ından
+  SONRA mount edilince adminOnly hatası HTML 403'e düşüyordu (error handler
+  en sonda olmalı). Test app'ine errorHandler yeniden eklendi.
+- **OTP 2 dk kuralı test izolasyonu:** `last_sent_at` DB'de olduğundan
+  testler arası sızıyordu; `beforeEach`'te `otp_codes` temizliği eklendi.
+- **`jsonwebtoken` expiresIn tipi:** `Record<Role, string>` literal genişliyor
+  → `as const satisfies` ile `StringValue` tipi korundu.
+
+### Commit
+
+`Aşama 2a — kimlik doğrulama ve yetki (JWT + OTP + middleware + rol koruması)`
+
+### Güncel dosya yapısı
+
+```
+/backend/src
+  /db/migrations.ts   (+ migration #2 otp_codes; runner sıralama düzeltmesi)
+  /middleware/auth.ts /adminOnly.ts /rateLimit.ts   (yeni)
+  /services/sms.ts /services/otp.ts                 (yeni)
+  /utils/token.ts                                   (yeni)
+  /routes/auth.ts + /routes/auth.test.ts → src/auth.test.ts (taşındı)
+  /services/otp.test.ts /test/helpers.ts            (yeni)
+  /src/types.ts (AuthUser + Request.user)
+/src
+  /services/api.ts + api.test.ts                    (yeni)
+  /context/AuthContext.tsx                          (yeni)
+  /components/ProtectedRoute.tsx                    (yeni)
+  /pages/LoginPage.tsx                              (yeniden yazıldı)
+  /components/layout/AppLayout.tsx                  (rol + çıkış)
+  App.tsx / App.test.tsx                            (rol korumalı rotalar)
+```
+
+---
+
 ## Aşama 1 — Veri modeli ve seed ✅
 
 ### Süreç özeti

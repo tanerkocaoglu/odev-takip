@@ -265,6 +265,28 @@ registerMigration(1, 'schema', () => {
   `);
 });
 
+/**
+ * Migration #2 — OTP doğrulama kayıtları (Aşama 2a).
+ * spec.md §3.1 `otp_codes`; §2.1 OTP kuralları + JWT ömrü.
+ */
+registerMigration(2, 'otp_codes', () => {
+  db.exec(`
+    CREATE TABLE otp_codes (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES users(id),
+      code          TEXT NOT NULL,
+      is_valid      INTEGER NOT NULL DEFAULT 1 CHECK (is_valid IN (0,1)),
+      attempts      INTEGER NOT NULL DEFAULT 0,
+      expires_at    TEXT NOT NULL,
+      last_sent_at  TEXT NOT NULL,
+      used_at       TEXT,
+      created_at    TEXT NOT NULL
+    ) STRICT;
+
+    CREATE INDEX idx_otp_codes_user ON otp_codes(user_id, created_at);
+  `);
+});
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }
@@ -275,12 +297,14 @@ export function runMigrations(): void {
     .filter((m) => m.version > currentVersion)
     .sort((a, b) => a.version - b.version);
 
+  let nextVersion = currentVersion;
+
   for (const migration of pending) {
     // Migration #1 Aşama 1'de eklenecek; Aşama 0'da runner hazırdır.
     // Migration mutlaka 1'den başlamalıdır.
-    if (migration.version !== currentVersion + 1) {
+    if (migration.version !== nextVersion + 1) {
       throw new Error(
-        `Migration sırası bozuk: beklenen ${currentVersion + 1}, alınan ${migration.version} (${migration.name})`,
+        `Migration sırası bozuk: beklenen ${nextVersion + 1}, alınan ${migration.version} (${migration.name})`,
       );
     }
 
@@ -289,6 +313,7 @@ export function runMigrations(): void {
       migration.up();
       db.exec(`PRAGMA user_version = ${migration.version}`);
       db.exec('COMMIT');
+      nextVersion = migration.version;
     } catch (err) {
       db.exec('ROLLBACK');
       throw new Error(
