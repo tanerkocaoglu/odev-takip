@@ -9,6 +9,13 @@
  * - İlk admin: `ADMIN_PASSWORD` env değeri hash'lenerek eklenir; var olan
  *   admin güncellenmez.
  * - Migration #1'in varlığından emin olur (runMigrations idempotenttir).
+ *
+ * Senaryo verileri:
+ * - 5 velinin 2'şer çocuğu (kardeş öğrenciler 201-205, sınıf 6-10'a dağıtılır)
+ *   → veli paneli "öğrenci seçimi" Aşama 5'te test edilebilir.
+ * - 2 öğrenci (3 ve 4) dönem ortasında sınıf değiştirir (sınıf 1 → 6/7);
+ *   kapanan enrollment + yeni enrollment. Week 8'de eski sınıfta, week 19'da
+ *   yeni sınıfta raporları vardır — "geçmiş raporlar eski sınıfta kalır".
  */
 
 import { db } from './index.js';
@@ -31,6 +38,18 @@ function insert(table: string, row: Row): void {
   db.prepare(
     `INSERT OR IGNORE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`,
   ).run(...values);
+}
+
+function update(table: string, set: Row, where: Row): void {
+  const setKeys = Object.keys(set);
+  const whereKeys = Object.keys(where);
+  const setSql = setKeys.map((k) => `${k} = ?`).join(', ');
+  const whereSql = whereKeys.map((k) => `${k} = ?`).join(' AND ');
+  const values = [
+    ...setKeys.map((k) => set[k]),
+    ...whereKeys.map((k) => where[k]),
+  ];
+  db.prepare(`UPDATE ${table} SET ${setSql} WHERE ${whereSql}`).run(...values);
 }
 
 function now(): string {
@@ -95,10 +114,7 @@ const CLASS_NAMES = [
 
 const COURSE_NAMES = ['Matematik', 'Fizik', 'Kimya', 'Türkçe', 'İngilizce'];
 
-/**
- * Her sınıfa 4 ders seç (5 dersten dönüşümlü kombinasyon).
- * Farklı sınıflar farklı ders kümesi alır (offset kaydırma).
- */
+/** Her sınıfa 4 ders seç (5 dersten dönüşümlü kombinasyon). */
 function coursesForClass(classIndex: number): number[] {
   const offset = classIndex % COURSE_NAMES.length;
   return [0, 1, 2, 3].map((i) => (offset + i) % COURSE_NAMES.length);
@@ -131,17 +147,51 @@ function buildWeeks(): WeekRecord[] {
   return weeks;
 }
 
-/** 2025-09-01 itibarıyla sınıfın hangi öğrenci numaralarını kapsadığını döner. */
-function classIndexOf(classId: string, classIds: string[]): number {
-  return classIds.indexOf(classId);
-}
-
-// Geçen hafta = week_no 19; ödev, week 20'deki ders gününe düşer.
+// Senaryo sabitleri
 const LAST_WEEK_NO = 19;
+const SIBLING_COUNT = 5; // kardeş öğrenci adedi (201-205)
+const MOVED_STUDENTS: Record<number, number> = {
+  3: 6, // öğrenci 3 → sınıf 6
+  4: 7, // öğrenci 4 → sınıf 7
+};
+const SIBLING_CLASSES = [6, 7, 8, 9, 10]; // kardeş 201..205 → sınıf 6..10
+
+/**
+ * Bir sınıfın week 19'da (mevcut) aktif öğrenci numaralarını döner.
+ * - Sınıf indeksi 0 (sınıf 1): 3 ve 4 ayrıldı → [1,2,5,6,7,8]
+ * - Kardeşler ve değişenler o sınıfa eklendiği gibi döner.
+ */
+function week19StudentNumbers(
+  classIdx: number,
+  siblingStudentNumbers: number[],
+): number[] {
+  const baseStart = classIdx * 8 + 1;
+  const base = Array.from({ length: 8 }, (_, i) => baseStart + i);
+
+  // Ayrılanlar: yalnızca sınıf 1'den (3 ve 4)
+  const removed = classIdx === 0 ? [3, 4] : [];
+
+  // Eklenenler: taşınan öğrenciler
+  const movedIn: number[] = [];
+  for (const [studentNum, targetClass] of Object.entries(MOVED_STUDENTS)) {
+    if (targetClass - 1 === classIdx) movedIn.push(Number(studentNum));
+  }
+  // Eklenenler: kardeşler (siblingStudentNumbers[i] sınıf = SIBLING_CLASSES[i])
+  const siblingIn: number[] = [];
+  siblingStudentNumbers.forEach((num, i) => {
+    if (SIBLING_CLASSES[i] - 1 === classIdx) siblingIn.push(num);
+  });
+
+  const result = base.filter((n) => !removed.includes(n));
+  result.push(...movedIn, ...siblingIn);
+  // Sınıf 1'de öğrenci 3'ün kaldığı sınıfta iki kez eklenmemesi için unique
+  return [...new Set(result)];
+}
 
 interface ClassCourse {
   id: string;
   classId: string;
+  classIndex: number;
   courseIdx: number;
   teacherId: string;
   dayOfWeek: number;
@@ -238,8 +288,7 @@ export function seedDatabase(adminPassword: string): void {
     });
   });
 
-  // --- Veliler (200) ve Öğrenciler (200) ---
-  // Her öğrenciye 1 veli; sınıf başına 8 öğrenci (25 × 8 = 200).
+  // --- Veliler (200) + Öğrenciler (200) ---
   for (let s = 1; s <= 200; s++) {
     const studentUserId = `seed-user-student-${pad(s)}`;
     const guardianUserId = `seed-user-guardian-${pad(s)}`;
@@ -275,8 +324,7 @@ export function seedDatabase(adminPassword: string): void {
 
     const studentRecId = `seed-student-${pad(s)}`;
     const guardianRecId = `seed-guardian-${pad(s)}`;
-    // Sıra önemli: students.guardian_id → guardians(id) FK'sı var;
-    // önce guardian kaydı eklenir, sonra student.
+    // Sıra: students.guardian_id → guardians(id) FK olduğundan önce guardian.
     insert('guardians', {
       id: guardianRecId,
       user_id: guardianUserId,
@@ -293,20 +341,82 @@ export function seedDatabase(adminPassword: string): void {
     });
   }
 
-  // --- Enrollments (200, aktif) ---
+  // --- Kardeş öğrenciler (201-205) → ilk 5 veliye ---
+  const siblingStudentNumbers: number[] = [];
+  for (let k = 1; k <= SIBLING_COUNT; k++) {
+    const studentNum = 200 + k;
+    siblingStudentNumbers.push(studentNum);
+    const studentUserId = `seed-user-student-${pad(studentNum)}`;
+    const guardianRecId = `seed-guardian-${pad(k)}`; // veli 1..5
+    const studentName = `Öğrenci ${studentNum}`;
+
+    // Telefon aralığı 601-605: mevcut aralıklarla çakışmaz
+    // (1-11 admin/öğretmen, 201-400 öğrenci, 401-600 veli).
+    insert('users', {
+      id: studentUserId,
+      full_name: studentName,
+      full_name_normalized: normalizeTurkish(studentName),
+      phone: phone(600 + k),
+      email: null,
+      password_hash: null,
+      role: 'student',
+      is_active: 1,
+      token_version: 1,
+      deleted_at: null,
+      created_at: createdAt,
+    });
+    insert('students', {
+      id: `seed-student-${pad(studentNum)}`,
+      user_id: studentUserId,
+      guardian_id: guardianRecId,
+      deleted_at: null,
+    });
+  }
+
+  // --- Enrollments (ayrılanlar kapanır, yeni kayıtlar açılır) ---
+  // Aktif (temel) üyeler: öğrenci 1..200, sınıf = (s-1)//8
   for (let s = 1; s <= 200; s++) {
-    const classIndex = Math.floor((s - 1) / 8); // her sınıfa 8
     insert('enrollments', {
       id: `seed-enrollment-${pad(s)}`,
       student_id: `seed-student-${pad(s)}`,
-      class_id: classIds[classIndex],
+      class_id: classIds[Math.floor((s - 1) / 8)],
       start_date: '2025-09-01',
       end_date: null,
     });
   }
 
+  // Sınıf değişikliği: öğrenci 3 ve 4 — eski kayıt kapatılır (week 10 başı
+  // öncesi: 2025-11-02), yeni sınıflara yeni aktif kayıt açılır.
+  // NOT: `WHERE end_date = ?` ile NULL eşleşmez (SQL: NULL = NULL → false),
+  // bu yüzden deterministik temel id (`seed-enrollment-003`) ile güncellenir.
+  for (const [studentNum, targetClass] of Object.entries(MOVED_STUDENTS)) {
+    const num = Number(studentNum);
+    update(
+      'enrollments',
+      { end_date: '2025-11-02' },
+      { id: `seed-enrollment-${pad(num)}` },
+    );
+    insert('enrollments', {
+      id: `seed-enrollment-moved-${pad(num)}`,
+      student_id: `seed-student-${pad(num)}`,
+      class_id: classIds[targetClass - 1],
+      start_date: '2025-11-03',
+      end_date: null,
+    });
+  }
+
+  // Kardeş öğrenciler → sınıf 6-10'a aktif kayıt
+  siblingStudentNumbers.forEach((num, i) => {
+    insert('enrollments', {
+      id: `seed-enrollment-sibling-${pad(num)}`,
+      student_id: `seed-student-${pad(num)}`,
+      class_id: classIds[SIBLING_CLASSES[i] - 1],
+      start_date: '2025-09-01',
+      end_date: null,
+    });
+  });
+
   // --- class_courses (~100) ---
-  // Her sınıfa 4 ders; ders günü hafta içi (1..5), öğretmen ders bazında atanır.
   const classCourses: ClassCourse[] = [];
   for (let c = 0; c < classIds.length; c++) {
     const courseIndices = coursesForClass(c);
@@ -317,6 +427,7 @@ export function seedDatabase(adminPassword: string): void {
       const cc = {
         id: `seed-class-course-${pad(c + 1)}-${courseIdx + 1}`,
         classId: classIds[c],
+        classIndex: c,
         courseIdx,
         teacherId: teacherIds[teacherIdx],
         dayOfWeek: day,
@@ -336,21 +447,47 @@ export function seedDatabase(adminPassword: string): void {
   }
 
   // --- Geçen hafta (week 19) raporları: completed ---
-  // Her class_course için 1 rapor + satır başına report_entry + homeworks.
   const lastWeek = weeks.find((w) => w.week_no === LAST_WEEK_NO)!;
-  const lastWeekId = lastWeek.id;
+  buildReportBlockForWeek(lastWeek, classCourses, weeks, (cc) =>
+    week19StudentNumbers(cc.classIndex, siblingStudentNumbers),
+  );
+
+  // --- Geçmiş blok: week 8 — sınıf 1 ve 2 (değişimden önce) ---
+  // "Geçmiş raporlar eski sınıfta kalır" kuralının kanıtı: öğrenci 3 ve 4
+  // week 8 raporlarında ESKİ sınıflarında (sınıf 1) görünür.
+  const pastWeek = weeks.find((w) => w.week_no === 8)!;
+  const pastClassCourses = classCourses.filter(
+    (cc) => cc.classIndex === 0 || cc.classIndex === 1,
+  );
+  buildReportBlockForWeek(pastWeek, pastClassCourses, weeks, (cc) => {
+    const baseStart = cc.classIndex * 8 + 1;
+    return Array.from({ length: 8 }, (_, i) => baseStart + i);
+  });
+}
+
+/**
+ * Bir hafta için her class_course'a bir completed rapor + homework +
+ * report_entries üretir (öğrenci listesi verilen fonksiyondan gelir).
+ * due_date, ödevin verildiği tarihten sonraki bir sonraki aynı ders günüdür.
+ */
+function buildReportBlockForWeek(
+  week: WeekRecord,
+  classCourses: ClassCourse[],
+  allWeeks: WeekRecord[],
+  studentNumbersFor: (cc: ClassCourse) => number[],
+): void {
+  const weekId = week.id;
 
   for (const cc of classCourses) {
-    const reportId = `seed-report-${cc.id}-w${LAST_WEEK_NO}`;
-    const homeworkId = `seed-homework-${cc.id}-w${LAST_WEEK_NO}`;
+    const reportId = `seed-report-${cc.id}-w${week.week_no}`;
+    const homeworkId = `seed-homework-${cc.id}-w${week.week_no}`;
     const updatedAt = now();
 
-    // Rapor (completed) — prev_homework boş (week 18'de rapor yok).
     insert('reports', {
       id: reportId,
       class_course_id: cc.id,
-      week_id: lastWeekId,
-      topic_covered: `Hafta ${lastWeek.week_no} konu anlatımı ${cc.courseIdx + 1}`,
+      week_id: weekId,
+      topic_covered: `Hafta ${week.week_no} konu anlatımı ${cc.courseIdx + 1}`,
       prev_homework_id: null,
       prev_homework_text: null,
       status: 'completed',
@@ -359,61 +496,28 @@ export function seedDatabase(adminPassword: string): void {
       updated_at: updatedAt,
     });
 
-    // Homework: due_date ödev verildikten sonraki ilk aynı ders günüdür.
-    const dueDate = calculateDueDate(lastWeek, cc.dayOfWeek, weeks);
-    if (!dueDate) {
-      // Yılın son haftası senaryosu seed'de geçerli değil — w20 mevcut.
-      throw new Error(`Seed: ${cc.id} için due_date hesaplanamadı`);
-    }
+    // Week 20 yoksa (son hafta) due_date = week.end_date düşer.
+    const dueDate =
+      calculateDueDate(week, cc.dayOfWeek, allWeeks) ?? week.end_date;
     insert('homeworks', {
       id: homeworkId,
       report_id: reportId,
       class_course_id: cc.id,
-      week_id: lastWeekId,
-      description: `Hafta ${lastWeek.week_no} ödevi — ders ${cc.courseIdx + 1}`,
+      week_id: weekId,
+      description: `Hafta ${week.week_no} ödevi — ders ${cc.courseIdx + 1}`,
       attachments: null,
       due_date: dueDate,
     });
 
-    // report_entries: sınıftaki öğrenciler (8 öğrenci/sınıf)
-    const classIdx = classIndexOf(cc.classId, classIds);
-    for (let k = 0; k < 8; k++) {
-      const studentNum = classIdx * 8 + k + 1;
-      const studentId = `seed-student-${pad(studentNum)}`;
-
-      // Devamsızlık: her sınıfta 1 absent + 1 excused; diğerleri present/late.
-      let attendance: string;
-      let hw: number | null;
-      let interest: number | null;
-      if (k === 0) {
-        attendance = 'absent';
-        hw = null;
-        interest = null;
-      } else if (k === 1) {
-        attendance = 'excused';
-        hw = null;
-        interest = null;
-      } else if (k === 2) {
-        attendance = 'late';
-        hw = ((cc.courseIdx + k) % 10) + 1;
-        interest = ((k + cc.dayOfWeek) % 10) + 1;
-      } else {
-        attendance = 'present';
-        hw = ((cc.courseIdx * 2 + k) % 10) + 1;
-        interest = ((cc.dayOfWeek + k * 3) % 10) + 1;
-      }
-
+    for (const studentNum of studentNumbersFor(cc)) {
       insert('report_entries', {
-        id: `seed-report-entry-${cc.id}-w${LAST_WEEK_NO}-${pad(studentNum)}`,
+        id: `seed-report-entry-${cc.id}-w${week.week_no}-${pad(studentNum)}`,
         report_id: reportId,
-        student_id: studentId,
-        attendance,
-        homework_score: hw,
-        interest_score: interest,
-        teacher_note:
-          attendance === 'absent' || attendance === 'excused'
-            ? null
-            : 'Düzenli çalışıyor.',
+        student_id: `seed-student-${pad(studentNum)}`,
+        attendance: 'present',
+        homework_score: ((cc.courseIdx + studentNum) % 10) + 1,
+        interest_score: ((cc.dayOfWeek + studentNum) % 10) + 1,
+        teacher_note: 'Düzenli çalışıyor.',
       });
     }
   }

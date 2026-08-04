@@ -81,17 +81,22 @@ describe('seed', () => {
   it('seed kayıtları beklenen hacimde üretir', () => {
     seedDatabase('test-admin-password');
 
-    expect(count('users')).toBe(411); // 1 admin + 10 öğretmen + 200 öğrenci + 200 veli
-    expect(count('students')).toBe(200);
+    // 1 admin + 10 öğretmen + 205 öğrenci (200 + 5 kardeş) + 200 veli = 416
+    expect(count('users')).toBe(416);
+    expect(count('students')).toBe(205);
     expect(count('guardians')).toBe(200);
     expect(count('classes')).toBe(25);
     expect(count('courses')).toBe(5);
     expect(count('class_courses')).toBe(100);
-    expect(count('enrollments')).toBe(200);
+    // 200 temel + 2 taşınan (yeni) + 5 kardeş = 207
+    expect(count('enrollments')).toBe(207);
     expect(count('weeks')).toBe(20);
-    expect(count('reports')).toBe(100);
-    expect(count('report_entries')).toBe(800);
-    expect(count('homeworks')).toBe(100);
+    // 100 (week 19) + 8 (week 8 geçmiş bloğu: 2 sınıf × 4 ders)
+    expect(count('reports')).toBe(108);
+    // week 19: 820 (sınıf 1=6, 2=8, 6=10, 7=10, 8..10=9×3, kalan 18=8)
+    // week 8 bloğu: 64 (sınıf 1 ve 2, 8'er öğrenci × 4 ders × 2 sınıf)
+    expect(count('report_entries')).toBe(884);
+    expect(count('homeworks')).toBe(108);
   });
 
   it('seed idempotenttir — ikinci çalıştırmada kayıt çoğalmaz', () => {
@@ -144,5 +149,78 @@ describe('seed', () => {
     expect(admin).toBeDefined();
     expect(admin!.role).toBe('admin');
     expect(admin!.password_hash).toMatch(/^scrypt\$/);
+  });
+
+  it('5 velinin 2\'şer çocuğu vardır (kardeş senaryosu)', () => {
+    const rows = db
+      .prepare(
+        `SELECT g.id AS guardian_id,
+                COUNT(s.id) AS child_count
+         FROM guardians g
+         LEFT JOIN students s ON s.guardian_id = g.id
+         WHERE g.id IN ('seed-guardian-001','seed-guardian-002','seed-guardian-003',
+                        'seed-guardian-004','seed-guardian-005')
+         GROUP BY g.id
+         ORDER BY g.id`,
+      )
+      .all() as { guardian_id: string; child_count: number }[];
+    expect(rows).toHaveLength(5);
+    for (const row of rows) {
+      expect(row.child_count).toBe(2);
+    }
+  });
+
+  it('sınıf değiştiren öğrenciler 2 enrollment kaydına sahiptir (biri kapalı)', () => {
+    const rows = db
+      .prepare(
+        `SELECT student_id, COUNT(*) AS total,
+                SUM(CASE WHEN end_date IS NULL THEN 1 ELSE 0 END) AS active_count,
+                SUM(CASE WHEN end_date IS NOT NULL THEN 1 ELSE 0 END) AS closed_count
+         FROM enrollments
+         WHERE student_id IN ('seed-student-003','seed-student-004')
+         GROUP BY student_id`,
+      )
+      .all() as {
+      student_id: string;
+      total: number;
+      active_count: number;
+      closed_count: number;
+    }[];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.total).toBe(2);
+      expect(row.active_count).toBe(1);
+      expect(row.closed_count).toBe(1);
+    }
+  });
+
+  it('öğrenci 3 week 19\'da yeni sınıfta (sınıf 6), week 8\'de eski sınıfta (sınıf 1) görünür', () => {
+    // Öğrenci 3'ün week 19 raporlarında yer aldığı class_course'ların sınıflarını bul.
+    const week19ClassIds = db
+      .prepare(
+        `SELECT DISTINCT cc.class_id AS class_id
+         FROM report_entries re
+         JOIN reports r ON r.id = re.report_id
+         JOIN class_courses cc ON cc.id = r.class_course_id
+         JOIN weeks w ON w.id = r.week_id
+         WHERE re.student_id = 'seed-student-003' AND w.week_no = 19`,
+      )
+      .all() as { class_id: string }[];
+    // Sınıf 6 = seed-class-006
+    expect(week19ClassIds.map((c) => c.class_id)).toContain('seed-class-006');
+    expect(week19ClassIds.map((c) => c.class_id)).not.toContain('seed-class-001');
+
+    const week8ClassIds = db
+      .prepare(
+        `SELECT DISTINCT cc.class_id AS class_id
+         FROM report_entries re
+         JOIN reports r ON r.id = re.report_id
+         JOIN class_courses cc ON cc.id = r.class_course_id
+         JOIN weeks w ON w.id = r.week_id
+         WHERE re.student_id = 'seed-student-003' AND w.week_no = 8`,
+      )
+      .all() as { class_id: string }[];
+    expect(week8ClassIds.map((c) => c.class_id)).toContain('seed-class-001');
+    expect(week8ClassIds.map((c) => c.class_id)).not.toContain('seed-class-006');
   });
 });

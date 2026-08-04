@@ -82,6 +82,22 @@ raporları `completed` durumunda.
 | `user_version` = 1 | ✅ |
 | Tablolar: 14, İndeksler: 20 | ✅ |
 
+### Senaryo verileri (kullanıcı talebi üzerine eklendi)
+
+- **Kardeş senaryosu:** 5 yeni öğrenci (`seed-student-201..205`), ilk 5 veliye
+  bağlı → o velilerin 2'şer çocuğu var. Kardeşler farklı sınıflara dağıtıldı
+  (SİGMA/DELTA/ALFA/BETA/GAMMA = sınıf 6-10), veli paneli "öğrenci seçimi"
+  Aşama 5'te gerçek veriyle test edilebilir.
+- **Sınıf değişikliği:** öğrenci 3 → SİGMA (eski: EURİST), öğrenci 4 → DELTA.
+  Eski enrollment `end_date = 2025-11-02` ile kapatılır, yeni enrollment
+  `start_date = 2025-11-03` ile açılır.
+- **"Geçmiş raporlar eski sınıfta kalır" kanıtı:** öğrenci 3'ün week 8 raporu
+  EURİST'te, week 19 raporu SİGMA'da — Aşama 5 veli panelinde kronolojik
+  geçmiş doğru sınıf etiketiyle listelenebilir.
+- **Yeni hacimler:** users 416, students 205, guardians 200, enrollments 207,
+  reports 108, homeworks 108, report_entries 884 (week 19: 820 + week 8: 64).
+- `schema.test.ts`'e kardeş + sınıf değişikliği doğrulamaları eklendi.
+
 ### Elle doğrulama (kullanıcı talebi üzerine, canlı DB'de)
 
 Tüm kontroller çalışan `app.db` üzerinde elle tekrar kanıtlandı:
@@ -117,6 +133,8 @@ Tüm kontroller çalışan `app.db` üzerinde elle tekrar kanıtlandı:
 `5744e57` — Aşama 0: frontend/backend iskeleti, tasarım token'ları, migration runner, /api/v1 health
 `669a58b` — PROGRESS.md: Aşama 0 commit hash eklendi
 `524d432` — Aşama 1: veri modeli (migration #1), normalizasyon/hafta/hash util'leri, idempotent seed, FK + idempotentlik testleri
+`529731b` — PROGRESS.md: Aşama 1 elle doğrulama sonuçları
+*(Aşama 1 senaryo güncellemesi commit hash'i buraya eklenecek)*
 
 ### Güncel dosya yapısı
 
