@@ -92,7 +92,7 @@ describe('App — admin erişimi', () => {
     });
   });
 
-  it('admin /admin de yönetim sayfasını görür', async () => {
+  it('admin /admin de panel sayfasını görür', async () => {
     localStorage.setItem('ds_token', 'admin-token');
     vi.stubGlobal(
       'fetch',
@@ -102,7 +102,13 @@ describe('App — admin erişimi', () => {
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          json: async () => ({ items: [] }),
+          json: async () => ({
+            week: null,
+            summary: { total: 0, completed: 0 },
+            missing: [],
+            matrix: [],
+            digests: { pending: 0, ready: 0, sent: 0 },
+          }),
         }),
     );
 
@@ -115,14 +121,10 @@ describe('App — admin erişimi', () => {
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('heading', { name: 'Yönetim' }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Yönetim' })).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(
-        screen.getByText('Henüz eğitim yılı tanımlanmamış.'),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Panel' })).toBeInTheDocument();
     });
   });
 });

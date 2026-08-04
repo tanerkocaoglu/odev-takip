@@ -6,7 +6,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const TABS = [
-  { to: '/admin', label: 'Eğitim yılı', end: true },
+  { to: '/admin', label: 'Panel', end: true },
+  { to: '/admin/academic-years', label: 'Eğitim yılı' },
   { to: '/admin/weeks', label: 'Haftalar' },
   { to: '/admin/classes', label: 'Sınıflar' },
   { to: '/admin/courses', label: 'Dersler' },
@@ -14,6 +15,8 @@ const TABS = [
   { to: '/admin/teachers', label: 'Öğretmenler' },
   { to: '/admin/students', label: 'Öğrenciler' },
   { to: '/admin/guardians', label: 'Veliler' },
+  { to: '/admin/reports', label: 'Raporlar' },
+  { to: '/admin/digests', label: 'Gönderim' },
 ];
 
 export default function AdminLayout() {

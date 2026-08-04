@@ -302,3 +302,156 @@ export interface TeacherHomeworkWithSubmissions {
   week_label: string;
   submission_count: number;
 }
+
+// ---------- Veli raporu / haftalık gönderim (Aşama 5) ----------
+
+export interface DigestSnapshotEntry {
+  student_id: string;
+  student_name: string;
+  attendance: Attendance;
+  homework_score: number | null;
+  interest_score: number | null;
+  teacher_note: string | null;
+}
+
+export interface DigestSnapshotCourse {
+  class_course_id: string;
+  course_name: string;
+  teacher_name: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  status: 'completed' | 'sent' | 'missing';
+  topic_covered: string | null;
+  prev_homework_text: string | null;
+  homework: { description: string; due_date: string } | null;
+  entry: DigestSnapshotEntry | null;
+}
+
+export interface DigestSnapshot {
+  week: { id: string; week_no: number; start_date: string; end_date: string; label: string };
+  class: { id: string; name: string };
+  student: { id: string; name: string };
+  guardian_name: string | null;
+  courses: DigestSnapshotCourse[];
+}
+
+/** GET /public/digests/:token — `/r/{token}` sayfasını besler. */
+export interface PublicDigestResponse {
+  snapshot: DigestSnapshot;
+  sent_at: string | null;
+}
+
+/** Admin panel — spec.md §5.5 (özet + eksik + matris + digest sayaçları). */
+export interface AdminDashboardMissingItem {
+  class_course_id: string;
+  class_id: string;
+  class_name: string;
+  course_name: string;
+  teacher_id: string;
+  teacher_name: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  status: 'draft' | 'not_started';
+  report_id: string | null;
+  is_overdue: boolean;
+}
+
+export interface AdminDashboardMatrixCourse {
+  class_course_id: string;
+  course_name: string;
+  teacher_name: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  status: string | null;
+  report_id: string | null;
+}
+
+export interface AdminDashboardMatrixRow {
+  class_id: string;
+  class_name: string;
+  courses: AdminDashboardMatrixCourse[];
+}
+
+export interface AdminDashboard {
+  week: TeacherDashboardWeek | null;
+  summary: { total: number; completed: number };
+  missing: AdminDashboardMissingItem[];
+  matrix: AdminDashboardMatrixRow[];
+  digests: { pending: number; ready: number; sent: number };
+}
+
+/** Haftalık gönderim listesi satırı — GET /admin/digests. */
+export interface AdminDigestItem {
+  id: string;
+  student_id: string;
+  student_name: string;
+  guardian_name: string;
+  week: { id: string; week_no: number; start_date: string; label: string };
+  class: { id: string | null; name: string | null };
+  status: 'pending' | 'ready' | 'sent';
+  send_count: number;
+  sent_at: string | null;
+  is_revoked: boolean;
+  missing_course_count: number;
+  total_courses: number;
+}
+
+export interface AdminDigestList {
+  week_id: string | null;
+  items: AdminDigestItem[];
+}
+
+/** POST /admin/digests/:id/send yanıtı — wa.me linki "gönder ve sonraki" akışını besler. */
+export interface DigestSendResponse {
+  id: string;
+  status: 'sent';
+  send_count: number;
+  sent_at: string;
+  token: string;
+  snapshot: DigestSnapshot;
+  message: string;
+  wa_me_url: string;
+}
+
+/** Veli paneli — GET /guardian/students. */
+export interface GuardianChild {
+  student_id: string;
+  student_name: string;
+  username: string;
+  class_name: string | null;
+}
+
+/** Veli paneli — GET /guardian/reports satırı. */
+export interface GuardianReportItem {
+  id: string;
+  week: { id: string; week_no: number; start_date: string; end_date: string; label: string };
+  class_name: string | null;
+  sent_at: string;
+  send_count: number;
+  course_count: number;
+}
+
+/** Veli paneli — GET /guardian/reports/:id. */
+export interface GuardianReportDetail {
+  digest: {
+    id: string;
+    week: { week_no: number; start_date: string; end_date: string; label: string };
+    sent_at: string;
+    send_count: number;
+  };
+  snapshot: DigestSnapshot;
+  submissions: Array<{
+    course_name: string;
+    description: string;
+    due_date: string;
+    submission: {
+      id: string;
+      note: string | null;
+      submitted_at: string;
+      is_late: boolean;
+      status: 'submitted' | 'reviewed';
+      reviewed_at: string | null;
+      files: SubmissionFile[];
+    } | null;
+  }>;
+}

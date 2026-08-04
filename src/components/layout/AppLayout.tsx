@@ -85,6 +85,18 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
                 Ödevlerim
               </NavLink>
             )}
+            {user?.role === 'guardian' && (
+              <NavLink
+                to="/guardian"
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-sm font-medium text-accent'
+                    : 'text-sm font-medium text-muted hover:text-text'
+                }
+              >
+                Raporlarım
+              </NavLink>
+            )}
             {user && (
               <>
                 <span className="hidden text-sm text-muted sm:inline">

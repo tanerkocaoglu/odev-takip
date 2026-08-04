@@ -7,14 +7,22 @@
 
 import type {
   AcademicYear,
+  AdminDashboard,
+  AdminDigestList,
   ApiError,
   AuthResponse,
   ClassCourse,
   ClassItem,
   Course,
+  DigestSendResponse,
+  DigestSnapshot,
   Guardian,
+  GuardianChild,
+  GuardianReportDetail,
+  GuardianReportItem,
   LoginRequest,
   Paged,
+  PublicDigestResponse,
   ReportSaveInput,
   Student,
   StudentHomework,
@@ -290,15 +298,37 @@ export const adminApi = {
     remove: (id: string) =>
       apiFetch<void>(`/admin/students/${id}`, { method: 'DELETE' }),
   },
+  /** Admin panel — özet + eksik + matris (spec §5.5). */
+  dashboard: (weekId?: string) =>
+    apiFetch<AdminDashboard>(`/admin/dashboard${query({ week_id: weekId })}`),
+  digests: {
+    /** Haftalık gönderim listesi (pending + ready + sent). */
+    list: (params: { week_id?: string; class_id?: string; status?: string } = {}) =>
+      apiFetch<AdminDigestList>(`/admin/digests${query(params)}`),
+    preview: (id: string) =>
+      apiFetch<{ preview: DigestSnapshot }>(`/admin/digests/${id}/preview`),
+    send: (id: string) =>
+      apiFetch<DigestSendResponse>(`/admin/digests/${id}/send`, { method: 'POST' }),
+    revoke: (id: string) =>
+      apiFetch<{ id: string; is_revoked: boolean }>(`/admin/digests/${id}/revoke`, {
+        method: 'POST',
+      }),
+  },
 };
 
 // ---------- Öğretmen raporları (Aşama 3) ----------
 
 export const teacherApi = {
   dashboard: () => apiFetch<TeacherDashboard>('/teacher/dashboard'),
-  /** Geçmiş raporlarım — tüm durumlar (spec.md §6). */
-  history: (status?: 'draft' | 'completed' | 'sent') =>
-    apiFetch<TeacherReportHistory>(`/teacher/reports${status ? `?status=${status}` : ''}`),
+  /** Geçmiş raporlarım / admin "Tüm raporlar" — durum + sınıf + hafta filtresi. */
+  history: (params: {
+    status?: 'draft' | 'completed' | 'sent';
+    class_id?: string;
+    week_id?: string;
+  } = {}) => apiFetch<TeacherReportHistory>(`/teacher/reports${query(params)}`),
+  /** Salt-okunur tek rapor — admin "Tüm raporlar" görünümü. */
+  getReport: (reportId: string) =>
+    apiFetch<TeacherReportPayload>(`/teacher/reports/${encodeURIComponent(reportId)}`),
   /** Get-or-create: rapor + satırlar + draft homeworks döner. */
   openReport: (classCourseId: string, weekId: string) =>
     apiFetch<TeacherReportPayload>('/teacher/reports', {
@@ -395,4 +425,22 @@ export const studentApi = {
       body: form,
     });
   },
+};
+
+// ---------- Public /r/{token} + Veli paneli (Aşama 5) ----------
+
+/** Auth gerektirmeyen public uçlar. 410 GONE: iptal/bilinmeyen token. */
+export const publicApi = {
+  digest: (token: string) =>
+    apiFetch<PublicDigestResponse>(`/public/digests/${encodeURIComponent(token)}`),
+};
+
+export const guardianApi = {
+  students: () => apiFetch<{ items: GuardianChild[] }>('/guardian/students'),
+  reports: (studentId: string) =>
+    apiFetch<{ items: GuardianReportItem[] }>(
+      `/guardian/reports?student_id=${encodeURIComponent(studentId)}`,
+    ),
+  report: (id: string) =>
+    apiFetch<GuardianReportDetail>(`/guardian/reports/${encodeURIComponent(id)}`),
 };

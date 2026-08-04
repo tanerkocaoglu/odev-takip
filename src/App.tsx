@@ -13,11 +13,17 @@ import ClassCoursesPage from './pages/admin/ClassCoursesPage';
 import TeachersPage from './pages/admin/TeachersPage';
 import StudentsPage from './pages/admin/StudentsPage';
 import GuardiansPage from './pages/admin/GuardiansPage';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminReportsPage from './pages/admin/AdminReportsPage';
+import AdminReportViewPage from './pages/admin/AdminReportViewPage';
+import DigestSendPage from './pages/admin/DigestSendPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
 import ReportEntryPage from './pages/teacher/ReportEntryPage';
 import ReportHistoryPage from './pages/teacher/ReportHistoryPage';
 import SubmissionsReviewPage from './pages/teacher/SubmissionsReviewPage';
 import HomeworkListPage from './pages/student/HomeworkListPage';
+import GuardianHomePage from './pages/guardian/GuardianHomePage';
+import GuardianReportDetailPage from './pages/guardian/GuardianReportDetailPage';
 
 export default function App() {
   return (
@@ -42,7 +48,8 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<AcademicYearsPage />} />
+        <Route index element={<AdminDashboardPage />} />
+        <Route path="academic-years" element={<AcademicYearsPage />} />
         <Route path="weeks" element={<WeeksPage />} />
         <Route path="classes" element={<ClassesPage />} />
         <Route path="courses" element={<CoursesPage />} />
@@ -50,6 +57,9 @@ export default function App() {
         <Route path="teachers" element={<TeachersPage />} />
         <Route path="students" element={<StudentsPage />} />
         <Route path="guardians" element={<GuardiansPage />} />
+        <Route path="reports" element={<AdminReportsPage />} />
+        <Route path="reports/:id" element={<AdminReportViewPage />} />
+        <Route path="digests" element={<DigestSendPage />} />
       </Route>
       <Route
         path="/teacher"
@@ -76,6 +86,17 @@ export default function App() {
         }
       >
         <Route index element={<HomeworkListPage />} />
+      </Route>
+      <Route
+        path="/guardian"
+        element={
+          <ProtectedRoute roles={['guardian']}>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<GuardianHomePage />} />
+        <Route path="reports/:id" element={<GuardianReportDetailPage />} />
       </Route>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/r/:token" element={<TokenReportPage />} />
