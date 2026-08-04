@@ -20,6 +20,10 @@ beforeAll(() => {
   // Şema önce kurulur, sonra tablolar temizlenir.
   runMigrations();
 
+  // reports ↔ homeworks döngüsel FK (spec §3.2): homeworks silinmeden önce
+  // reports.prev_homework_id null'lanır (helpers.resetDb ile aynı kural).
+  db.exec('UPDATE reports SET prev_homework_id = NULL');
+
   const tables = [
     'audit_logs',
     'weekly_digests',
@@ -91,7 +95,7 @@ describe('seed', () => {
     expect(count('class_courses')).toBe(100);
     // 200 temel + 2 taşınan (yeni) + 5 kardeş = 207
     expect(count('enrollments')).toBe(207);
-    expect(count('weeks')).toBe(20);
+    expect(count('weeks')).toBe(21);
     // 100 (week 19) + 8 (week 8 geçmiş bloğu: 2 sınıf × 4 ders)
     expect(count('reports')).toBe(108);
     // week 19: 820 (sınıf 1=6, 2=8, 6=10, 7=10, 8..10=9×3, kalan 18=8)
@@ -139,6 +143,29 @@ describe('seed', () => {
     expect(row).toHaveLength(1);
     expect(row[0].status).toBe('completed');
     expect(row[0].c).toBe(100);
+  });
+
+  it('seed haftaları bugünü kapsar — week 20 bu haftadır ve week 21 sonrakidir', () => {
+    // Aşama 3 kuralı: doldurulacak haftanın (week 20) her zaman bir sonraki
+    // haftası vardır — aksi halde homeworks.due_date hesaplanamaz.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+      now.getDate(),
+    ).padStart(2, '0')}`;
+
+    const week20 = db
+      .prepare(`SELECT start_date, end_date FROM weeks WHERE week_no = 20`)
+      .get() as { start_date: string; end_date: string } | undefined;
+    const week21 = db
+      .prepare(`SELECT start_date, end_date FROM weeks WHERE week_no = 21`)
+      .get() as { start_date: string; end_date: string } | undefined;
+
+    expect(week20).toBeDefined();
+    expect(week21).toBeDefined();
+    // Bugün week 20 aralığında (veya week 20 henüz bitmedi — hafta sonu kayması).
+    expect(today >= week20!.start_date && today <= week20!.end_date).toBe(true);
+    // Week 21, week 20'den sonra başlar (due_date hesabı için).
+    expect(week21!.start_date > week20!.end_date).toBe(true);
   });
 
   it('ilk admin rolü admin ve şifresi hash\'lidir', () => {

@@ -32,6 +32,10 @@ const CLEAN_TABLES = [
 
 export function resetDb(): void {
   runMigrations();
+  // reports ↔ homeworks döngüsel FK (spec §3.2): homeworks, reports'tan önce
+  // silindiğinden, önce reports.prev_homework_id null'lanır — yoksa DELETE
+  // homeworks, reports hâlâ referans verdiği için FK ihlali fırlatır.
+  db.exec('UPDATE reports SET prev_homework_id = NULL');
   for (const table of CLEAN_TABLES) {
     db.exec(`DELETE FROM ${table}`);
   }

@@ -16,6 +16,9 @@
  * - 2 öğrenci (3 ve 4) dönem ortasında sınıf değiştirir (sınıf 1 → 6/7);
  *   kapanan enrollment + yeni enrollment. Week 8'de eski sınıfta, week 19'da
  *   yeni sınıfta raporları vardır — "geçmiş raporlar eski sınıfta kalır".
+ * - Haftalar gerçek takvime göre üretilir (21 hafta): **week 20 = içinde
+ *   bulunulan hafta, week 21 = sonraki hafta** — doldurulacak haftanın her
+ *   zaman bir sonraki haftası vardır, `due_date` otomatik hesaplanır.
  */
 
 import { db } from './index.js';
@@ -120,27 +123,46 @@ function coursesForClass(classIndex: number): number[] {
   return [0, 1, 2, 3].map((i) => (offset + i) % COURSE_NAMES.length);
 }
 
-/** 2025-09-01 (Pazartesi) başlayan 20 hafta üretir; tarihler yerel (İstanbul). */
+/** Yerel saatte YYYY-MM-DD (UTC çıkarımı yapılmaz — CLAUDE.md). */
+function toIsoLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = pad2(date.getMonth() + 1);
+  const d = pad2(date.getDate());
+  return `${y}-${m}-${d}`;
+}
+
+/** İçinde bulunulan haftanın Pazartesi günü (yerel). day_of_week 1 = Pazartesi. */
+function mondayOfCurrentWeek(): Date {
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // JS: 0=Pazar..6=Cumartesi → (getDay()+6)%7: 0=Pazartesi..6=Pazar
+  monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+  return monday;
+}
+
+/**
+ * 21 hafta üretir; **week 20 içinde bulunulan gerçek haftadır**, week 21 bir
+ * sonraki ders haftasıdır. Kural (CLAUDE.md Aşama 3): seed'de doldurulacak
+ * haftanın (week 20) her zaman bir sonraki haftası vardır — böylece
+ * `homeworks.due_date` her zaman otomatik hesaplanır; yılın son haftası sınır
+ * durumu yalnızca test fixture'ıyla (sahte tek hafta) kapsanır.
+ */
 function buildWeeks(): WeekRecord[] {
   const weeks: WeekRecord[] = [];
-  const start = new Date(2025, 8, 1);
-  for (let i = 1; i <= 20; i++) {
-    const y = start.getFullYear();
-    const m = pad2(start.getMonth() + 1);
-    const d = pad2(start.getDate());
-    const startIso = `${y}-${m}-${d}`;
+  const yearStart = mondayOfCurrentWeek();
+  yearStart.setDate(yearStart.getDate() - 19 * 7); // week 20 = bu hafta
+  const start = new Date(yearStart);
+  for (let i = 1; i <= 21; i++) {
+    const startIso = toIsoLocal(start);
     const end = new Date(start);
     end.setDate(end.getDate() + 6);
-    const ey = end.getFullYear();
-    const em = pad2(end.getMonth() + 1);
-    const ed = pad2(end.getDate());
     weeks.push({
-      id: `seed-week-2025-${pad2(i)}`,
-      academic_year_id: 'seed-academic-year-2025-2026',
+      id: `seed-week-${pad2(i)}`,
+      academic_year_id: 'seed-academic-year',
       week_no: i,
       start_date: startIso,
-      end_date: `${ey}-${em}-${ed}`,
-      label: `${startIso} - ${ey}-${em}-${ed}`,
+      end_date: toIsoLocal(end),
+      label: `${startIso} - ${toIsoLocal(end)}`,
     });
     start.setDate(start.getDate() + 7);
   }
@@ -203,20 +225,24 @@ interface ClassCourse {
 export function seedDatabase(adminPassword: string): void {
   runMigrations();
 
-  const yearId = 'seed-academic-year-2025-2026';
+  const yearId = 'seed-academic-year';
   const createdAt = now();
 
-  // --- Eğitim yılı ---
+  // --- Haftalar (21) — week 20 = bu hafta, week 21 = sonraki hafta ---
+  const weeks = buildWeeks();
+  const yearStart = weeks[0].start_date;
+  const yearEnd = weeks[weeks.length - 1].end_date;
+  const yearName = `${yearStart.slice(0, 4)}-${Number(yearStart.slice(0, 4)) + 1}`;
+
+  // --- Eğitim yılı (tarihler haftalardan türetilir) ---
   insert('academic_years', {
     id: yearId,
-    name: '2025-2026',
-    start_date: '2025-09-01',
-    end_date: '2026-06-30',
+    name: yearName,
+    start_date: yearStart,
+    end_date: yearEnd,
     is_active: 1,
   });
 
-  // --- Haftalar (20) ---
-  const weeks = buildWeeks();
   for (const w of weeks) {
     insert('weeks', {
       id: w.id,
@@ -382,27 +408,28 @@ export function seedDatabase(adminPassword: string): void {
       id: `seed-enrollment-${pad(s)}`,
       student_id: `seed-student-${pad(s)}`,
       class_id: classIds[Math.floor((s - 1) / 8)],
-      start_date: '2025-09-01',
+      start_date: yearStart,
       end_date: null,
     });
   }
 
-  // Sınıf değişikliği: öğrenci 3 ve 4 — eski kayıt kapatılır (week 10 başı
-  // öncesi: 2025-11-02), yeni sınıflara yeni aktif kayıt açılır.
+  // Sınıf değişikliği: öğrenci 3 ve 4 — eski kayıt, week 9'un sonunda kapanır
+  // (9. hafta = weeks[8]; bir sonraki ders haftası sınırı), yeni sınıflara
+  // week 10 başında yeni aktif kayıt açılır.
   // NOT: `WHERE end_date = ?` ile NULL eşleşmez (SQL: NULL = NULL → false),
   // bu yüzden deterministik temel id (`seed-enrollment-003`) ile güncellenir.
   for (const [studentNum, targetClass] of Object.entries(MOVED_STUDENTS)) {
     const num = Number(studentNum);
     update(
       'enrollments',
-      { end_date: '2025-11-02' },
+      { end_date: weeks[8].end_date },
       { id: `seed-enrollment-${pad(num)}` },
     );
     insert('enrollments', {
       id: `seed-enrollment-moved-${pad(num)}`,
       student_id: `seed-student-${pad(num)}`,
       class_id: classIds[targetClass - 1],
-      start_date: '2025-11-03',
+      start_date: weeks[9].start_date,
       end_date: null,
     });
   }
@@ -413,7 +440,7 @@ export function seedDatabase(adminPassword: string): void {
       id: `seed-enrollment-sibling-${pad(num)}`,
       student_id: `seed-student-${pad(num)}`,
       class_id: classIds[SIBLING_CLASSES[i] - 1],
-      start_date: '2025-09-01',
+      start_date: yearStart,
       end_date: null,
     });
   });
