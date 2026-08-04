@@ -1,8 +1,8 @@
 /**
  * Auth entegrasyon testleri (supertest) — spec.md §2 ve §2.1:
- * - 4 rolle giriş (admin/öğretmen e-posta+şifre, veli/öğrenci telefon+OTP)
+ * - 4 rolle giriş (admin/öğretmen e-posta+şifre, veli/öğrenci username+şifre)
  * - login brute-force rate limit (429)
- * - OTP: 2 dk aralık, 5 deneme kilidi, tek kullanım
+ * - Hesap var/yok sızıntısı yok (aynı hata mesajı + zamanlama eşitlemesi)
  * - `token_version` uyumsuzluğunda 401
  * - Yetki matrisi: requireAuth (401/200) + adminOnly (403) — her rol
  */
@@ -12,7 +12,6 @@ import request from 'supertest';
 import { Router } from 'express';
 import { createApp } from './app.js';
 import { errorHandler } from './errors.js';
-import { db } from './db/index.js';
 import { requireAuth } from './middleware/auth.js';
 import { adminOnly } from './middleware/adminOnly.js';
 import { signToken } from './utils/token.js';
@@ -34,9 +33,14 @@ app.use('/api/v1/_test', testRouter);
 // errorHandler'ı testRouter'dan önce olduğu için _test hatalarını görmez.
 app.use(errorHandler);
 
-const USERS = {
-  admin: { email: 'admin@test.local', password: TEST_PASSWORD },
-  teacher: { email: 'teacher@test.local', password: TEST_PASSWORD },
+const EMAIL_USERS = {
+  admin: { identifier: 'admin@test.local', password: TEST_PASSWORD },
+  teacher: { identifier: 'teacher@test.local', password: TEST_PASSWORD },
+};
+
+const USERNAME_USERS = {
+  guardian: { identifier: 'test-guardian', password: TEST_PASSWORD },
+  student: { identifier: 'test-student', password: TEST_PASSWORD },
 };
 
 beforeAll(() => {
@@ -46,27 +50,15 @@ beforeAll(() => {
 
 beforeEach(() => {
   clearRateLimits();
-  // OTP 2 dk rate limiti DB'de (last_sent_at) tutulur — testler izole olsun.
-  db.exec('DELETE FROM otp_codes');
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-function latestOtpCode(userId: string): string {
-  const row = db
-    .prepare(
-      `SELECT code FROM otp_codes WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
-    )
-    .get(userId) as { code: string } | undefined;
-  if (!row) throw new Error('OTP kaydı yok');
-  return row.code;
-}
-
 describe('POST /api/v1/auth/login', () => {
   it('admin e-posta + şifre ile giriş yapar ve JWT + user döner', async () => {
-    const res = await request(app).post('/api/v1/auth/login').send(USERS.admin);
+    const res = await request(app).post('/api/v1/auth/login').send(EMAIL_USERS.admin);
     expect(res.status).toBe(200);
     expect(typeof res.body.token).toBe('string');
     expect(res.body.user).toMatchObject({
@@ -78,39 +70,56 @@ describe('POST /api/v1/auth/login', () => {
   });
 
   it('öğretmen e-posta + şifre ile giriş yapar', async () => {
-    const res = await request(app).post('/api/v1/auth/login').send(USERS.teacher);
+    const res = await request(app).post('/api/v1/auth/login').send(EMAIL_USERS.teacher);
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('teacher');
+  });
+
+  it('veli username + şifre ile giriş yapar ve JWT döner', async () => {
+    const res = await request(app).post('/api/v1/auth/login').send(USERNAME_USERS.guardian);
+    expect(res.status).toBe(200);
+    expect(typeof res.body.token).toBe('string');
+    expect(res.body.user).toMatchObject({
+      id: 'test-guardian',
+      role: 'guardian',
+      username: 'test-guardian',
+    });
+  });
+
+  it('öğrenci username + şifre ile giriş yapar', async () => {
+    const res = await request(app).post('/api/v1/auth/login').send(USERNAME_USERS.student);
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe('student');
+  });
+
+  it('admin/öğretmen username ile giremez (username yok)', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: 'test-admin', password: TEST_PASSWORD });
+    expect(res.status).toBe(401);
   });
 
   it('yanlış şifre 401 UNAUTHORIZED döner', async () => {
     const res = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'admin@test.local', password: 'yanlis' });
+      .send({ identifier: 'admin@test.local', password: 'yanlis' });
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('UNAUTHORIZED');
-    expect(res.body.error.message).toBe('E-posta veya şifre hatalı.');
+    expect(res.body.error.message).toBe('E-posta/kullanıcı adı veya şifre hatalı.');
   });
 
-  it('olmayan e-posta aynı hata mesajını döner (hesap sızıntısı yok)', async () => {
+  it('olmayan identifier aynı hata mesajını döner (hesap sızıntısı yok)', async () => {
     const res = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'yok@test.local', password: 'x' });
+      .send({ identifier: 'yok@test.local', password: 'x' });
     expect(res.status).toBe(401);
-    expect(res.body.error.message).toBe('E-posta veya şifre hatalı.');
-  });
-
-  it('veli/öğrenci (password_hash yok) e-posta+şifre ile giremez', async () => {
-    const res = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ email: 'guardian@test.local', password: TEST_PASSWORD });
-    expect(res.status).toBe(401);
+    expect(res.body.error.message).toBe('E-posta/kullanıcı adı veya şifre hatalı.');
   });
 
   it('geçersiz body 400 VALIDATION_ERROR döner', async () => {
     const res = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'gecersiz-email', password: '' });
+      .send({ identifier: '', password: '' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(res.body.error.fields).toBeDefined();
@@ -120,133 +129,14 @@ describe('POST /api/v1/auth/login', () => {
     for (let i = 0; i < 5; i++) {
       const res = await request(app)
         .post('/api/v1/auth/login')
-        .send({ email: 'admin@test.local', password: 'yanlis' });
+        .send({ identifier: 'test-guardian', password: 'yanlis' });
       expect(res.status).toBe(401);
     }
     const blocked = await request(app)
       .post('/api/v1/auth/login')
-      .send({ email: 'admin@test.local', password: 'yanlis' });
+      .send({ identifier: 'test-guardian', password: 'yanlis' });
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
-  });
-});
-
-describe('POST /api/v1/auth/otp/request', () => {
-  it('kayıtlı telefona kod gönderir (200 + mesaj)', async () => {
-    const res = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990003' });
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe('Giriş kodu gönderildi.');
-  });
-
-  it('2 dakika içinde ikinci istek 429 döner', async () => {
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990004' });
-    const res = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990004' });
-    expect(res.status).toBe(429);
-    expect(res.body.error.code).toBe('RATE_LIMITED');
-  });
-
-  it('kayıtsız telefon 404 döner', async () => {
-    const res = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990099' });
-    expect(res.status).toBe(404);
-  });
-
-  it('yeni kod isteği eski kullanılmamış kodu geçersiz kılar', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990003' });
-    const firstCode = latestOtpCode('test-guardian');
-
-    vi.advanceTimersByTime(2 * 60 * 1000 + 1);
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990003' });
-    const secondCode = latestOtpCode('test-guardian');
-
-    expect(secondCode).not.toBe(firstCode);
-
-    const res = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990003', code: firstCode });
-    expect(res.status).toBe(401);
-  });
-});
-
-describe('POST /api/v1/auth/otp/verify', () => {
-  it('veli doğru kodla giriş yapar ve JWT döner', async () => {
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990003' });
-    const code = latestOtpCode('test-guardian');
-
-    const res = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990003', code });
-    expect(res.status).toBe(200);
-    expect(typeof res.body.token).toBe('string');
-    expect(res.body.user).toMatchObject({ id: 'test-guardian', role: 'guardian' });
-  });
-
-  it('öğrenci doğru kodla giriş yapar', async () => {
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990004' });
-    const code = latestOtpCode('test-student');
-
-    const res = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990004', code });
-    expect(res.status).toBe(200);
-    expect(res.body.user.role).toBe('student');
-  });
-
-  it('yanlış kod 401 döner; aynı kod tekrar kullanılamaz (tek kullanımlık)', async () => {
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990004' });
-    const code = latestOtpCode('test-student');
-
-    const first = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990004', code });
-    expect(first.status).toBe(200);
-
-    const second = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990004', code });
-    expect(second.status).toBe(401);
-  });
-
-  it('5 hatalı deneme sonrası OTP kilitlenir; doğru kod bile 401 döner', async () => {
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990003' });
-    const code = latestOtpCode('test-guardian');
-
-    for (let i = 0; i < 5; i++) {
-      const res = await request(app)
-        .post('/api/v1/auth/otp/verify')
-        .send({ phone: '+905009990003', code: '000000' });
-      expect(res.status).toBe(401);
-      // 5. denemede OTP geçersiz kılınır — kullanıcıya yeni kod iste denir.
-      if (i === 4) {
-        expect(res.body.error.message).toContain('yeni kod isteyin');
-      }
-    }
-
-    const last = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990003', code });
-    expect(last.status).toBe(401);
-  });
-
-  it('süresi dolan kod 401 expired mesajı döner', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-
-    await request(app).post('/api/v1/auth/otp/request').send({ phone: '+905009990004' });
-    const code = latestOtpCode('test-student');
-
-    vi.advanceTimersByTime(10 * 60 * 1000 + 1);
-    const res = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990004', code });
-    expect(res.status).toBe(401);
-    expect(res.body.error.message).toContain('süresi doldu');
   });
 });
 
@@ -258,28 +148,14 @@ describe('GET /api/v1/auth/me', () => {
   });
 
   it('4 rolün geçerli tokenı ile 200 döner', async () => {
-    const logins: Array<[string, string]> = [
-      ['admin@test.local', TEST_PASSWORD],
-      ['teacher@test.local', TEST_PASSWORD],
+    const logins: Array<{ identifier: string; password: string }> = [
+      EMAIL_USERS.admin,
+      EMAIL_USERS.teacher,
+      USERNAME_USERS.guardian,
+      USERNAME_USERS.student,
     ];
-    for (const [email, password] of logins) {
-      const login = await request(app).post('/api/v1/auth/login').send({ email, password });
-      const me = await request(app)
-        .get('/api/v1/auth/me')
-        .set('Authorization', `Bearer ${login.body.token}`);
-      expect(me.status).toBe(200);
-      expect(me.body.user.email).toBe(email);
-    }
-
-    // OTP ile: veli + öğrenci
-    for (const phone of ['+905009990003', '+905009990004']) {
-      await request(app).post('/api/v1/auth/otp/request').send({ phone });
-      const code = latestOtpCode(
-        phone === '+905009990003' ? 'test-guardian' : 'test-student',
-      );
-      const login = await request(app)
-        .post('/api/v1/auth/otp/verify')
-        .send({ phone, code });
+    for (const input of logins) {
+      const login = await request(app).post('/api/v1/auth/login').send(input);
       const me = await request(app)
         .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${login.body.token}`);
@@ -315,8 +191,8 @@ describe('GET /api/v1/auth/me', () => {
 });
 
 describe('Yetki matrisi', () => {
-  async function tokenFor(email: string): Promise<string> {
-    const login = await request(app).post('/api/v1/auth/login').send({ email, password: TEST_PASSWORD });
+  async function tokenFor(input: { identifier: string; password: string }): Promise<string> {
+    const login = await request(app).post('/api/v1/auth/login').send(input);
     return login.body.token as string;
   }
 
@@ -326,29 +202,9 @@ describe('Yetki matrisi', () => {
   });
 
   it('4 rol de requireAuth\'tan geçer (200)', async () => {
-    const adminToken = await tokenFor('admin@test.local');
-    const teacherToken = await tokenFor('teacher@test.local');
-
-    const guardianLogin = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990003' });
-    void guardianLogin;
-    const guardianCode = latestOtpCode('test-guardian');
-    const guardian = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990003', code: guardianCode });
-
-    const studentLogin = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990004' });
-    void studentLogin;
-    const studentCode = latestOtpCode('test-student');
-    const student = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990004', code: studentCode });
-
-    const tokens = [adminToken, teacherToken, guardian.body.token, student.body.token];
-    for (const token of tokens) {
+    const inputs = [EMAIL_USERS.admin, EMAIL_USERS.teacher, USERNAME_USERS.guardian, USERNAME_USERS.student];
+    for (const input of inputs) {
+      const token = await tokenFor(input);
       const res = await request(app)
         .get('/api/v1/_test/authed')
         .set('Authorization', `Bearer ${token}`);
@@ -357,44 +213,26 @@ describe('Yetki matrisi', () => {
   });
 
   it('adminOnly: yalnızca admin 200; diğer 3 rol 403 FORBIDDEN', async () => {
-    const adminToken = await tokenFor('admin@test.local');
     const adminRes = await request(app)
       .get('/api/v1/_test/admin-only')
-      .set('Authorization', `Bearer ${adminToken}`);
+      .set('Authorization', `Bearer ${await tokenFor(EMAIL_USERS.admin)}`);
     expect(adminRes.status).toBe(200);
     expect(adminRes.body.role).toBe('admin');
 
-    const teacherToken = await tokenFor('teacher@test.local');
     const teacherRes = await request(app)
       .get('/api/v1/_test/admin-only')
-      .set('Authorization', `Bearer ${teacherToken}`);
+      .set('Authorization', `Bearer ${await tokenFor(EMAIL_USERS.teacher)}`);
     expect(teacherRes.status).toBe(403);
     expect(teacherRes.body.error.code).toBe('FORBIDDEN');
 
-    const guardian = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990003' });
-    void guardian;
-    const guardianCode = latestOtpCode('test-guardian');
-    const guardianLogin = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990003', code: guardianCode });
     const guardianRes = await request(app)
       .get('/api/v1/_test/admin-only')
-      .set('Authorization', `Bearer ${guardianLogin.body.token}`);
+      .set('Authorization', `Bearer ${await tokenFor(USERNAME_USERS.guardian)}`);
     expect(guardianRes.status).toBe(403);
 
-    const student = await request(app)
-      .post('/api/v1/auth/otp/request')
-      .send({ phone: '+905009990004' });
-    void student;
-    const studentCode = latestOtpCode('test-student');
-    const studentLogin = await request(app)
-      .post('/api/v1/auth/otp/verify')
-      .send({ phone: '+905009990004', code: studentCode });
     const studentRes = await request(app)
       .get('/api/v1/_test/admin-only')
-      .set('Authorization', `Bearer ${studentLogin.body.token}`);
+      .set('Authorization', `Bearer ${await tokenFor(USERNAME_USERS.student)}`);
     expect(studentRes.status).toBe(403);
   });
 });
