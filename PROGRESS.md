@@ -134,6 +134,7 @@ eksik puan ve son hafta due_date doğrulamasından geçerek `completed` yapıyor
 `38a9f2f` — Aşama 3 (adım 1): öğretmen dashboard + rapor get-or-create
 `e962f42` — Aşama 3 (adım 2): PUT autosave + POST complete + son hafta fixture testleri
 `921fe6b` — Aşama 3 (adım 3-4): öğretmen dashboard + rapor giriş ekranı frontend'i
+`59b9af9` — Aşama 3 FX: öğretmen "Geçmiş raporlarım" (GET /teacher/reports + ReportHistoryPage + dashboard link)
 
 ---
 
