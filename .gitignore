@@ -3,6 +3,8 @@ dist/
 backend/dist/
 backend/db/app.db
 backend/db/app.db-*
+backend/db/test.db
+backend/db/test.db-*
 backend/uploads/
 .env
 backend/.env

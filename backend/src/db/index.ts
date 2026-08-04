@@ -2,8 +2,10 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const dbDir = path.join(import.meta.dirname, '..', '..', 'db');
-const dbPath = path.join(dbDir, 'app.db');
+// Test ortamı `DB_PATH` env'i ile ayrı/geçici bir veritabanı kullanabilir
+// (vitest.config.ts); üretim kodunda her zaman backend/db/app.db.
+const dbPath = process.env.DB_PATH ?? path.join(import.meta.dirname, '..', '..', 'db', 'app.db');
+const dbDir = path.dirname(dbPath);
 
 // db dizini yoksa oluştur (ilk çalıştırmada)
 if (!fs.existsSync(dbDir)) {

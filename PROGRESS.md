@@ -5,102 +5,105 @@
 
 ---
 
-## Aşama 0 — İskelet ✅
+## Aşama 1 — Veri modeli ve seed ✅
 
 ### Süreç özeti
 
-Vite + React 18 + TypeScript frontend iskeleti, Express + TypeScript backend
-iskeleti, `/api/v1` prefix'i, migration runner kurulumu, tasarım token'ları,
-temel layout ve doğrulama testleri tamamlandı.
+`spec.md` §3'teki tüm tablolar STRICT + kısmi indeks deseniyle migration #1
+olarak kuruldu. Türkçe normalizasyon, hafta/son tarih hesapları ve parola
+hash'leme util'leri birim testleriyle eklendi. Ayrı CLI seed script'i
+(idempotent, deterministik id'ler) örnek veriyi üretiyor; geçen hafta
+raporları `completed` durumunda.
 
 ### Yapılanlar
 
-**Frontend (`/src`)**
-- `package.json`: React 18.3, react-router-dom 6, Tailwind 3, framer-motion,
-  lucide-react, Vitest 3 + Testing Library.
-- `vite.config.ts`: dev server `:5173`, `/api` → `http://localhost:3001` proxy
-  (`/uploads` proxy yok).
-- `src/index.css`: Tasarım kuralları birebir uygulandı:
-  - Temel token'lar: `--bg`, `--surface`, `--border`, `--text`, `--text-muted`,
-    `--accent`, `--accent-fg`
-  - Devamsızlık, rapor durumu ve teslim durumu renk kümeleri
-  - `--radius: 6px`, odak halkası (`:focus-visible` 2px, `td` içinde -2px)
-  - Tipografi: IBM Plex Sans 400/500/600, 12/13/14/16/20/24px ölçeği,
-    `.tabular` sınıfı (tabular-nums)
-  - `compact` / `comfortable` yoğunluk sınıfları
-  - `prefers-reduced-motion` desteği
-- `tailwind.config.js`: renk token'ları Tailwind'e eşlendi (`bg-accent`,
-  `text-muted`, `border-border`, durum renkleri vb.) — ekran başına yeni renk
-  tanımlanmadı.
-- Routing: `/` (layout + dashboard), `/login`, `/r/:token` placeholder'ları.
-- Örnek bileşen sayfası: token'lardan türetilmiş buton, input ve üç durum
-  rozeti (`draft` / `completed` / `sent`) + canlı `/api/v1/health` göstergesi.
+**Migration #1 — Şema (donduruldu)**
+- `registerMigration(1, 'schema', ...)` — `spec.md` §3 DDL birebir:
+  - `users`, `guardians`, `students`, `academic_years`, `weeks`, `classes`,
+    `courses`, `class_courses`, `enrollments`
+  - `reports`, `homeworks`, `report_entries`, `submissions`,
+    `weekly_digests`, `audit_logs`
+- Tüm tablolar `STRICT`; tip eşlemesi TEXT/INTEGER; CHECK kısıtları:
+  - `role`, `status` kümeleri; `is_active`/`is_late`/`is_revoked` 0/1;
+    `day_of_week BETWEEN 1 AND 7`; puanlar `BETWEEN 1 AND 10`
+  - `reports`: `CHECK (prev_homework_id IS NULL OR prev_homework_text IS NULL)`
+  - `report_entries`: devamsızsa puan null CHECK
+- Kısmi indeksler: `idx_users_phone`, `idx_guardians_user`, `idx_students_user`,
+  `idx_classes_name`, `idx_courses_name`, `idx_class_courses_pair`
+  (tümü `WHERE deleted_at IS NULL`)
+- Tablo içi UNIQUE (soft delete'siz): `weeks`, `reports`, `report_entries`,
+  `submissions`, `weekly_digests`
 
-**Backend (`/backend`)**
-- Express + TypeScript (`tsx` ile dev), `createApp()` test edilebilir yapı.
-- Tüm rotalar `/api/v1` prefix'iyle (`app.use('/api/v1', routes)`).
-- `GET /api/v1/health`: DB canlılığını da doğrular (`SELECT 1`), 200 + status
-  döner.
-- Tek biçimli hata yanıtı: `errors.ts` — `AppError` sınıfı + error middleware.
-  Zod hataları `VALIDATION_ERROR` (400) biçimine çevrilir; beklenmeyen hatalarda
-  istemciye yığın izi gönderilmez.
-- `db/index.ts`: `node:sqlite` `DatabaseSync`, WAL + foreign_keys PRAGMA'ları,
-  tek yerden export.
-- `db/migrations.ts` + `db/migrate.ts`: `PRAGMA user_version` tabanlı sıralı
-  migration runner; her migration `BEGIN/COMMIT/ROLLBACK`; hata fırlatır.
-  Migration listesi Aşama 0'da boş — #1 Aşama 1'de eklenecek.
-- `scripts/reset.ts`: `npm run db:reset` — db sil + migrate (seed Aşama 1'de).
-- `.env` / `.env.example`: PORT, BASE_URL, JWT_SECRET, ADMIN_PASSWORD,
-  SMS_PROVIDER_KEY, STORAGE_DRIVER.
+**Util'ler + testler**
+- `utils/text.ts` — `normalizeTurkish()`: tam ASCII (ö→o, ü→u, ş→s, ç→c, ğ→g,
+  İ→i, I→ı→i — "İIıi" → "iiii"); `toLocaleLowerCase('tr')` sonra harita.
+  Arama sorgusu da aynı fonksiyondan geçer (yazma ve arama birebir eşleşir).
+- `utils/weeks.ts` — `getPreviousWeek()` ve `calculateDueDate()`:
+  tatil haftaları kayıtsız olduğundan önceki/sonraki ders haftası takvimde
+  (start_date) en yakın kayıt olarak bulunur; yılın ilk haftasında
+  `getPreviousWeek()` null, yılın son haftasında `calculateDueDate()` null.
+- `utils/hash.ts` — `node:crypto` scrypt: senkron (`hashPasswordSync`,
+  `verifyPasswordSync` — seed CLI) ve asenkron (`hashPassword`,
+  `verifyPassword` — Aşama 2a girişi). Format: `scrypt$N$r$p$salt$hash`.
+- `utils/env.ts` — `.env` okuyucu (harici paket yok).
 
-**Yapılandırma**
-- `.gitignore` ve `.gitattributes` (`eol=lf`) zaten mevcut ve doğruydu.
-- ESLint (flat config), kök + backend typecheck, Vitest config'leri.
+**Seed**
+- `db/seed.ts` — ayrı CLI (`npm run db:seed`), sunucuda çalışmaz.
+- İdempotent: tüm eklemeler `INSERT OR IGNORE` + deterministik id'ler
+  (`seed-user-teacher-001`, `seed-class-course-001-1`, `seed-week-2025-19`
+  vb.) — enrollments'ta UNIQUE yok ama sabit id sayesinde çoğalmaz.
+- İlk admin: `ADMIN_PASSWORD` env'inden hash'lenir; ikinci çalıştırmada
+  güncellenmez.
+- Hacim: 10 öğretmen, 25 sınıf, 5 ders, 100 class_courses, 200 öğrenci,
+  200 veli, 200 enrollment, 20 hafta, 100 `completed` rapor, 800
+  report_entry, 100 homework.
+- Geçen hafta (19) raporları `completed` + `completed_at` dolu; homework
+  due_date'leri `calculateDueDate()` ile hesaplanır.
+- `scripts/reset.ts` güncellendi: `db:reset` = sil + migrate + seed
+  (statik import Windows'ta app.db'yi kilitlediği için dinamik import).
+
+**Test altyapısı**
+- `vitest.config.ts`: testler `DB_PATH` ile ayrı `backend/db/test.db`
+  kullanır (gerçek app.db'ye dokunulmaz); `.gitignore`'a test.db eklendi.
+- `schema.test.ts`: foreign key ihlali testleri (class_courses, students,
+  report_entries) + seed hacim, idempotentlik, completed raporlar ve admin
+  hash doğrulaması.
 
 ### Doğrulamalar
 
 | Kontrol | Sonuç |
 |---|---|
-| `npm run typecheck` (kök) | ✅ |
-| `npm --prefix backend run typecheck` | ✅ |
+| `db:reset` (migrate + seed) | ✅ |
+| `db:seed` ikinci kez → kayıt çoğalmaz | ✅ (411/200/100/800 sabit) |
+| Backend testleri (28 test) | ✅ foreign key ihlali + idempotentlik dahil |
+| Frontend testleri (2 test) | ✅ |
+| `npm run typecheck` (kök + backend) | ✅ |
 | `npm run lint` | ✅ |
-| `npm test -- --run` (frontend, 5 test) | ✅ |
-| `npm --prefix backend test -- --run` (backend, 2 test) | ✅ |
-| `npm run build` | ✅ (dist/ üretildi) |
-| `npm --prefix backend run db:migrate` | ✅ Migration tamam. |
-| Canlı `/api/v1/health` (backend dev + fetch) | ✅ `200 {"status":"ok","version":"0.0.1"}` |
-| Tasarım token'ları kök CSS'te | ✅ (tümü tanımlı) |
-| IBM Plex Sans yüklemesi (`index.html`) | ✅ (400/500/600, latin-ext) |
-| Örnek sayfa: buton + input + durum rozeti | ✅ (`DashboardPage`) |
-| Klavye odağında halka | ✅ (`:focus-visible` kuralı) |
+| `user_version` = 1 | ✅ |
+| Tablolar: 14, İndeksler: 20 | ✅ |
 
 ### Çözülen sorunlar
 
-- **Vitest 4 + Vite 8 + Windows/Node 24 uyumsuzluğu:** `Cannot read properties
-  of undefined (reading 'config')` — Vitest 3 + Vite 6 + `@vitejs/plugin-react` 4
-  kombinasyonuna düşüldü; kararlı çalışıyor.
-- **React sürümü:** npm `react@19` kurmuştu; CLAUDE.md gereği React 18.3'e
-  düşürüldü. `react-router-dom` 6 ve `@testing-library/react` 14 de React 18
-  ile uyumlu sürümlere sabitlendi.
-- **TypeScript sürümü:** npm `typescript@7.0.2` kurmuştu (`baseUrl` kaldırılmış,
-  typescript-eslint uyumsuz); kararlı 5.9.3'e düşürüldü.
-- **Tailwind sürümü:** Tailwind 4'te PostCSS plugin'i ayrı pakete taşınmıştı;
-  Tailwind 3 + postcss + autoprefixer kuruldu.
-- **`@testing-library/react` 16 + React 18 hatası:** v14 + `@testing-library/dom`
-  9 + `jest-dom` 6 uyumlu seti kullanıldı.
-- **Windows spawn:** `start /b ... > file` redirection desteklenmiyor;
-  doğrulama scripti Node `child_process.spawn` ile yapıldı.
+- **FK sıralaması:** `students.guardian_id → guardians(id)` — önce guardian,
+  sonra student eklenmeliydi; düzeltildi.
+- **Windows'ta db kilidi:** `reset.ts`'te `seedDatabase`'in statik import'u
+  db bağlantısını silme işleminden önce açıyordu → `EPERM`; dinamik import
+  ile çözüldü.
+- **`getPreviousWeek`/`getNextWeek` tasarımı:** `week_no ± 1` yerine takvimde
+  (start_date) en yakın kayıt bulunuyor — tatil haftası kayması doğru çalışır.
 
 ### Commit
 
-`5744e57` — "Aşama 0: frontend/backend iskeleti, tasarım token'ları, migration runner, /api/v1 health"
+`5744e57` — Aşama 0: frontend/backend iskeleti, tasarım token'ları, migration runner, /api/v1 health
+`669a58b` — PROGRESS.md: Aşama 0 commit hash eklendi
+*(Aşama 1 commit hash'i eklenmek üzere)*
 
 ### Güncel dosya yapısı
 
 ```
 /project
   .gitattributes
-  .gitignore
+  .gitignore            (test.db eklendi)
   package.json
   tsconfig.json
   vite.config.ts
@@ -111,7 +114,7 @@ temel layout ve doğrulama testleri tamamlandı.
   index.html
   /src
     /components/layout/AppLayout.tsx
-    /pages/DashboardPage.tsx  (örnek bileşenler + health)
+    /pages/DashboardPage.tsx
     /pages/LoginPage.tsx
     /pages/TokenReportPage.tsx
     /test/setup.ts
@@ -124,17 +127,25 @@ temel layout ve doğrulama testleri tamamlandı.
   /backend
     package.json
     tsconfig.json
-    vitest.config.ts
-    .env
-    .env.example
+    vitest.config.ts     (DB_PATH → test.db)
+    .env / .env.example
     /src
-      /db/index.ts        (bağlantı + WAL + foreign_keys)
-      /db/migrations.ts   (migration runner)
+      /db/index.ts        (bağlantı + WAL + foreign_keys + DB_PATH)
+      /db/migrations.ts   (runner + migration #1 — şema)
       /db/migrate.ts      (CLI)
-      routes/index.ts     (/api/v1 router)
-      app.ts              (Express app)
-      app.test.ts         (supertest health)
-      errors.ts           (hata biçimi)
-      index.ts            (sunucu)
-    /scripts/reset.ts
-PROGRESS.md   (bu dosya)
+      /db/seed.ts         (idempotent seed + ilk admin)
+      /db/schema.test.ts  (FK ihlali + seed testleri)
+      /utils/text.ts      (normalizeTurkish)
+      /utils/text.test.ts
+      /utils/weeks.ts     (getPreviousWeek, calculateDueDate)
+      /utils/weeks.test.ts
+      /utils/hash.ts      (scrypt senkron + asenkron)
+      /utils/hash.test.ts
+      /utils/env.ts       (.env okuyucu)
+      routes/index.ts
+      app.ts
+      app.test.ts
+      errors.ts
+      index.ts
+    /scripts/reset.ts    (sil + migrate + seed)
+PROGRESS.md
