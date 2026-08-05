@@ -1,0 +1,26 @@
+# Render Blueprint — tek ücretsiz Web Service.
+#
+# Frontend (React/Vite build'i) + Backend (Express) tek serviste sunulur:
+# backend, kök `dist/` klasörünü express.static ile verir (bkz. backend/src/app.ts).
+#
+# Render'da disk kalıcı değildir; her deploy başlangıcında `db:reset`
+# (migrate + seed) çalışır → inceleyen herkes taze demo verisiyle başlar.
+
+services:
+  - type: web
+    name: odev-takip
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm install --prefix backend && npm run build && npm run build --prefix backend
+    startCommand: npm run db:reset --prefix backend && npm start --prefix backend
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        value: admin123
+      - key: SEED_USER_PASSWORD
+        value: admin123
+      - key: BASE_URL
+        sync: false
+      - key: STORAGE_DRIVER
+        value: local
