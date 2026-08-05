@@ -30,7 +30,7 @@ import type {
   Teacher,
   TeacherDashboard,
   TeacherHomeworkWithSubmissions,
-  TeacherReportHistory,
+  TeacherReportHistoryItem,
   TeacherReportPayload,
   TeacherSubmission,
   User,
@@ -320,12 +320,14 @@ export const adminApi = {
 
 export const teacherApi = {
   dashboard: () => apiFetch<TeacherDashboard>('/teacher/dashboard'),
-  /** Geçmiş raporlarım / admin "Tüm raporlar" — durum + sınıf + hafta filtresi. */
+  /** Geçmiş raporlarım / admin "Tüm raporlar" — durum + sınıf + hafta filtresi, sayfalama. */
   history: (params: {
     status?: 'draft' | 'completed' | 'sent';
     class_id?: string;
     week_id?: string;
-  } = {}) => apiFetch<TeacherReportHistory>(`/teacher/reports${query(params)}`),
+    page?: number;
+    pageSize?: number;
+  } = {}) => apiFetch<Paged<TeacherReportHistoryItem>>(`/teacher/reports${query(params)}`),
   /** Salt-okunur tek rapor — admin "Tüm raporlar" görünümü. */
   getReport: (reportId: string) =>
     apiFetch<TeacherReportPayload>(`/teacher/reports/${encodeURIComponent(reportId)}`),

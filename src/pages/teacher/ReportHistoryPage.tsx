@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import type { TeacherReportHistoryItem } from '../../types';
 import { DAY_LABELS } from '../../types';
 import { teacherApi, ApiClientError } from '../../services/api';
+import Pagination from '../../components/admin/Pagination';
 import { LoadingState, EmptyState, FormError } from '../../components/admin/ui';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -17,8 +18,12 @@ const STATUS_LABELS: Record<string, string> = {
   sent: 'Gönderildi',
 };
 
+const PAGE_SIZE = 20;
+
 export default function ReportHistoryPage() {
   const [data, setData] = useState<TeacherReportHistoryItem[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,14 +31,16 @@ export default function ReportHistoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await teacherApi.history();
+      const res = await teacherApi.history({ page, pageSize: PAGE_SIZE });
       setData(res.items);
+      setTotal(res.total);
+      setPage(res.page);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
@@ -122,6 +129,9 @@ export default function ReportHistoryPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {!error && data && data.length > 0 && (
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
       )}
     </div>
   );

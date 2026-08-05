@@ -21,6 +21,7 @@ import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import { ensurePendingDigests, maybeReadyDigests } from '../services/digests.js';
+import { parsePagination, paged } from '../utils/pagination.js';
 import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -753,6 +754,8 @@ router.get('/reports', (req, res) => {
     throw new AppError('FORBIDDEN', 403, 'Bu rapora erişim yetkiniz yok.');
   }
 
+  const pagination = parsePagination(req.query as Record<string, unknown>);
+
   const statusFilter =
     typeof req.query.status === 'string' &&
     ['draft', 'completed', 'sent'].includes(req.query.status)
@@ -776,45 +779,44 @@ router.get('/reports', (req, res) => {
     extraValues.push(weekId);
   }
 
-  const rows = (
-    user.role === 'teacher'
-      ? db
-          .prepare(
-            `SELECT r.id, r.class_course_id, r.week_id, r.status, r.completed_at, r.updated_at,
-                    cc.day_of_week, cc.lesson_time,
-                    c.name AS class_name, co.name AS course_name,
-                    w.week_no, w.start_date AS week_start, w.end_date AS week_end,
-                    w.label AS week_label,
-                    (SELECT COUNT(*) FROM report_entries re WHERE re.report_id = r.id) AS student_count
-             FROM reports r
-             JOIN class_courses cc ON cc.id = r.class_course_id
-             JOIN classes c ON c.id = cc.class_id
-             JOIN courses co ON co.id = cc.course_id
-             JOIN weeks w ON w.id = r.week_id
-             WHERE cc.teacher_id = ? AND cc.deleted_at IS NULL
-             ${extraWhere.length > 0 ? 'AND ' + extraWhere.join(' AND ') : ''}
-             ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time`,
-          )
-          .all(user.id, ...extraValues)
-      : db
-          .prepare(
-            `SELECT r.id, r.class_course_id, r.week_id, r.status, r.completed_at, r.updated_at,
-                    cc.day_of_week, cc.lesson_time,
-                    c.name AS class_name, co.name AS course_name,
-                    w.week_no, w.start_date AS week_start, w.end_date AS week_end,
-                    w.label AS week_label,
-                    (SELECT COUNT(*) FROM report_entries re WHERE re.report_id = r.id) AS student_count
-             FROM reports r
-             JOIN class_courses cc ON cc.id = r.class_course_id
-             JOIN classes c ON c.id = cc.class_id
-             JOIN courses co ON co.id = cc.course_id
-             JOIN weeks w ON w.id = r.week_id
-             WHERE cc.deleted_at IS NULL
-             ${extraWhere.length > 0 ? 'AND ' + extraWhere.join(' AND ') : ''}
-             ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time`,
-          )
-          .all(...extraValues)
-  ) as Array<{
+  // Kapsam: öğretmen yalnızca kendi atamaları (CLAUDE.md — "önce hepsini çek
+  // sonra filtrele" yapılmaz), admin tümü. Sayfalama sorgu seviyesindedir.
+  const scopeWhere = user.role === 'teacher' ? 'cc.teacher_id = ? AND cc.deleted_at IS NULL' : 'cc.deleted_at IS NULL';
+  const scopeValues = user.role === 'teacher' ? [user.id] : [];
+  const where = scopeWhere + (extraWhere.length > 0 ? ' AND ' + extraWhere.join(' AND ') : '');
+  const allValues = [...scopeValues, ...extraValues];
+
+  const total = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM reports r
+         JOIN class_courses cc ON cc.id = r.class_course_id
+         JOIN classes c ON c.id = cc.class_id
+         JOIN courses co ON co.id = cc.course_id
+         JOIN weeks w ON w.id = r.week_id
+         WHERE ${where}`,
+      )
+      .get(...allValues) as { n: number }
+  ).n;
+
+  const rows = db
+    .prepare(
+      `SELECT r.id, r.class_course_id, r.week_id, r.status, r.completed_at, r.updated_at,
+              cc.day_of_week, cc.lesson_time,
+              c.name AS class_name, co.name AS course_name,
+              w.week_no, w.start_date AS week_start, w.end_date AS week_end,
+              w.label AS week_label,
+              (SELECT COUNT(*) FROM report_entries re WHERE re.report_id = r.id) AS student_count
+       FROM reports r
+       JOIN class_courses cc ON cc.id = r.class_course_id
+       JOIN classes c ON c.id = cc.class_id
+       JOIN courses co ON co.id = cc.course_id
+       JOIN weeks w ON w.id = r.week_id
+       WHERE ${where}
+       ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...allValues, pagination.limit, pagination.offset) as Array<{
     id: string;
     status: string;
     completed_at: string | null;
@@ -830,7 +832,7 @@ router.get('/reports', (req, res) => {
     student_count: number;
   }>;
 
-  res.json({ items: rows });
+  res.json(paged(rows, total, pagination));
 });
 
 /**

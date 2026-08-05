@@ -252,3 +252,49 @@ describe('GET /api/v1/admin/dashboard (spec §5.5)', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('GET /api/v1/teacher/reports (sayfalama)', () => {
+  it('pageSize/page ile sayfalar; total + sayfa meta döner', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/reports?pageSize=1&page=1')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.total).toBe(1);
+    expect(res.body.page).toBe(1);
+    expect(res.body.pageSize).toBe(1);
+
+    // Sayfa sınırı dışında boş liste ama total korunur.
+    const beyond = await request(app)
+      .get('/api/v1/teacher/reports?pageSize=1&page=2')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(beyond.body.items).toHaveLength(0);
+    expect(beyond.body.total).toBe(1);
+  });
+
+  it('öğretmen yalnızca kendi raporlarını sayar', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/reports?pageSize=20')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.body.total).toBe(1);
+
+    // Başka öğretmenin raporu yok (test-teacher-2).
+    const other = await request(app)
+      .get('/api/v1/teacher/reports?pageSize=20')
+      .set('Authorization', `Bearer ${teacher2Token}`);
+    expect(other.body.total).toBe(0);
+  });
+
+  it('durum filtresi sayımı ve sayfalamayı etkiler', async () => {
+    const completed = await request(app)
+      .get('/api/v1/teacher/reports?pageSize=20&status=completed')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(completed.body.total).toBe(1);
+
+    const draft = await request(app)
+      .get('/api/v1/teacher/reports?pageSize=20&status=draft')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(draft.body.total).toBe(0);
+    expect(draft.body.items).toHaveLength(0);
+  });
+});

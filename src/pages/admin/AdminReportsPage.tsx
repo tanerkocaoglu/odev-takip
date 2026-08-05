@@ -10,7 +10,10 @@ import { Link } from 'react-router-dom';
 import type { AcademicYear, ClassItem, TeacherReportHistoryItem, Week } from '../../types';
 import { DAY_LABELS } from '../../types';
 import { adminApi, teacherApi, ApiClientError } from '../../services/api';
+import Pagination from '../../components/admin/Pagination';
 import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
+
+const PAGE_SIZE = 20;
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Tümü' },
@@ -50,6 +53,8 @@ export default function AdminReportsPage() {
   const [weekId, setWeekId] = useState('');
   const [status, setStatus] = useState<'draft' | 'completed' | 'sent' | ''>('');
   const [items, setItems] = useState<TeacherReportHistoryItem[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,18 +66,30 @@ export default function AdminReportsPage() {
         status: status || undefined,
         class_id: classId || undefined,
         week_id: weekId || undefined,
+        page,
+        pageSize: PAGE_SIZE,
       });
       setItems(res.items);
+      setTotal(res.total);
+      setPage(res.page);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
     } finally {
       setLoading(false);
     }
-  }, [status, classId, weekId]);
+  }, [status, classId, weekId, page]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Filtre değişince ilk sayfaya dön. */
+  function changeFilter(setter: (v: string) => void) {
+    return (value: string) => {
+      setter(value);
+      setPage(1);
+    };
+  }
 
   useEffect(() => {
     adminApi.academicYears
@@ -104,7 +121,7 @@ export default function AdminReportsPage() {
           <span className="mb-1 block text-sm font-medium text-muted">Durum</span>
           <select
             value={status}
-            onChange={(e) => setStatus(e.target.value as typeof status)}
+            onChange={(e) => changeFilter((v) => setStatus(v as typeof status))(e.target.value)}
             className={selectClass}
           >
             {STATUS_OPTIONS.map((o) => (
@@ -118,7 +135,7 @@ export default function AdminReportsPage() {
           <span className="mb-1 block text-sm font-medium text-muted">Sınıf</span>
           <select
             value={classId}
-            onChange={(e) => setClassId(e.target.value)}
+            onChange={(e) => changeFilter(setClassId)(e.target.value)}
             className={selectClass}
           >
             <option value="">Tümü</option>
@@ -133,7 +150,7 @@ export default function AdminReportsPage() {
           <span className="mb-1 block text-sm font-medium text-muted">Hafta</span>
           <select
             value={weekId}
-            onChange={(e) => setWeekId(e.target.value)}
+            onChange={(e) => changeFilter(setWeekId)(e.target.value)}
             className={selectClass}
           >
             <option value="">Tümü</option>
@@ -207,6 +224,10 @@ export default function AdminReportsPage() {
             </table>
           </div>
         )
+      )}
+
+      {!loading && items && items.length > 0 && (
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
       )}
     </div>
   );
