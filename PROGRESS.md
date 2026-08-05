@@ -164,7 +164,7 @@ backend/src
   /services/digests.ts              (yeni — pending/ready/snapshot/cascade)
   /routes/public.ts                 (yeni — /public/digests/:token, 410)
   /routes/guardian.ts               (yeni — veli paneli)
-  /routes/teacher.ts                (+ complete digest tetikleme, GET /reports/:id, filtreler)
+  /routes/teacher.ts                (+ complete digest tetikleme, GET /reports/:id, filtreler, sayfalama)
   /routes/admin.ts                  (+ digests list/preview/send/revoke + dashboard)
   /routes/index.ts                  (+ public, guardian mount)
   digests.test.ts public.test.ts admin-digests.test.ts admin-dashboard.test.ts guardian.test.ts (yeni)
@@ -177,9 +177,29 @@ backend/src
   /components/admin/AdminLayout.tsx (+ Panel/Raporlar/Gönderim sekmeleri)
   /pages/admin/AcademicYearsPage.tsx → /admin/academic-years taşındı
   App.tsx AppLayout.tsx types.ts services/api.ts  (+ rotalar, tipler, API'ler)
-  token-report.test.tsx guardian.test.tsx         (yeni)
+  token-report.test.tsx guardian.test.tsx admin-digests.test.tsx admin-reports.test.tsx (yeni)
 spec.md   (§5.4 KVKK/kaskad/popup, §5.5 Tüm raporlar, §6 Admin)
 ```
+
+### Ek — seed gerçek dershane yapısına küçültüldü (Aşama 5 sonrası)
+
+Aşama 5 sonrası seed, gerçek dershane desenine oturtuldu (önceki ~200 öğrenci /
+25 sınıf ölçeğinden küçültüldü):
+- **8 sınıf:** ÖKLİD, PİSAGOR, SEVA, FERMAT, AZİZ SANCAR, ALİ KUŞÇU, CAHİT ARF, BİRUNİ.
+- **5 sabit ders:** Cebir, Geometri, Problem Çözme, Fonksiyonlar, Sayılar.
+- **5 öğretmen:** her biri tek derse sabit, o dersi 8 sınıfta verir → **40 class_courses**.
+- **Sabit ders günü:** Cebir=Pazartesi … Sayılar=Cuma (tüm sınıflarda aynı).
+- **40 öğrenci (sınıf başına 5) + 40 veli.** Senaryolar küçük ölçekte korundu:
+  kardeş (veli 1-2 × 2 çocuk: öğrenci 1&41, 2&42), sınıf değişikliği (öğrenci 3:
+  week 10 başında sınıf 1 → sınıf 4).
+- **Kesin sayılar:** users 88, students 42, guardians 40, classes 8, courses 5,
+  class_courses 40, enrollments 43, weeks 21, reports 45, report_entries 235,
+  homeworks 45.
+- `schema.test.ts`: hacim beklentileri yeni sayılara çekildi + "öğretmen × ders ×
+  gün" ve "sınıf başına 5 ders" yapı testleri eklendi.
+- Doğrulama: backend 179/179, frontend 46/46, typecheck/lint/build ✅; canlıda
+  `ogretmen1` (Cebir) 8 sınıfta listelendi ve ÖKLİD (4 — öğrenci 3 taşındı) +
+  AZİZ SANCAR (5) raporları gerçekten doldurulup `completed` yapıldı.
 
 ---
 
