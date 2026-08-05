@@ -244,8 +244,14 @@ export default function DigestSendPage() {
               </thead>
               <tbody>
                 {items.map((item) => {
-                  const canSend = item.status !== 'sent' && !item.is_revoked;
-                  const canRevoke = item.status === 'sent' && !item.is_revoked;
+                  const isRevoked = item.is_revoked;
+                  const isSent = item.status === 'sent';
+                  // pending/ready → "Gönder"; sent (iptal edilmiş dahil) → "Yeniden gönder".
+                  // İptal edilen digest yeniden gönderilebilir: send, yeni token üretir,
+                  // is_revoked=0 yapar, send_count artırır (spec §5.4).
+                  const canSend = !isSent && !isRevoked;
+                  const canResend = isSent;
+                  const canRevoke = isSent && !isRevoked;
                   return (
                     <tr key={item.id} className="border-b border-border last:border-b-0">
                       <td className="px-3 py-2 font-medium text-text">{item.student_name}</td>
@@ -285,6 +291,16 @@ export default function DigestSendPage() {
                             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {sendingId === item.id ? 'Gönderiliyor…' : 'Gönder'}
+                          </button>
+                        )}
+                        {canResend && (
+                          <button
+                            type="button"
+                            disabled={sendingId === item.id}
+                            onClick={() => void handleSend(item)}
+                            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {sendingId === item.id ? 'Gönderiliyor…' : 'Yeniden gönder'}
                           </button>
                         )}
                         {canRevoke && (
