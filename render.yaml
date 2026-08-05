@@ -20,7 +20,5 @@ services:
         value: admin123
       - key: SEED_USER_PASSWORD
         value: admin123
-      - key: BASE_URL
-        sync: false
       - key: STORAGE_DRIVER
         value: local
