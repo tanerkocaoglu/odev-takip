@@ -5,6 +5,184 @@
 
 ---
 
+## Aşama 5 — Veli görünümü ve haftalık gönderim ✅
+
+### Süreç özeti
+
+Rapor `completed` olunca o sınıf+haftanın velisi olan aktif öğrencileri için
+`pending` digest'leri açılır; sınıfın tüm ders raporları tamamlanınca aynı
+kayıtlar `ready` olur (sınıf bazlı kontrol — karar 2). Admin "Haftalık
+gönderim" ekranı pending/ready/sent satırlarını listeler, önizleme + "gönder
+ve sonraki" akışıyla gönderir. Gönderimde yeni token üretilir, snapshot
+dondurulur, send_count artar, wa.me linki açılır (popup engelleme deseni —
+zorunlu düzeltme 2). **`reports.status='sent'` kaskadı** (zorunlu düzeltme 1)
+aynı transaction'da çalışır: o sınıf+haftanın tüm digest'leri sent olunca
+`completed` raporlar `sent` olur — §2 "sent düzenlenemez" kuralı fiilen devreye
+girer. `/r/{token}` public sayfası snapshot'ı salt-okunur gösterir
+(410: iptal/bilinmeyen token). Veli paneli öğrenci seçimi + tüm gönderilmiş
+raporlar + detay/teslim geçmişi içerir. Admin paneline (spec §5.5) özet +
+eksik rapor listesi + tam matris + **"Tüm raporlar" sekmesi** eklendi — admin'in
+"tüm raporları görme" hakkının karşılığı: durum/sınıf/hafta filtresi + satıra
+tıklayınca salt-okunur içerik.
+
+### Yapılanlar
+
+**Spec (kural #3/#4 — kapsam genişletme onaylandı)**
+- spec.md §5.4: gönderim öncesi **KVKK kontrolleri** (whatsapp_phone yok →
+  409 "Veli için WhatsApp numarası tanımlı değil."; consent_at yok → 409
+  "Velinin KVKK açık rızası alınmamış." — iki ayrı mesaj, karar 1);
+  **`reports.status='sent'` kaskadı** (ayrı istek değil, send transaction'ının
+  içinde); **popup engelleme deseni** (senkron boş sekme → send yanıtı gelince
+  location.href; hata → sekme kapat; engellendiyse kopyalanabilir link).
+- spec.md §5.5: **"Tüm raporlar" görünümü** — eksik listesinin yanında ikincil
+  sekme, durum/sınıf/hafta filtresi, satıra tıkla → salt-okunur.
+- spec.md §6 Admin ekranları güncellendi.
+
+**Backend**
+- `services/digests.ts` (yeni): `ensurePendingDigests` (INSERT OR IGNORE,
+  velisiz öğrenciye digest açılmaz), `maybeReadyDigests` (sınıf bazlı),
+  `buildSnapshot` (yalnızca o öğrencinin satırı — KVKK veri minimizasyonu),
+  `maybeCascadeSent` (transaction içinden çağrılır), `newDigestToken`
+  (randomBytes(32).base64url — UUID değil), `classIdForStudentAtWeek`.
+- `teacher.ts`: `POST /reports/:id/complete` sonrası digest tetikleme
+  (pending + maybeReady); `GET /reports/:id` salt-okunur (öğretmen kendi,
+  admin tümü); `GET /reports` filtreleri (`class_id`, `week_id`).
+- `routes/public.ts` (yeni, auth'suz): `GET /public/digests/:token` —
+  snapshot döner; bilinmeyen / is_revoked / sent olmayan → **410 GONE** (aynı
+  mesaj, varlık sızmaz).
+- `admin.ts`: `GET /admin/digests` (pending+ready+sent, sınıf/status filtresi,
+  eksik ders sayısı, token sızmaz), `GET /digests/:id/preview`,
+  `POST /digests/:id/send` (KVKK 409'lar + yeni token + snapshot +
+  send_count+1 + **maybeCascadeSent aynı tx** + wa.me linki + audit
+  digest.send/resend), `POST /digests/:id/revoke` (yalnızca sent → 409,
+  audit digest.revoke); `GET /admin/dashboard` (özet "N rapordan M'si
+  tamamlandı", eksik listesi is_overdue sıralı, tam matris, digest sayaçları).
+- `routes/guardian.ts` (yeni): `GET /students` (kendi çocukları),
+  `GET /reports?student_id=` (yalnızca sent; sınıf adı snapshot'tan),
+  `GET /reports/:id` (snapshot + ödev teslim geçmişi). Sahiplik: başka
+  velinin öğrencisi → 404. `token` dışarı dönmez.
+- `routes/index.ts`: public + guardian mount.
+
+**Frontend**
+- `components/ReportSnapshot.tsx` (yeni): snapshot'ı salt-okunur render eder
+  (hem `/r/{token}` hem veli detayı kullanır).
+- `TokenReportPage` yeniden yazıldı: 200 → snapshot; 410 → "Bu rapor artık
+  geçerli değil."
+- `pages/guardian/GuardianHomePage` (öğrenci seçimi + rapor listesi) +
+  `GuardianReportDetailPage` (snapshot + teslim geçmişi + dosya butonları).
+- `pages/admin/AdminDashboardPage` (panel: özet + eksik + matris sekmesi +
+  öğretmene göre gruplama + gönderim sayacı), `AdminReportsPage` (filtreli
+  tüm raporlar), `AdminReportViewPage` (salt-okunur), `DigestSendPage`
+  (önizleme + **boş sekme deseniyle** gönder + revoke).
+- `AdminLayout` TABS: Panel (index), Eğitim yılı (`/admin/academic-years`),
+  Raporlar, Gönderim. `App.tsx` rotalar, `AppLayout` veli "Raporlarım" linki.
+- `types.ts` + `services/api.ts`: digest/snapshot/dashboard/guardian tipleri
+  ve `publicApi`/`guardianApi`/`adminApi.digests`/`teacherApi.getReport`.
+
+**Testler**
+- Backend: `digests.test.ts` (pending/ready/idempotent), `public.test.ts`
+  (200 + 3 × 410), `admin-digests.test.ts` (list/preview/send/KVKK 409'lar/
+  **kaskad**/re-send/revoke → 410), `admin-dashboard.test.ts` (salt-okunur
+  rapor yetki matrisi + dashboard özet/eksik/matris/sayaçlar),
+  `guardian.test.ts` (öğrenci listesi, yalnızca sent, sahiplik 404, detay +
+  teslim geçmişi).
+- Frontend: `token-report.test.tsx` (200/410/hata), `guardian.test.tsx`
+  (öğrenci seçimi, tek çocuk otomatik seçim, boş durum, detay + teslim
+  geçmişi), `App.test.tsx` admin panel düzeltmesi.
+
+### Doğrulamalar
+
+**Statik** — root + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+
+**Testler** — backend **175/175** (16 dosya), frontend **39/39** (6 dosya).
+
+**Canlı (gerçek app.db, `db:reset` sonrası, çalışan sunucu) — adım adım:**
+1. admin + `ogretmen1` girişi ✅; `GET /teacher/dashboard` → week 20, 9 kayıt.
+2. `seed-class-course-001-1` raporu doldur + tamamla → `completed`.
+3. `GET /admin/digests` → 6 `pending` (EURİST, missing 3/4) ✅;
+   `GET /admin/dashboard` → summary 1/100, missing 99, digests 6 pending ✅.
+4. 6 digest'in tamamı gönderildi → `sent_count=1`, `wa.me` URL'leri geçerli ✅.
+5. **Kaskad:** `GET /teacher/reports/:id` → rapor durumu **`sent`** ✅
+   (completed → sent, tüm digest'ler gönderilince).
+6. `GET /public/digests/{token}` → 200, 4 ders, ilk ders completed ✅.
+7. `GET /teacher/reports/:id` (admin, salt-okunur) → 200, 6 satır ✅.
+8. `veli1` girişi → `GET /guardian/students` 2 çocuk ✅ →
+   `GET /guardian/reports` 1 sent rapor ✅ → detay: 4 ders + 1 teslim ✅.
+9. **Revoke:** is_revoked=true → aynı token `/public` → **410** ✅.
+10. Temizlik: `db:reset` → temiz seed; backend dev sunucu yeniden başlatıldı.
+
+### Çözülen sorunlar
+
+- **PowerShell mojibake (tekrar):** `admin-digests.test.ts` ve
+  `admin-dashboard.test.ts`'i `Set-Content` ile düzenlerken UTF-8 Türkçe
+  karakterler bozuldu (belgelenen kural); dosyalar edit/write aracıyla
+  (UTF-8 güvenli) yeniden yazıldı. **Kod/dosya içerik değişikliklerinde
+  PowerShell kullanılmaz.**
+- **`window.open` engeli (zorunlu düzeltme 2):** send async olduğu için
+  popup, kullanıcı jesti dışına düşüyordu. Desen uygulandı: tıklama anında
+  senkron `window.open('','_blank')`, yanıt gelince `location.href=wa_me_url`;
+  hata → `close()`; null sekme → kopyalanabilir link butonu.
+- **Kaskad (zorunlu düzeltme 1):** ilk plan taslağında gözden kaçmıştı; send
+  handler'ının transaction'ına `maybeCascadeSent` eklendi ve "tüm digest'ler
+  sent değilse kaskad tetiklenmez" + "hepsi sent olunca completed→sent" test
+  edildi.
+- **Fake timers + audit sıralaması:** `created_at` aynı olduğundan
+  `ORDER BY created_at DESC` belirsizdi → audit sorgularına `rowid DESC`
+  tiebreaker eklendi.
+- **wa.me formatı:** numarada `+` tutuluyordu; `wa.me` rakam bekler →
+  `replace(/\D/g,'')` uygulandı.
+- **Test helper'ı:** `completeReport` `created.body.report.id` yerine
+  `created.body.id`'yi alıyordu → URL `/reports/undefined/...` → 404; düzeltildi.
+- **Canlı giriş brute-force:** tekrarlanan scripted admin girişleri 15 dk
+  penceresini aşınca 429; canlı revoke doğrulaması imzalı JWT ile yapıldı
+  (jwt.sign, DB'den tv) — uygulama kodu değil, doğrulama yöntemi.
+
+### Commit'ler
+
+- `2e919ed` — spec.md: KVKK 409'lar, sent kaskadı, popup deseni, §5.5 Tüm
+  raporlar, §6 Admin
+- `310a0e0` — digest tetikleme (services/digests.ts + complete hook + testler)
+- `74df016` — public token endpoint (410) + testler
+- `603e067` — admin gönderim uçları (send + kaskad + revoke + audit) + testler
+- `7f22748` — GET /teacher/reports/:id + GET /admin/dashboard + testler
+- `4101ab4` — veli paneli uçları + testler
+- `9cc29f9` — frontend (public sayfa, veli paneli, admin panel/reporlar/
+  gönderim, rotalar) + testler
+- `05a2a7d` — GET /teacher/reports filtreleri + lint düzeltmeleri
+
+### Bitti kriteri
+
+**Koşul:** Koordinatör tek ekrandan bir sınıfın tüm velilerine gönderim
+yapabiliyor; veli linke tıklayınca haftanın 4 dersini birlikte görüyor.
+**Sonuç:** ✅ canlı adım 3-9 ile kanıtlandı (gönderim akışı, `/r` sayfası,
+veli paneli, iptal sonrası 410).
+
+### Güncel dosya yapısı (Aşama 5 ekleri)
+
+```
+backend/src
+  /services/digests.ts              (yeni — pending/ready/snapshot/cascade)
+  /routes/public.ts                 (yeni — /public/digests/:token, 410)
+  /routes/guardian.ts               (yeni — veli paneli)
+  /routes/teacher.ts                (+ complete digest tetikleme, GET /reports/:id, filtreler)
+  /routes/admin.ts                  (+ digests list/preview/send/revoke + dashboard)
+  /routes/index.ts                  (+ public, guardian mount)
+  digests.test.ts public.test.ts admin-digests.test.ts admin-dashboard.test.ts guardian.test.ts (yeni)
+/src
+  /components/ReportSnapshot.tsx    (yeni — salt-okunur snapshot render)
+  /pages/TokenReportPage.tsx        (yeniden yazıldı — snapshot + 410)
+  /pages/guardian/GuardianHomePage.tsx GuardianReportDetailPage.tsx   (yeni)
+  /pages/admin/AdminDashboardPage.tsx AdminReportsPage.tsx
+      AdminReportViewPage.tsx DigestSendPage.tsx                     (yeni)
+  /components/admin/AdminLayout.tsx (+ Panel/Raporlar/Gönderim sekmeleri)
+  /pages/admin/AcademicYearsPage.tsx → /admin/academic-years taşındı
+  App.tsx AppLayout.tsx types.ts services/api.ts  (+ rotalar, tipler, API'ler)
+  token-report.test.tsx guardian.test.tsx         (yeni)
+spec.md   (§5.4 KVKK/kaskad/popup, §5.5 Tüm raporlar, §6 Admin)
+```
+
+---
+
 ## Aşama 2a retrofit — OTP kaldırıldı, username + şifre girişi ✅
 
 ### Süreç özeti
