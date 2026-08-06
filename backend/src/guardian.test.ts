@@ -84,10 +84,11 @@ beforeAll(async () => {
   ).run('g-cc-1', 'g-class', 'g-course-1', 'test-teacher', 1, '09:00');
 
   // test-student-rec (test-guardian-rec'in çocuğu) sınıfa kayıt edilir.
+  // Başlangıç, week 1 aralığına (g-week-1) düşer → sınıfın ilk aktif haftası 1.
   db.prepare(
     `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
      VALUES (?, ?, ?, ?, NULL)`,
-  ).run('g-enr-1', 'test-student-rec', 'g-class', '2026-07-20');
+  ).run('g-enr-1', 'test-student-rec', 'g-class', '2026-07-27');
 
   // Başka veli + çocuğu (sahiplik 404 testi için).
   db.prepare(
@@ -235,7 +236,9 @@ describe('GET /api/v1/guardian/reports (liste)', () => {
     const items = res.body.items as Array<{
       id: string;
       week: { week_no: number };
+      relative_week_no: number;
       class_name: string;
+      courses: string[];
       course_count: number;
     }>;
     expect(items.map((i) => i.id).sort()).toEqual(['g-dig-1', 'g-dig-2']);
@@ -245,6 +248,33 @@ describe('GET /api/v1/guardian/reports (liste)', () => {
     expect(items[1].course_count).toBe(0);
     // pending digest (g-dig-3) listede yok.
     expect(items.some((i) => i.id === 'g-dig-3')).toBe(false);
+  });
+
+  it('görece hafta etiketi (enrollment tabanlı) ve ders listesi döner', async () => {
+    const res = await request(app)
+      .get(`/api/v1/guardian/reports?student_id=test-student-rec`)
+      .set('Authorization', `Bearer ${guardianToken}`);
+    expect(res.status).toBe(200);
+
+    const items = res.body.items as Array<{
+      id: string;
+      week: { week_no: number };
+      relative_week_no: number;
+      courses: string[];
+      course_count: number;
+    }>;
+    // Sınıfın ilk aktif haftası 1 (enrollment 2026-07-27, g-week-1 içinde).
+    const dig2 = items.find((i) => i.id === 'g-dig-2')!;
+    const dig1 = items.find((i) => i.id === 'g-dig-1')!;
+    expect(dig2.relative_week_no).toBe(2); // week_no 2 - 1 + 1
+    expect(dig1.relative_week_no).toBe(1);
+    // Mutlak week_no sıralaması korunur (en yeni üstte).
+    expect(items[0].week.week_no).toBe(2);
+
+    // Ders bazlı filtre: dolu derslerin adları.
+    expect(dig2.courses).toEqual(['Ders 1']);
+    expect(dig2.course_count).toBe(1);
+    expect(dig1.courses).toEqual([]);
   });
 
   it('başka velinin öğrencisi → 404 (varlık sızdırmaz)', async () => {

@@ -37,6 +37,29 @@ export function classIdForStudentAtWeek(studentId: string, week: WeekRecord): st
   return row?.class_id ?? null;
 }
 
+/**
+ * Bir sınıfın "ilk aktif haftası" (gösterim etiketi — spec §6 Veli):
+ * o sınıfa ait EN ERKEN `enrollments.start_date`'in düştüğü haftanın
+ * `week_no`'su. Rapor durumuna dayanmaz — rapor doldurulmamış bir hafta,
+ * hafta etiketini kaydırmaz. Bulunamazsa (ör. kayıtsız hafta) null döner;
+ * çağıran, relative etikette mutlak week_no'ya düşer.
+ */
+export function firstActiveWeekNoForClass(classId: string): number | null {
+  const minStart = db
+    .prepare(`SELECT MIN(e.start_date) AS start FROM enrollments e WHERE e.class_id = ?`)
+    .get(classId) as { start: string | null } | undefined;
+  if (!minStart?.start) return null;
+
+  const week = db
+    .prepare(
+      `SELECT w.week_no FROM weeks w
+       WHERE w.start_date <= ? AND w.end_date >= ?
+       ORDER BY w.start_date ASC LIMIT 1`,
+    )
+    .get(minStart.start, minStart.start) as { week_no: number } | undefined;
+  return week?.week_no ?? null;
+}
+
 /** Sınıfın silinmemiş atamaları — "o haftadaki tüm dersler" kümesi. */
 function classCourseIds(classId: string): string[] {
   return (

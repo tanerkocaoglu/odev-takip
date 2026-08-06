@@ -17,7 +17,7 @@ import { Router } from 'express';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
-import { classIdForStudentAtWeek, isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
+import { classIdForStudentAtWeek, firstActiveWeekNoForClass, isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
 import type { WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -101,14 +101,39 @@ router.get('/reports', (req, res) => {
     week_label: string;
   }>;
 
+  // Görece hafta etiketi için sınıf → ilk aktif hafta önbelleği (sorgu sayısını
+  // düşürür). Tanım (kullanıcı kararı): o sınıfın en erken enrollment.start_date'inin
+  // düştüğü haftanın week_no'su — rapor durumuna dayanmaz.
+  const firstWeekCache = new Map<string, number>();
+
   res.json({
     items: rows.map((r) => {
-      let snapshot: { class?: { name?: string }; courses?: unknown[] } | null = null;
+      let snapshot: {
+        class?: { id?: string; name?: string };
+        courses?: Array<{ course_name?: string; status?: string }>;
+      } | null = null;
       try {
         snapshot = JSON.parse(r.snapshot);
       } catch {
         // bozuk snapshot → null kalır
       }
+
+      const classId = snapshot?.class?.id ?? null;
+      let firstActiveWeek: number | null = null;
+      if (classId) {
+        if (!firstWeekCache.has(classId)) {
+          firstWeekCache.set(classId, firstActiveWeekNoForClass(classId) ?? r.week_no);
+        }
+        firstActiveWeek = firstWeekCache.get(classId) ?? r.week_no;
+      }
+
+      // Ders bazlı filtre için: dolu derslerin adları (eksik ders dahil edilmez).
+      const courses =
+        snapshot?.courses
+          ?.filter((c) => c.status === 'completed' || c.status === 'sent')
+          .map((c) => c.course_name ?? '')
+          .filter(Boolean) ?? [];
+
       return {
         id: r.id,
         week: {
@@ -118,10 +143,15 @@ router.get('/reports', (req, res) => {
           end_date: r.week_end,
           label: r.week_label,
         },
+        // Gösterim etiketi: bu sınıftaki "N. rapor haftası" (mutlak week_no'ya
+        // dokunulmaz — sıralama ve due_date/prev_homework hesabı değişmez).
+        relative_week_no: Math.max(r.week_no - (firstActiveWeek ?? r.week_no) + 1, 1),
+        class_id: classId,
         class_name: snapshot?.class?.name ?? null,
+        courses,
         sent_at: r.sent_at,
         send_count: r.send_count,
-        course_count: Array.isArray(snapshot?.courses) ? snapshot.courses.length : 0,
+        course_count: courses.length,
       };
     }),
   });
