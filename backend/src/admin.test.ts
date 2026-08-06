@@ -934,3 +934,184 @@ describe('Okullar + öğrenci okul / sınıf seviyesi (migration #6)', () => {
     expect(cleared.body.school_id).toBeNull();
   });
 });
+
+describe('Atama takası (swap) + öğretmen atamalarını devretme', () => {
+  let classAId: string;
+  let classBId: string;
+  let courseAId: string;
+  let courseBId: string;
+  let teacher2Id: string;
+  let teacher3Id: string;
+  let ccAId: string; // classA · courseA · teacher1 (test-teacher)
+  let ccBId: string; // classB · courseB · teacher2
+
+  beforeAll(async () => {
+    const years = await adminRequest('get', '/api/v1/admin/academic-years');
+    const yearId = (years.body.items as Array<{ id: string; name: string }>).find(
+      (y) => y.name === YEAR.name,
+    )!.id;
+
+    const t2 = await adminRequest('post', '/api/v1/admin/teachers').send({
+      full_name: 'Devir Ogretmen',
+      email: 'devir@test.local',
+      password: 'Sifre123',
+    });
+    teacher2Id = t2.body.id as string;
+    const t3 = await adminRequest('post', '/api/v1/admin/teachers').send({
+      full_name: 'Bos Ogretmen',
+      email: 'bos@test.local',
+      password: 'Sifre123',
+    });
+    teacher3Id = t3.body.id as string;
+
+    classAId = (
+      await adminRequest('post', '/api/v1/admin/classes').send({
+        academic_year_id: yearId,
+        name: 'SWAP A',
+      })
+    ).body.id;
+    classBId = (
+      await adminRequest('post', '/api/v1/admin/classes').send({
+        academic_year_id: yearId,
+        name: 'SWAP B',
+      })
+    ).body.id;
+
+    courseAId = (await adminRequest('post', '/api/v1/admin/courses').send({ name: 'Swap Ders A' })).body.id;
+    courseBId = (await adminRequest('post', '/api/v1/admin/courses').send({ name: 'Swap Ders B' })).body.id;
+
+    ccAId = (
+      await adminRequest('post', '/api/v1/admin/class-courses').send({
+        class_id: classAId,
+        course_id: courseAId,
+        teacher_id: 'test-teacher',
+        day_of_week: 1,
+        lesson_time: '09:00',
+      })
+    ).body.id;
+    ccBId = (
+      await adminRequest('post', '/api/v1/admin/class-courses').send({
+        class_id: classBId,
+        course_id: courseBId,
+        teacher_id: teacher2Id,
+        day_of_week: 2,
+        lesson_time: '10:00',
+      })
+    ).body.id;
+  });
+
+  it('sınıflar arası takas: iki atamanın öğretmenleri değişir; audit yazılır', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/class-courses/swap').send({
+      cc_id_a: ccAId,
+      cc_id_b: ccBId,
+    });
+    expect(res.status).toBe(200);
+    const items = res.body.items as Array<{ id: string; teacher_id: string }>;
+    expect(items.find((i) => i.id === ccAId)!.teacher_id).toBe(teacher2Id);
+    expect(items.find((i) => i.id === ccBId)!.teacher_id).toBe('test-teacher');
+
+    const { db } = await import('./db/index.js');
+    const audit = db
+      .prepare(
+        `SELECT action, diff FROM audit_logs
+         WHERE entity_type = 'class_course' AND entity_id IN (?, ?)
+         ORDER BY rowid`,
+      )
+      .all(ccAId, ccBId) as Array<{ action: string; diff: string }>;
+    expect(audit).toHaveLength(2);
+    expect(audit.every((a) => a.action === 'class_course.teacher_reassign')).toBe(true);
+    expect(JSON.parse(audit[0].diff)).toMatchObject({
+      from_teacher_id: 'test-teacher',
+      to_teacher_id: teacher2Id,
+    });
+  });
+
+  it('aynı atama seçilirse 400; aynı öğretmene ait atamalarda 409; olmayan atama 404', async () => {
+    const same = await adminRequest('post', '/api/v1/admin/class-courses/swap').send({
+      cc_id_a: ccAId,
+      cc_id_b: ccAId,
+    });
+    expect(same.status).toBe(400);
+
+    // Geri takas (eski hâle dön): ccA → test-teacher, ccB → teacher2.
+    const restore = await adminRequest('post', '/api/v1/admin/class-courses/swap').send({
+      cc_id_a: ccAId,
+      cc_id_b: ccBId,
+    });
+    expect(restore.status).toBe(200);
+
+    // Aynı öğretmene ait iki atama (ccB ve yeni ccC, ikisi teacher2) → 409.
+    const courseCId = (
+      await adminRequest('post', '/api/v1/admin/courses').send({ name: 'Swap Ders C' })
+    ).body.id;
+    const ccCId = (
+      await adminRequest('post', '/api/v1/admin/class-courses').send({
+        class_id: classBId,
+        course_id: courseCId,
+        teacher_id: teacher2Id,
+        day_of_week: 3,
+        lesson_time: '11:00',
+      })
+    ).body.id;
+    const dup = await adminRequest('post', '/api/v1/admin/class-courses/swap').send({
+      cc_id_a: ccBId,
+      cc_id_b: ccCId,
+    });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('CONFLICT');
+
+    const missing = await adminRequest('post', '/api/v1/admin/class-courses/swap').send({
+      cc_id_a: ccAId,
+      cc_id_b: 'yok-atama',
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it('devir: atamalı öğretmen silinemez (409); devirden sonra silinebilir (204)', async () => {
+    // teacher2'nin aktif atamaları var (ccB, ccC) → silme 409.
+    const beforeDel = await adminRequest('delete', `/api/v1/admin/teachers/${teacher2Id}`);
+    expect(beforeDel.status).toBe(409);
+
+    // teacher2'nin TÜM atamaları test-teacher'a devredilir.
+    const transfer = await adminRequest(
+      'post',
+      `/api/v1/admin/teachers/${teacher2Id}/transfer-assignments`,
+    ).send({ target_teacher_id: 'test-teacher' });
+    expect(transfer.status).toBe(200);
+    expect(transfer.body.reassigned).toBe(2);
+
+    const { db } = await import('./db/index.js');
+    const ownerCount = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM class_courses
+         WHERE teacher_id = ? AND deleted_at IS NULL`,
+      )
+      .get(teacher2Id) as { c: number };
+    expect(ownerCount.c).toBe(0);
+
+    // Artık öğretmen silinebilir — "önce devret, sonra sil" akışı.
+    const afterDel = await adminRequest('delete', `/api/v1/admin/teachers/${teacher2Id}`);
+    expect(afterDel.status).toBe(204);
+  });
+
+  it('devir hataları: 0 atama 409, hedef=kaynak 409, hedef yok 404', async () => {
+    const empty = await adminRequest(
+      'post',
+      `/api/v1/admin/teachers/${teacher3Id}/transfer-assignments`,
+    ).send({ target_teacher_id: 'test-teacher' });
+    expect(empty.status).toBe(409);
+    expect(empty.body.error.message).toBe('Devredilecek atama yok.');
+
+    const self = await adminRequest(
+      'post',
+      `/api/v1/admin/teachers/test-teacher/transfer-assignments`,
+    ).send({ target_teacher_id: 'test-teacher' });
+    expect(self.status).toBe(409);
+
+    const badTarget = await adminRequest(
+      'post',
+      `/api/v1/admin/teachers/test-teacher/transfer-assignments`,
+    ).send({ target_teacher_id: 'yok-ogretmen' });
+    expect(badTarget.status).toBe(404);
+  });
+});

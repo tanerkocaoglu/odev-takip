@@ -766,6 +766,107 @@ router.delete('/class-courses/:id', (req, res) => {
   res.status(204).end();
 });
 
+// ---------- Atama takası (swap) ----------
+
+const swapSchema = z.object({
+  cc_id_a: z.string().trim().min(1, 'İlk atama seçilmedi.'),
+  cc_id_b: z.string().trim().min(1, 'İkinci atama seçilmedi.'),
+});
+
+/** Bir class_course satırını adlarıyla yükler (silinmemiş; yoksa undefined). */
+function loadClassCourseWithNames(id: string): unknown {
+  return db
+    .prepare(
+      `SELECT cc.id, cc.class_id, cc.course_id, cc.teacher_id, cc.day_of_week, cc.lesson_time,
+              c.name AS class_name, co.name AS course_name, t.full_name AS teacher_name
+       FROM class_courses cc
+       JOIN classes c ON c.id = cc.class_id
+       JOIN courses co ON co.id = cc.course_id
+       JOIN users t ON t.id = cc.teacher_id
+       WHERE cc.id = ? AND cc.deleted_at IS NULL`,
+    )
+    .get(id);
+}
+
+/**
+ * POST /admin/class-courses/swap — iki atamanın öğretmenlerini tek işlemde
+ * takas eder (sınıflar arası dahil; tek transaction — iki ayrı PATCH'in
+ * yarım kalma riski yok). Her atama için audit yazılır.
+ * Tasarım kararı (spec §2): geçmiş raporlar atamayı izler — takas sonrası
+ * yeni öğretmen o atamanın geçmiş raporlarını görür.
+ */
+router.post('/class-courses/swap', (req, res) => {
+  const user = req.user!;
+  const { cc_id_a, cc_id_b } = swapSchema.parse(req.body);
+
+  if (cc_id_a === cc_id_b) {
+    throw new AppError('VALIDATION_ERROR', 400, 'İki farklı atama seçin.', {
+      cc_id_b: 'Aynı atama seçilemez.',
+    });
+  }
+
+  const ccA = loadClassCourseWithNames(cc_id_a) as {
+    id: string;
+    teacher_id: string;
+  };
+  const ccB = loadClassCourseWithNames(cc_id_b) as { id: string; teacher_id: string } | undefined;
+  if (!ccA || !ccB) {
+    throw new AppError('NOT_FOUND', 404, 'Atama bulunamadı.');
+  }
+
+  // İki öğretmen de geçerli (role='teacher', silinmemiş) olmalı.
+  for (const teacherId of [ccA.teacher_id, ccB.teacher_id]) {
+    const t = db
+      .prepare(
+        `SELECT id FROM users WHERE id = ? AND role = 'teacher' AND deleted_at IS NULL`,
+      )
+      .get(teacherId);
+    if (!t) {
+      throw new AppError('VALIDATION_ERROR', 400, 'Atamalardan birinin öğretmeni geçersiz.');
+    }
+  }
+  if (ccA.teacher_id === ccB.teacher_id) {
+    throw new AppError(
+      'CONFLICT',
+      409,
+      'Aynı öğretmene ait atamaların yerini değiştirmeye gerek yok.',
+    );
+  }
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(`UPDATE class_courses SET teacher_id = ? WHERE id = ?`).run(
+      ccB.teacher_id,
+      ccA.id,
+    );
+    db.prepare(`UPDATE class_courses SET teacher_id = ? WHERE id = ?`).run(
+      ccA.teacher_id,
+      ccB.id,
+    );
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  writeAuditLog({
+    actorId: user.id,
+    action: 'class_course.teacher_reassign',
+    entityType: 'class_course',
+    entityId: ccA.id,
+    diff: { from_teacher_id: ccA.teacher_id, to_teacher_id: ccB.teacher_id },
+  });
+  writeAuditLog({
+    actorId: user.id,
+    action: 'class_course.teacher_reassign',
+    entityType: 'class_course',
+    entityId: ccB.id,
+    diff: { from_teacher_id: ccB.teacher_id, to_teacher_id: ccA.teacher_id },
+  });
+
+  res.json({ items: [loadClassCourseWithNames(ccA.id), loadClassCourseWithNames(ccB.id)] });
+});
+
 // ---------- Öğretmen ----------
 
 const teacherSchema = z.object({
@@ -974,6 +1075,80 @@ router.delete('/teachers/:id', (req, res) => {
   });
 
   res.status(204).end();
+});
+
+// ---------- Öğretmen atamalarını devretme ----------
+
+const transferSchema = z.object({
+  target_teacher_id: z.string().trim().min(1, 'Hedef öğretmen seçilmedi.'),
+});
+
+/**
+ * POST /admin/teachers/:id/transfer-assignments — öğretmenin TÜM atamalarını
+ * tek hedef öğretmene devreder (tek transaction; per-atama audit).
+ *
+ * Ayrılan öğretmen akışı: önce "atamaları devret", sonra "sil" —
+ * `DELETE /teachers/:id` 409'dan 204'e döner. Tasarım kararı (spec §2):
+ * geçmiş raporlar atamayı izler, yeni öğretmen o atamaların geçmiş raporlarını
+ * görür; eski öğretmen erişemez.
+ */
+router.post('/teachers/:id/transfer-assignments', (req, res) => {
+  const user = req.user!;
+  const sourceId = req.params.id;
+  const { target_teacher_id } = transferSchema.parse(req.body);
+
+  const source = db
+    .prepare(
+      `SELECT id FROM users WHERE id = ? AND role = 'teacher' AND deleted_at IS NULL`,
+    )
+    .get(sourceId);
+  if (!source) {
+    throw new AppError('NOT_FOUND', 404, 'Öğretmen bulunamadı.');
+  }
+  const target = db
+    .prepare(
+      `SELECT id FROM users WHERE id = ? AND role = 'teacher' AND deleted_at IS NULL`,
+    )
+    .get(target_teacher_id);
+  if (!target) {
+    throw new AppError('NOT_FOUND', 404, 'Hedef öğretmen bulunamadı.');
+  }
+  if (sourceId === target_teacher_id) {
+    throw new AppError('CONFLICT', 409, 'Kaynak ve hedef öğretmen aynı.');
+  }
+
+  const ccRows = db
+    .prepare(
+      `SELECT id FROM class_courses WHERE teacher_id = ? AND deleted_at IS NULL`,
+    )
+    .all(sourceId) as Array<{ id: string }>;
+  if (ccRows.length === 0) {
+    throw new AppError('CONFLICT', 409, 'Devredilecek atama yok.');
+  }
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `UPDATE class_courses SET teacher_id = ?
+       WHERE teacher_id = ? AND deleted_at IS NULL`,
+    ).run(target_teacher_id, sourceId);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  for (const cc of ccRows) {
+    writeAuditLog({
+      actorId: user.id,
+      action: 'class_course.teacher_reassign',
+      entityType: 'class_course',
+      entityId: cc.id,
+      diff: { from_teacher_id: sourceId, to_teacher_id: target_teacher_id },
+    });
+  }
+
+  res.json({ reassigned: ccRows.length });
 });
 
 // ---------- Admin ekleme ----------

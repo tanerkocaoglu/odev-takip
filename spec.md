@@ -67,6 +67,12 @@ matrisler değil (bkz. §5.5). Asıl büyüyen kaynak dosya depolamadır (§8).
     düzenler; sonrasında dilerse yeniden gönderir (yeni snapshot, yeni token).
   - Velinin gördüğü kopya `weekly_digests.snapshot`'tır; `sent` sonrası admin
     düzenlemesi mevcut linki değiştirmez.
+- **Öğretmen ataması tek doğru kaynaktır (`class_courses.teacher_id`).** Takas
+  veya devir sonrası **geçmiş raporlar atamayı (kişiyi değil) izler**: yeni
+  öğretmen o atamanın geçmiş raporlarını görür ve (`completed` olanları)
+  düzenleyebilir; eski öğretmen o atamaya ait geçmiş raporlara artık kendi
+  listesinden erişemez. Bu **bilinçli bir tasarım kararıdır** — atama, kişiden
+  bağımsız yaşar; "yan etki" olarak görülmez.
 
 **İlk admin oluşturma**
 - Sistemin ilk admin kullanıcısı ayrı CLI seed script'i (`npm run db:seed`)
@@ -676,7 +682,13 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
   gönderimler, **tüm raporlar görünümü** (durum/sınıf/hafta filtresi + satıra
   tıklayınca salt-okunur içerik — §5.5)
 - Eğitim yılı / hafta yönetimi
-- Sınıf, ders, öğretmen ataması (`class_courses`, ders günü dahil)
+- Sınıf, ders, öğretmen ataması (`class_courses`, ders günü dahil) — **tüm
+  atamalar tek listede (sınıf filtresiz)**, isim araması ile; **iki atama
+  seçip "Yer değiştir"** ile öğretmenler sınıflar arası takas edilir
+  (örn. ÖKLİD Cebir ↔ PİSAGOR Cebir); takas tek transaction + audit
+- **Öğretmenin tüm atamalarını devretme** (ayrılan öğretmen akışı): tek hedef
+  öğretmene toplu devir, tek transaction + audit; devir tamamlanınca öğretmen
+  silinebilir (409 → 204)
 - Öğrenci ve veli yönetimi, sınıf atama (enrollment) — 200 kayıt olduğu için
   arama (`full_name_normalized`) ve sayfalama zorunlu
 - **Okul yönetimi** (CRUD; öğrenci formunda **"Okul"** seçici + hızlı ekle ve
@@ -782,6 +794,20 @@ Bu ölçekte (~32.000 satır/yıl, ~100 MB) SQLite fazlasıyla yeterlidir.
 - Yetki kontrolü `auth` ve `adminOnly` middleware'lerinde toplanır; JWT
   payload'ındaki role göre erişim verilir (bkz. §2 yetki tablosu).
 - Silme işlemleri soft delete; rapor ve teslim kayıtları fiziksel silinmez.
+
+**Silme stratejisi — üç farklı mekanizma (bilinçli):**
+1. **`deleted_at` soft delete** (`users`, `guardians`, `students`, `classes`,
+   `courses`, `class_courses`, `schools`): kayıt fiziksel silinmez,
+   `WHERE deleted_at IS NULL` ile gizlenir. UNIQUE kısıtları kısmi indekste
+   olduğundan aynı ad yeniden eklenebilir; silme idempotenttir.
+2. **Tarihli geçerlilik** (`enrollments.start_date` / `end_date`): geçmişin
+   tarihsel doğruluğu korunur — sınıf değişikliği yeni satırla açılır, eski
+   raporlar öğrencinin o tarihteki sınıfına bağlı kalır.
+3. **Korumalı / immutable:** `weeks` rapor referansları olduğu için fiziksel
+   silinmez (raporlu hafta silme girişimi 409); `weekly_digests` iptal için
+   `is_revoked` kullanır (token ömrü §5.4); `reports`, `homeworks`,
+   `report_entries`, `submissions`, `audit_logs` hiç silinmez — denetim izi ve
+   saklama politikası (§8) bunlara dayanır.
 
 ---
 
