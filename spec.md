@@ -172,11 +172,32 @@ CREATE TABLE students (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id),
   guardian_id TEXT REFERENCES guardians(id),
+  school_id   TEXT REFERENCES schools(id),   -- okul (migration #6; nullable)
+  grade_level TEXT CHECK (grade_level IN
+                 ('1','2','3','4','5','6','7','8','9','10','11','12','Hazırlık','Mezun')),
   deleted_at  TEXT
 ) STRICT;
 
 CREATE UNIQUE INDEX idx_students_user ON students(user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_students_guardian ON students(guardian_id);
+```
+> **Terim uyarısı:** `classes` tablosu zaten "dershane grubu" anlamında "sınıf"
+> sözcüğünü kullanır. Bu yeni alanlar **asla "sınıf" olarak adlandırılmaz**:
+> `school_id` → arayüzde **"Okul"**, `grade_level` → **"Sınıf seviyesi"**.
+> Gelecekteki trend grafikleri (`GROUP BY school_id` / `GROUP BY grade_level`)
+> için normalize edilmiş veri hazırlar; grafiklerin kendisi kapsam dışıdır.
+
+**`schools`** — öğrencinin bağlı olduğu okul (migration #6; `classes`/`courses`
+deseninin birebir kopyası)
+```sql
+CREATE TABLE schools (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL,
+  name_normalized  TEXT NOT NULL,   -- arama için; yazım anında normalizeTurkish
+  deleted_at       TEXT
+) STRICT;
+
+CREATE UNIQUE INDEX idx_schools_name ON schools(name_normalized) WHERE deleted_at IS NULL;
 ```
 
 **`academic_years`** — eğitim yılı (dönem/yarıyıl ayrımı YOK)
@@ -401,18 +422,20 @@ CREATE INDEX idx_submission_files_sub ON submission_files(submission_id);
 **`weekly_digests`** — veliye giden birleşik haftalık rapor
 ```sql
 CREATE TABLE weekly_digests (
-  id          TEXT PRIMARY KEY,
-  student_id  TEXT NOT NULL REFERENCES students(id),
-  week_id     TEXT NOT NULL REFERENCES weeks(id),
-  guardian_id TEXT NOT NULL REFERENCES guardians(id),
-  token       TEXT NOT NULL,   -- crypto.randomBytes(32).base64url; UUID DEĞİL
-  status      TEXT NOT NULL DEFAULT 'pending'
-                CHECK (status IN ('pending','ready','sent')),
-  send_count  INTEGER NOT NULL DEFAULT 0,  -- kaçıncı gönderim (ilk: 1)
-  sent_at     TEXT,            -- son gönderim zamanı
-  sent_by     TEXT REFERENCES users(id),
-  snapshot    TEXT,            -- JSON: son gönderim anındaki rapor içeriği
-  is_revoked  INTEGER NOT NULL DEFAULT 0 CHECK (is_revoked IN (0,1)),
+  id              TEXT PRIMARY KEY,
+  student_id      TEXT NOT NULL REFERENCES students(id),
+  week_id         TEXT NOT NULL REFERENCES weeks(id),
+  guardian_id     TEXT NOT NULL REFERENCES guardians(id),
+  token           TEXT NOT NULL,   -- crypto.randomBytes(32).base64url; UUID DEĞİL
+  status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','ready','sent')),
+  send_count      INTEGER NOT NULL DEFAULT 0,  -- kaçıncı gönderim (ilk: 1)
+  sent_at         TEXT,            -- son gönderim zamanı
+  sent_by         TEXT REFERENCES users(id),
+  snapshot        TEXT,            -- JSON: son gönderim anındaki rapor içeriği
+  is_revoked      INTEGER NOT NULL DEFAULT 0 CHECK (is_revoked IN (0,1)),
+  first_viewed_at TEXT,            -- velinin raporu ilk açtığı an (migration #6)
+  last_viewed_at  TEXT,            -- son açtığı an; ayrı log tablosu YOK
   UNIQUE (student_id, week_id)
 ) STRICT;
 
@@ -595,6 +618,18 @@ Admin dilerse yeniden gönderir:
 - Her gönderim `audit_logs`'a yazılır: ilk gönderim `digest.send`,
   sonrakiler `digest.resend`; `diff` alanına o anki snapshot konur.
 
+**Görüntüleme takibi (migration #6):** `weekly_digests.first_viewed_at` +
+`last_viewed_at` — ayrı log tablosu yoktur (veri minimizasyonu). İki görünümde
+güncellenir: `/r/{token}` public görünümü ve `/guardian/reports/:id` girişli
+görünümü. Admin gönderim listesinde gösterilir ("Görüntülendi: 3 Şub" /
+"Henüz görüntülenmedi").
+- **Bot önizleme atlaması:** WhatsApp mesajı gönderilir gönderilmez tarayıcı/
+  uygulama linki otomatik önizleyebilir; bu yanlış "görüntülendi" kaydı üretir.
+  `markDigestViewed` yazma kararında `User-Agent`'ta bilinen link-önizleme botu
+  imzaları (`whatsapp`, `facebookexternalhit`, `telegrambot`, `slackbot`,
+  `linkedinbot`, `twitterbot`, `discordbot`, `skypeuripreview` vb.) varsa yazma
+  **atlanır** — sayfa yine 200 döner, yalnızca sayaç/zaman damgası güncellenmez.
+
 **Token iptali:**
 - Admin, haftalık gönderim listesinden bir digest'i iptal edebilir.
 - `is_revoked = true` yapılır; `audit_logs`'a `digest.revoke` yazılır.
@@ -637,14 +672,17 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
 ## 6. Ekranlar
 
 **Admin**
-- Dashboard (panel): haftalık özet + eksik rapor listesi, bekleyen gönderimler,
-  **tüm raporlar görünümü** (durum/sınıf/hafta filtresi + satıra tıklayınca
-  salt-okunur içerik — §5.5)
+- Dashboard (panel): haftalık özet + eksik rapor listesi (sayfalı), bekleyen
+  gönderimler, **tüm raporlar görünümü** (durum/sınıf/hafta filtresi + satıra
+  tıklayınca salt-okunur içerik — §5.5)
 - Eğitim yılı / hafta yönetimi
 - Sınıf, ders, öğretmen ataması (`class_courses`, ders günü dahil)
 - Öğrenci ve veli yönetimi, sınıf atama (enrollment) — 200 kayıt olduğu için
   arama (`full_name_normalized`) ve sayfalama zorunlu
-- Haftalık gönderim ekranı (sınıf filtreli)
+- **Okul yönetimi** (CRUD; öğrenci formunda **"Okul"** seçici + hızlı ekle ve
+  **"Sınıf seviyesi"** dropdown — `classes` ile karışmaz)
+- Haftalık gönderim ekranı (sınıf filtreli; digest görüntülenme bilgisi)
+- **Yedek indir** (db:backup CLI'ını tetikler, tek .zip indirir)
 - Audit log
 
 **Öğretmen**
@@ -657,7 +695,7 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
 - Öğrenci seçimi (birden fazla çocuk varsa)
 - **Öğrencinin sistemdeki tüm gönderilmiş raporları** — sınıf değişmiş olsa
   bile geçmiş raporlar listede kalır, hafta bazında kronolojik, hangi sınıftan
-  geldiği bilgisiyle birlikte
+  geldiği bilgisiyle birlikte; **hafta** (görece etiket) ve **ders** bazlı filtre
 - Rapor detayı + ödev teslim geçmişi
 - Basit trend grafiği: hafta bazında ödev/ilgi ortalaması
 

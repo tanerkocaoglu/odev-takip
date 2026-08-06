@@ -61,6 +61,14 @@ beforeAll(() => {
 
     CREATE INDEX idx_otp_codes_user ON otp_codes(user_id, created_at);
   `);
+  // Migration #6 (schools_grade_view) geri alınır — #2 çağında schools YOKTU,
+  // students.school_id/grade_level ve weekly_digests görüntüleme kolonları da.
+  db.exec(`DROP INDEX idx_schools_name`);
+  db.exec(`DROP TABLE schools`);
+  db.exec(`ALTER TABLE students DROP COLUMN school_id`);
+  db.exec(`ALTER TABLE students DROP COLUMN grade_level`);
+  db.exec(`ALTER TABLE weekly_digests DROP COLUMN first_viewed_at`);
+  db.exec(`ALTER TABLE weekly_digests DROP COLUMN last_viewed_at`);
   db.exec(`PRAGMA user_version = 2`);
 
   // ---- Eski şemayla (kolonsuz) veri ekle ----
@@ -104,8 +112,9 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4 (submission_files) + #5 (username_login) de koşar.
-    expect(version.user_version).toBe(5);
+    // #3 backfill + #4 (submission_files) + #5 (username_login) + #6
+    // (schools_grade_view) de koşar.
+    expect(version.user_version).toBe(6);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {

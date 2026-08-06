@@ -382,6 +382,39 @@ registerMigration(5, 'username_login', () => {
   db.exec(`DROP TABLE otp_codes`);
 });
 
+/**
+ * Migration #6 (`schools_grade_view`) — Aşama 5 sonrası iyileştirmeler:
+ * - `schools` (okul) — `classes`/`courses` deseninin birebir kopyası:
+ *   soft delete + `name_normalized` kısmi UNIQUE.
+ * - `students.school_id` (okul FK) + `students.grade_level` (sınıf seviyesi;
+ *   sabit küme CHECK — trend grafikleri için normalize edilmiş veri).
+ * - `weekly_digests.first_viewed_at` + `last_viewed_at` (görüntüleme takibi;
+ *   ayrı log tablosu YOK — veri minimizasyonu).
+ * Terim uyarısı (spec §3.1): arayüzde "Okul" / "Sınıf seviyesi" kullanılır,
+ * `classes` (dershane grubu) ile karışmaz.
+ */
+registerMigration(6, 'schools_grade_view', () => {
+  db.exec(`
+    CREATE TABLE schools (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      name_normalized  TEXT NOT NULL,
+      deleted_at       TEXT
+    ) STRICT;
+
+    CREATE UNIQUE INDEX idx_schools_name ON schools(name_normalized) WHERE deleted_at IS NULL;
+  `);
+
+  db.exec(`ALTER TABLE students ADD COLUMN school_id TEXT REFERENCES schools(id)`);
+  db.exec(
+    `ALTER TABLE students ADD COLUMN grade_level TEXT CHECK (grade_level IN
+       ('1','2','3','4','5','6','7','8','9','10','11','12','Hazırlık','Mezun'))`,
+  );
+
+  db.exec(`ALTER TABLE weekly_digests ADD COLUMN first_viewed_at TEXT`);
+  db.exec(`ALTER TABLE weekly_digests ADD COLUMN last_viewed_at TEXT`);
+});
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }
