@@ -15,7 +15,14 @@ function ok(body: unknown) {
 }
 
 function makeDigest(
-  overrides: Partial<{ status: string; is_revoked: boolean; send_count: number; sent_at: string | null }>,
+  overrides: Partial<{
+    status: string;
+    is_revoked: boolean;
+    send_count: number;
+    sent_at: string | null;
+    first_viewed_at: string | null;
+    last_viewed_at: string | null;
+  }>,
 ) {
   return {
     id: 'd1',
@@ -28,6 +35,8 @@ function makeDigest(
     send_count: 0,
     sent_at: null,
     is_revoked: false,
+    first_viewed_at: null,
+    last_viewed_at: null,
     missing_course_count: 3,
     total_courses: 4,
     ...overrides,
@@ -174,5 +183,26 @@ describe('DigestSendPage — yeniden gönderim (popup engelleme deseni)', () => 
       expect(screen.getByText(/kopyalayıp elle açabilirsiniz/i)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Kopyala' })).toBeInTheDocument();
+  });
+
+  it('görüntülenme sütunu: null → "Henüz görüntülenmedi", dolu → "Görüntülendi"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      makeFetch([
+        makeDigest({ status: 'sent', send_count: 1, sent_at: '2026-08-04T09:00:00.000Z' }),
+        {
+          ...makeDigest({ status: 'sent', send_count: 1, sent_at: '2026-08-04T09:00:00.000Z' }),
+          id: 'd2',
+          student_name: 'Öğrenci 2',
+          last_viewed_at: '2026-08-05T09:00:00.000Z',
+        },
+      ]),
+    );
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('Henüz görüntülenmedi')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Görüntülendi:/)).toBeInTheDocument();
   });
 });

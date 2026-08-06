@@ -239,6 +239,7 @@ export default function DigestSendPage() {
                   <th className="px-3 py-2">Sınıf</th>
                   <th className="px-3 py-2">Durum</th>
                   <th className="px-3 py-2">Gönderim</th>
+                  <th className="px-3 py-2">Görüntülenme</th>
                   <th className="px-3 py-2 text-right">İşlem</th>
                 </tr>
               </thead>
@@ -274,6 +275,21 @@ export default function DigestSendPage() {
                         {item.sent_at
                           ? `${item.send_count} · ${new Date(item.sent_at).toLocaleDateString('tr-TR')}`
                           : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-[13px] text-muted">
+                        {item.last_viewed_at ? (
+                          <span className="text-status-sent">
+                            Görüntülendi:{' '}
+                            <span className="tabular">
+                              {new Date(item.last_viewed_at).toLocaleDateString('tr-TR', {
+                                day: 'numeric',
+                                month: 'short',
+                              })}
+                            </span>
+                          </span>
+                        ) : (
+                          <span>Henüz görüntülenmedi</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <button

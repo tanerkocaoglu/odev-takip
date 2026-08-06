@@ -24,6 +24,7 @@ import type {
   Paged,
   PublicDigestResponse,
   ReportSaveInput,
+  School,
   Student,
   StudentHomework,
   StudentHomeworkList,
@@ -275,12 +276,27 @@ export const adminApi = {
   students: {
     list: (params: { q?: string; page?: number; pageSize?: number; classId?: string } = {}) =>
       apiFetch<Paged<Student>>(`/admin/students${query(params)}`),
-    create: (input: { full_name: string; guardian_id: string; class_id: string; password: string }) =>
+    create: (input: {
+      full_name: string;
+      guardian_id: string;
+      class_id: string;
+      password: string;
+      school_id?: string | null;
+      grade_level?: string | null;
+    }) =>
       apiFetch<Student>('/admin/students', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    patch: (id: string, input: { full_name?: string; guardian_id?: string }) =>
+    patch: (
+      id: string,
+      input: {
+        full_name?: string;
+        guardian_id?: string;
+        school_id?: string | null;
+        grade_level?: string | null;
+      },
+    ) =>
       apiFetch<Student>(`/admin/students/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(input),
@@ -297,6 +313,22 @@ export const adminApi = {
       }),
     remove: (id: string) =>
       apiFetch<void>(`/admin/students/${id}`, { method: 'DELETE' }),
+  },
+  schools: {
+    list: (q?: string) =>
+      apiFetch<{ items: School[] }>(`/admin/schools${query({ q })}`),
+    create: (input: { name: string }) =>
+      apiFetch<School>('/admin/schools', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    patch: (id: string, input: { name?: string }) =>
+      apiFetch<School>(`/admin/schools/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    remove: (id: string) =>
+      apiFetch<void>(`/admin/schools/${id}`, { method: 'DELETE' }),
   },
   /** Admin panel — özet + eksik + matris (spec §5.5). */
   dashboard: (weekId?: string) =>

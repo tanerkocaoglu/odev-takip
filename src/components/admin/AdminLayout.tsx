@@ -15,6 +15,7 @@ const TABS = [
   { to: '/admin/teachers', label: 'Öğretmenler' },
   { to: '/admin/students', label: 'Öğrenciler' },
   { to: '/admin/guardians', label: 'Veliler' },
+  { to: '/admin/schools', label: 'Okullar' },
   { to: '/admin/reports', label: 'Raporlar' },
   { to: '/admin/digests', label: 'Gönderim' },
 ];

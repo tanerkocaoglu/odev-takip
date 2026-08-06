@@ -13,6 +13,7 @@ import ClassCoursesPage from './pages/admin/ClassCoursesPage';
 import TeachersPage from './pages/admin/TeachersPage';
 import StudentsPage from './pages/admin/StudentsPage';
 import GuardiansPage from './pages/admin/GuardiansPage';
+import SchoolsPage from './pages/admin/SchoolsPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminReportViewPage from './pages/admin/AdminReportViewPage';
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="teachers" element={<TeachersPage />} />
         <Route path="students" element={<StudentsPage />} />
         <Route path="guardians" element={<GuardiansPage />} />
+        <Route path="schools" element={<SchoolsPage />} />
         <Route path="reports" element={<AdminReportsPage />} />
         <Route path="reports/:id" element={<AdminReportViewPage />} />
         <Route path="digests" element={<DigestSendPage />} />

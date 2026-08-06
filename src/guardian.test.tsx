@@ -31,10 +31,13 @@ const REPORTS = {
     {
       id: 'd1',
       week: { id: 'w1', week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
+      relative_week_no: 3,
+      class_id: 'c1',
       class_name: 'ÖKLİD',
+      courses: ['Cebir', 'Geometri'],
       sent_at: '2026-01-12T10:00:00.000Z',
       send_count: 1,
-      course_count: 4,
+      course_count: 2,
     },
   ],
 };
@@ -130,6 +133,63 @@ describe('GuardianHomePage', () => {
         screen.getByText('Bu öğrenci için henüz gönderilmiş rapor yok.'),
       ).toBeInTheDocument();
     });
+  });
+
+  it('hafta (görece) ve ders filtreleri listeyi süzer', async () => {
+    const two = {
+      items: [
+        {
+          id: 'r1',
+          week: { id: 'w1', week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
+          relative_week_no: 1,
+          class_id: 'c1',
+          class_name: 'ÖKLİD',
+          courses: ['Cebir'],
+          sent_at: '2026-01-12T10:00:00.000Z',
+          send_count: 1,
+          course_count: 1,
+        },
+        {
+          id: 'r2',
+          week: { id: 'w2', week_no: 6, start_date: '2026-01-12', end_date: '2026-01-18', label: '12 - 18 Ocak' },
+          relative_week_no: 2,
+          class_id: 'c1',
+          class_name: 'ÖKLİD',
+          courses: ['Geometri'],
+          sent_at: '2026-01-19T10:00:00.000Z',
+          send_count: 1,
+          course_count: 1,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [STUDENTS.items[0]] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => two });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter>
+        <GuardianHomePage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('12 - 18 Ocak')).toBeInTheDocument();
+    });
+    expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
+
+    // Ders filtresi: Cebir → yalnızca r1.
+    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: 'Cebir' } });
+    expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
+    expect(screen.queryByText('12 - 18 Ocak')).not.toBeInTheDocument();
+
+    // Hafta filtresi: "2. hafta" → yalnızca r2 (ders filtresi değişmeden önce
+    // ders filtresini sıfırla).
+    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '2' } });
+    expect(screen.getByText('12 - 18 Ocak')).toBeInTheDocument();
+    expect(screen.queryByText('05 - 11 Ocak')).not.toBeInTheDocument();
   });
 });
 

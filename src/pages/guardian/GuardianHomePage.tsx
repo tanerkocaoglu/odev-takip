@@ -17,11 +17,15 @@ export default function GuardianHomePage() {
   const [reports, setReports] = useState<GuardianReportItem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [weekFilter, setWeekFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
 
   const loadReports = useCallback(async (studentId: string) => {
     setLoading(true);
     setError(null);
     setReports(null);
+    setWeekFilter('');
+    setCourseFilter('');
     try {
       const res = await guardianApi.reports(studentId);
       setReports(res.items);
@@ -54,6 +58,22 @@ export default function GuardianHomePage() {
     setSelected(studentId);
     void loadReports(studentId);
   }
+
+  // Filtre seçenekleri satırlardan türetilir (gösterim katmanı — backend yalnızca
+  // görece etiketi ve ders listesini döner; mutlak sıralama değişmez).
+  const weekOptions = [...new Set((reports ?? []).map((r) => r.relative_week_no))].sort(
+    (a, b) => a - b,
+  );
+  const courseOptions = [...new Set((reports ?? []).flatMap((r) => r.courses))].sort();
+
+  const filtered =
+    reports?.filter(
+      (r) =>
+        (!weekFilter || String(r.relative_week_no) === weekFilter) &&
+        (!courseFilter || r.courses.includes(courseFilter)),
+    ) ?? [];
+
+  const selectClass = 'h-9 rounded-md border border-border bg-surface px-3 text-sm text-text focus:border-accent';
 
   return (
     <div className="space-y-6">
@@ -95,46 +115,85 @@ export default function GuardianHomePage() {
       )}
 
       {selected && !loading && reports && reports.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
-                <th className="px-3 py-2">Hafta</th>
-                <th className="px-3 py-2">Sınıf</th>
-                <th className="px-3 py-2">Ders</th>
-                <th className="px-3 py-2">Gönderim</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-b-0">
-                  <td className="px-3 py-2 text-[13px] text-text">
-                    <span className="tabular font-medium">{r.week.week_no}</span>
-                    <span className="block text-xs text-muted">{r.week.label}</span>
-                  </td>
-                  <td className="px-3 py-2 text-[13px] text-text">
-                    {r.class_name ?? '—'}
-                  </td>
-                  <td className="tabular px-3 py-2 text-[13px] text-muted">
-                    {r.course_count}
-                  </td>
-                  <td className="tabular px-3 py-2 text-[13px] text-muted">
-                    {new Date(r.sent_at).toLocaleDateString('tr-TR')}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Link
-                      to={`/guardian/reports/${r.id}`}
-                      className="text-sm font-medium text-accent hover:underline"
-                    >
-                      Aç
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="flex flex-wrap gap-3">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-muted">Hafta</span>
+              <select
+                value={weekFilter}
+                onChange={(e) => setWeekFilter(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">Tümü</option>
+                {weekOptions.map((w) => (
+                  <option key={w} value={String(w)}>
+                    {w}. hafta
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-muted">Ders</span>
+              <select
+                value={courseFilter}
+                onChange={(e) => setCourseFilter(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">Tümü</option>
+                {courseOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {filtered.length === 0 ? (
+            <EmptyState message="Bu filtrelerle rapor yok." />
+          ) : (
+            <div className="overflow-hidden rounded-md border border-border bg-surface">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
+                    <th className="px-3 py-2">Hafta</th>
+                    <th className="px-3 py-2">Sınıf</th>
+                    <th className="px-3 py-2">Ders</th>
+                    <th className="px-3 py-2">Gönderim</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r) => (
+                    <tr key={r.id} className="border-b border-border last:border-b-0">
+                      <td className="px-3 py-2 text-[13px] text-text">
+                        <span className="tabular font-medium">{r.relative_week_no}</span>
+                        <span className="block text-xs text-muted">{r.week.label}</span>
+                      </td>
+                      <td className="px-3 py-2 text-[13px] text-text">
+                        {r.class_name ?? '—'}
+                      </td>
+                      <td className="tabular px-3 py-2 text-[13px] text-muted">
+                        {r.course_count}
+                      </td>
+                      <td className="tabular px-3 py-2 text-[13px] text-muted">
+                        {new Date(r.sent_at).toLocaleDateString('tr-TR')}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          to={`/guardian/reports/${r.id}`}
+                          className="text-sm font-medium text-accent hover:underline"
+                        >
+                          Aç
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
       {!students && !loading && !error && <LoadingState />}

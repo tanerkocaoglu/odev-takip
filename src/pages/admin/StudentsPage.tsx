@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { ClassItem, Guardian, Student, Week } from '../../types';
+import type { ClassItem, Guardian, School, Student, Week } from '../../types';
+import { GRADE_LEVELS, GRADE_LEVEL_LABELS } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import { useList } from '../../hooks/useList';
 import Modal from '../../components/admin/Modal';
@@ -19,6 +20,7 @@ import {
 export default function StudentsPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classFilter, setClassFilter] = useState('');
+  const [schools, setSchools] = useState<School[]>([]);
 
   const { items, total, page, pageSize, loading, error, setError, setQ, setPage, reload } =
     useList<Student>((params) =>
@@ -30,10 +32,18 @@ export default function StudentsPage() {
   const [password, setPassword] = useState('');
   const [guardianId, setGuardianId] = useState('');
   const [classId, setClassId] = useState('');
+  const [schoolId, setSchoolId] = useState('');
+  const [gradeLevel, setGradeLevel] = useState('');
   const [guardianQuery, setGuardianQuery] = useState('');
   const [guardianResults, setGuardianResults] = useState<Guardian[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Hızlı okul ekleme (öğrenci formu içinden).
+  const [newSchoolOpen, setNewSchoolOpen] = useState(false);
+  const [newSchoolName, setNewSchoolName] = useState('');
+  const [newSchoolSubmitting, setNewSchoolSubmitting] = useState(false);
+  const [newSchoolError, setNewSchoolError] = useState<string | null>(null);
 
   const [moveStudent, setMoveStudent] = useState<Student | null>(null);
   const [moveClassId, setMoveClassId] = useState('');
@@ -62,6 +72,15 @@ export default function StudentsPage() {
     });
   }, []);
 
+  useEffect(() => {
+    adminApi.schools
+      .list()
+      .then((res) => setSchools(res.items))
+      .catch(() => {
+        // Okul listesi yüklenemezse form okulsuz çalışır.
+      });
+  }, []);
+
   const searchGuardians = useCallback(async (q: string) => {
     const data = await adminApi.guardians.list({ q, pageSize: 10 });
     setGuardianResults(data.items);
@@ -82,6 +101,11 @@ export default function StudentsPage() {
     setGuardianId('');
     setGuardianQuery('');
     setGuardianResults([]);
+    setSchoolId('');
+    setGradeLevel('');
+    setNewSchoolOpen(false);
+    setNewSchoolName('');
+    setNewSchoolError(null);
     setFormError(null);
     setFormOpen(true);
   }
@@ -96,6 +120,8 @@ export default function StudentsPage() {
         guardian_id: guardianId,
         class_id: classId,
         password,
+        school_id: schoolId || null,
+        grade_level: gradeLevel || null,
       });
       setFormOpen(false);
       await reload();
@@ -103,6 +129,23 @@ export default function StudentsPage() {
       setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleAddSchool(event: FormEvent) {
+    event.preventDefault();
+    setNewSchoolSubmitting(true);
+    setNewSchoolError(null);
+    try {
+      const created = await adminApi.schools.create({ name: newSchoolName.trim() });
+      setSchools((prev) => [...prev, created]);
+      setSchoolId(created.id);
+      setNewSchoolOpen(false);
+      setNewSchoolName('');
+    } catch (err) {
+      setNewSchoolError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setNewSchoolSubmitting(false);
     }
   }
 
@@ -197,6 +240,8 @@ export default function StudentsPage() {
                 <th className="px-3 py-2">Ad</th>
                 <th className="px-3 py-2">Veli</th>
                 <th className="px-3 py-2">Sınıf</th>
+                <th className="px-3 py-2">Okul</th>
+                <th className="px-3 py-2">Sınıf seviyesi</th>
                 <th className="px-3 py-2">Kullanıcı adı</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -207,6 +252,10 @@ export default function StudentsPage() {
                   <td className="px-3 py-2 font-medium text-text">{student.full_name}</td>
                   <td className="px-3 py-2 text-muted">{student.guardian_name ?? '—'}</td>
                   <td className="px-3 py-2 text-muted">{student.class_name}</td>
+                  <td className="px-3 py-2 text-muted">{student.school_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-muted">
+                    {student.grade_level ? GRADE_LEVEL_LABELS[student.grade_level] ?? student.grade_level : '—'}
+                  </td>
                   <td className="tabular px-3 py-2 text-muted">{student.username}</td>
                   <td className="px-3 py-2 text-right">
                     <button
@@ -289,6 +338,67 @@ export default function StudentsPage() {
               {classes.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Okul" htmlFor="st-school">
+            <div className="flex gap-2">
+              <select
+                id="st-school"
+                value={schoolId}
+                onChange={(e) => setSchoolId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Seçilmedi</option>
+                {schools.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setNewSchoolOpen((v) => !v)}
+                className="whitespace-nowrap rounded-md border border-border px-3 text-sm font-medium text-text hover:bg-bg"
+              >
+                + Yeni okul
+              </button>
+            </div>
+          </Field>
+          {newSchoolOpen && (
+            <form onSubmit={handleAddSchool} className="space-y-2 rounded-md border border-border p-3">
+              <Field label="Yeni okul adı" htmlFor="st-new-school">
+                <input
+                  id="st-new-school"
+                  value={newSchoolName}
+                  onChange={(e) => setNewSchoolName(e.target.value)}
+                  required
+                  minLength={1}
+                  className={inputClass}
+                  placeholder="Örn. Örnek Okul 1"
+                />
+              </Field>
+              <FormError message={newSchoolError} />
+              <div className="flex justify-end gap-2">
+                <SecondaryButton onClick={() => setNewSchoolOpen(false)}>İptal</SecondaryButton>
+                <PrimaryButton type="submit" disabled={newSchoolSubmitting}>
+                  {newSchoolSubmitting ? 'Ekleniyor…' : 'Okulu ekle'}
+                </PrimaryButton>
+              </div>
+            </form>
+          )}
+          <Field label="Sınıf seviyesi" htmlFor="st-grade">
+            <select
+              id="st-grade"
+              value={gradeLevel}
+              onChange={(e) => setGradeLevel(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Seçilmedi</option>
+              {GRADE_LEVELS.map((g) => (
+                <option key={g} value={g}>
+                  {GRADE_LEVEL_LABELS[g]}
                 </option>
               ))}
             </select>

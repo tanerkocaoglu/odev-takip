@@ -131,7 +131,39 @@ export interface Student {
   guardian_name: string | null;
   class_id: string;
   class_name: string;
+  school_id: string | null;
+  school_name: string | null;
+  grade_level: string | null;
 }
+
+/** Okul (migration #6) — arayüzde "Okul"; `classes` (dershane grubu) ile karışmaz. */
+export interface School {
+  id: string;
+  name: string;
+  name_normalized?: string;
+}
+
+/** Sınıf seviyesi sabit kümesi — spec §3.1. */
+export const GRADE_LEVELS = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'Hazırlık', 'Mezun',
+] as const;
+
+export const GRADE_LEVEL_LABELS: Record<string, string> = {
+  '1': '1. sınıf',
+  '2': '2. sınıf',
+  '3': '3. sınıf',
+  '4': '4. sınıf',
+  '5': '5. sınıf',
+  '6': '6. sınıf',
+  '7': '7. sınıf',
+  '8': '8. sınıf',
+  '9': '9. sınıf',
+  '10': '10. sınıf',
+  '11': '11. sınıf',
+  '12': '12. sınıf',
+  Hazırlık: 'Hazırlık',
+  Mezun: 'Mezun',
+};
 
 export const DAY_LABELS = ['', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'] as const;
 
@@ -392,6 +424,8 @@ export interface AdminDigestItem {
   send_count: number;
   sent_at: string | null;
   is_revoked: boolean;
+  first_viewed_at: string | null;
+  last_viewed_at: string | null;
   missing_course_count: number;
   total_courses: number;
 }
@@ -425,7 +459,11 @@ export interface GuardianChild {
 export interface GuardianReportItem {
   id: string;
   week: { id: string; week_no: number; start_date: string; end_date: string; label: string };
+  /** Gösterim etiketi: bu sınıftaki "N. rapor haftası" (enrollment bazlı). */
+  relative_week_no: number;
+  class_id: string | null;
   class_name: string | null;
+  courses: string[];
   sent_at: string;
   send_count: number;
   course_count: number;
