@@ -375,6 +375,67 @@ modalı).
 
 ---
 
+## İç hatırlatma + riskli öğrenci listesi ✅
+
+### Süreç özeti
+
+İki Aşama 6 iyileştirmesi. (1) **İç hatırlatma:** öğretmen dashboard'undaki
+mevcut "ders günü geçmiş taslak" bilgisi görünürleştirildi — üstte sayaç
+banner'ı + gecikmiş kart vurgusu; WhatsApp/SMS yok, arka plan mekanizması yok.
+(2) **Riskli öğrenci listesi:** admin panelinde yeni sekme; mevcut
+`report_entries`/`submissions` verisi üzerinden (şema değişikliği gerekmedi).
+
+**Kararlar (kullanıcı onayı):** son 3 hafta penceresi; üç kriter — herhangi
+biri tetiklerse riskli (OR); eşikler kod içinde sabit, **`backend/src/
+constants.ts` tek dosyada**. Eşik tanımları: ortalama(ödev+ilgi) ≤ 4; verilen
+ödevlerden ≥ 2'si teslim edilmemiş (ardışık şart yok); ARDIŞIK ≥ 2 hafta
+`absent` (`excused` hiç sayılmaz). `risk_flags` ayrı rozet olarak gösterilir
+(tek "riskli" etiketi yeterli değil).
+
+### Yapılanlar
+
+**Backend**
+- `constants.ts` (yeni): `RISK = { lookbackWeeks: 3, avgScoreThreshold: 4,
+  missingSubmissionMin: 2, consecutiveAbsenceMin: 2 }` + `RISK_FLAGS` — eşikler
+  tek yerden, ileride ayarlanabilir yapılacaksa yalnızca bu dosya değişir.
+- `GET /teacher/dashboard` → `overdue_count` (mevcut `is_overdue`'dan; arka
+  plan mekanizması yok).
+- `GET /admin/dashboard/risk` (adminOnly): aktif yılın son 3 haftası; üç kriter
+  OR. Yalnızca `completed`/`sent` raporlar (taslaklar sayılmaz), absent satırlar
+  ortalamaya girmez; teslim hesabı öğrencinin o hafta sınıfındaki verilen
+  ödevler üzerinden. Yanıt: `{ weeks, items: [{ student_id, student_name,
+  class_name, school_name, grade_level, risk_flags, avg_score,
+  missing_submission_count }] }`.
+
+**Frontend**
+- `TeacherDashboardPage`: `overdue_count > 0` iken üstte amber banner
+  "Bu hafta N raporunuz gecikti"; gecikmiş kartlar `bg-att-late/5` ile belirgin.
+- `AdminDashboardPage`: "Riskli öğrenciler" sekmesi (tembel yüklenir) — son
+  3 hafta özeti, öğrenci/sınıf/okul/sınıf seviyesi + **ayrı** risk neden
+  rozetleri (Düşük ortalama / Teslim etmeme / Devamsızlık), boş durum.
+
+**Spec** — §6 Öğretmen (iç hatırlatma banner'ı) + Admin (riskli öğrenci listesi,
+kriter tanımları, constants tek dosya notu).
+
+**Testler:** backend risk (4 öğrenci fixture: düşük ortalama / teslim etmeme /
+ardışık devamsızlık / temiz; OR + ayrı risk_flags, temiz öğrenci listede yok,
+403); frontend banner (var/yok) + risk sekmesi (yükleme + rozetler + boş durum).
+
+### Doğrulamalar
+
+**Statik** — root + backend typecheck ✅, lint ✅, build ✅.
+**Testler** — backend **197/197** (17 dosya), frontend **55/55** (10 dosya).
+**Canlı (db:reset + çalışan sunucu):** öğretmen dashboard `overdue_count` > 0
+(temiz seed'de gecikmiş taslaklar) ✅; `GET /admin/dashboard/risk` 200 → son 3
+hafta (week 19/20/21) öğrencileri, risk_flags ayrı; `db:reset` ile temizlik.
+
+### Commit'ler
+
+- `0bbf239` — backend (constants + overdue_count + risk endpoint + testler)
+- `03ba4d9` — frontend (banner + risk sekmesi + testler)
+
+---
+
 ## Aşama 2a retrofit — OTP kaldırıldı, username + şifre girişi ✅
 
 ### Süreç özeti

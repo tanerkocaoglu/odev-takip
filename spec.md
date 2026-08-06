@@ -694,11 +694,20 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
 - **Okul yönetimi** (CRUD; öğrenci formunda **"Okul"** seçici + hızlı ekle ve
   **"Sınıf seviyesi"** dropdown — `classes` ile karışmaz)
 - Haftalık gönderim ekranı (sınıf filtreli; digest görüntülenme bilgisi)
+- **Riskli öğrenci listesi** (panel sekmesi): son 3 hafta, üç kriter — herhangi
+  biri tetiklerse riskli (OR); nedenler ayrı rozet ("Düşük ortalama" /
+  "Teslim etmeme" / "Devamsızlık"). Tanım: ortalama(ödev+ilgi) ≤ 4; verilen
+  ödevlerden ≥ 2'si teslim edilmemiş (ardışık şart yok); ARDIŞIK ≥ 2 hafta
+  `absent` (`excused` sayılmaz). Eşikler kod içinde sabit (backend `constants.ts`
+  — tek dosya; ileride ayarlanabilir yapılacaksa yalnızca o dosya değişir)
 - **Yedek indir** (db:backup CLI'ını tetikler, tek .zip indirir)
 - Audit log
 
 **Öğretmen**
-- Bu hafta doldurulacaklar (~10 kayıt, ders gününe göre sıralı)
+- Bu hafta doldurulacaklar (~10 kayıt, ders gününe göre sıralı) — günü geçmiş
+  taslaklar üstte ve belirgin; **iç hatırlatma banner'ı**: "Bu hafta N raporunuz
+  gecikti" (yalnızca uygulama içi — WhatsApp/SMS yok; arka plan mekanizması
+  gerekmez, mevcut `is_overdue` verisinden türetilir)
 - **Toplu rapor giriş ekranı** (§6.1)
 - Ödev teslim kontrol ekranı (bir ödevin tüm teslimlerini sırayla gezme)
 - Geçmiş raporlarım
