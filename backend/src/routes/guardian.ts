@@ -17,7 +17,7 @@ import { Router } from 'express';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
-import { classIdForStudentAtWeek } from '../services/digests.js';
+import { classIdForStudentAtWeek, isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
 import type { WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -157,6 +157,12 @@ router.get('/reports/:id', (req, res) => {
     throw new AppError('NOT_FOUND', 404, 'Rapor bulunamadı.');
   }
   loadOwnChild(user, digest.student_id);
+
+  // Görüntüleme takibi (spec §5.4) — girişli görünümde de güncellenir;
+  // link-önizleme botları atlanır.
+  if (!isLinkPreviewBot(req.headers['user-agent'])) {
+    markDigestViewed(digest.id);
+  }
 
   const snapshot = JSON.parse(digest.snapshot);
   const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(digest.week_id) as

@@ -307,3 +307,31 @@ export function maybeCascadeSent(classId: string, weekId: string): void {
      WHERE week_id = ? AND status = 'completed' AND class_course_id IN (${cp})`,
   ).run(weekId, ...courseIds);
 }
+
+/**
+ * Bilinen link-önizleme botu User-Agent imzaları. WhatsApp mesajı gönderilir
+ * gönderilmez tarayıcı/uygulama linki otomatik önizleyebilir; bu, gerçek bir
+ * veli görüntülemesi DEĞİLDİR ve yanlış "görüntülendi" kaydı üretir. Bu
+ * imzalar varsa görüntüleme yazması atlanır (sayfa yine 200 döner — yalnızca
+ * zaman damgası güncellenmez). spec.md §5.4 "Bot önizleme atlaması".
+ */
+const LINK_PREVIEW_BOT_RE = /whatsapp|facebookexternalhit|telegrambot|slackbot|linkedinbot|twitterbot|discordbot|skypeuripreview|snapchat|viber|microedgebot|embed/i;
+
+export function isLinkPreviewBot(userAgent: string | undefined): boolean {
+  return typeof userAgent === 'string' && LINK_PREVIEW_BOT_RE.test(userAgent);
+}
+
+/**
+ * Digest'i görüntüleme takibiyle işaretler (migration #6). İlk görüntüleme
+ * `first_viewed_at`'i doldurur; her görüntüleme `last_viewed_at`'i günceller.
+ * Ayrı log tablosu YOKTUR — veri minimizasyonu ilkesine uygun iki zaman damgası.
+ * Çağıran rota, `isLinkPreviewBot` ise bu fonksiyonu ÇAĞIRMAZ (spec §5.4).
+ */
+export function markDigestViewed(digestId: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE weekly_digests
+     SET first_viewed_at = COALESCE(first_viewed_at, ?), last_viewed_at = ?
+     WHERE id = ?`,
+  ).run(now, now, digestId);
+}

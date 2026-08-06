@@ -102,11 +102,41 @@ beforeAll(() => {
 });
 
 describe('GET /api/v1/public/digests/:token', () => {
-  it('geçerli sent digest → 200 + snapshot (auth gerekmez)', async () => {
+  it('geçerli sent digest → 200 + snapshot (auth gerekmez); görüntüleme kaydedilir', async () => {
     const res = await request(app).get('/api/v1/public/digests/tok-valid');
     expect(res.status).toBe(200);
     expect(res.body.snapshot).toEqual(JSON.parse(SNAPSHOT));
     expect(res.body.sent_at).toBe('2026-08-02T10:00:00.000Z');
+
+    // Görüntüleme takibi (migration #6): geçerli görünüm first+last yazar.
+    const row = db
+      .prepare(`SELECT first_viewed_at, last_viewed_at FROM weekly_digests WHERE id = 'pd-valid'`)
+      .get() as { first_viewed_at: string | null; last_viewed_at: string | null };
+    expect(row.first_viewed_at).not.toBeNull();
+    expect(row.last_viewed_at).not.toBeNull();
+  });
+
+  it('link-önizleme botu (WhatsApp UA) görüntüleme yazmaz — sayfa yine 200', async () => {
+    // Önce izleri temizle.
+    db.prepare(`UPDATE weekly_digests SET first_viewed_at = NULL, last_viewed_at = NULL WHERE id = 'pd-valid'`).run();
+
+    const res = await request(app)
+      .get('/api/v1/public/digests/tok-valid')
+      .set('User-Agent', 'WhatsApp/2.23.16.76');
+    expect(res.status).toBe(200);
+
+    const row = db
+      .prepare(`SELECT first_viewed_at, last_viewed_at FROM weekly_digests WHERE id = 'pd-valid'`)
+      .get() as { first_viewed_at: string | null; last_viewed_at: string | null };
+    expect(row.first_viewed_at).toBeNull();
+    expect(row.last_viewed_at).toBeNull();
+
+    // Gerçek veli görüntülemesi yeniden yazar.
+    await request(app).get('/api/v1/public/digests/tok-valid');
+    const after = db
+      .prepare(`SELECT first_viewed_at FROM weekly_digests WHERE id = 'pd-valid'`)
+      .get() as { first_viewed_at: string | null };
+    expect(after.first_viewed_at).not.toBeNull();
   });
 
   it('bilinmeyen token → 410 (404 değil)', async () => {

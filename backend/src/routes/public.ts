@@ -16,6 +16,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
+import { isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
 
 const router = Router();
 
@@ -24,11 +25,11 @@ router.get('/digests/:token', (req, res) => {
 
   const row = db
     .prepare(
-      `SELECT snapshot, status, sent_at, is_revoked
+      `SELECT id, snapshot, status, sent_at, is_revoked
        FROM weekly_digests WHERE token = ?`,
     )
     .get(token) as
-    | { snapshot: string | null; status: string; sent_at: string | null; is_revoked: number }
+    | { id: string; snapshot: string | null; status: string; sent_at: string | null; is_revoked: number }
     | undefined;
 
   if (!row || row.is_revoked === 1 || row.status !== 'sent' || row.snapshot === null) {
@@ -40,6 +41,12 @@ router.get('/digests/:token', (req, res) => {
     snapshot = JSON.parse(row.snapshot);
   } catch {
     throw new AppError('GONE', 410, 'Bu rapor artık geçerli değil.');
+  }
+
+  // Görüntüleme takibi (spec §5.4): gerçek veli görüntülemesi sayılır;
+  // WhatsApp/facebook vb. link-önizleme botları değil (yanlış kayıt üretir).
+  if (!isLinkPreviewBot(req.headers['user-agent'])) {
+    markDigestViewed(row.id);
   }
 
   res.json({ snapshot, sent_at: row.sent_at });

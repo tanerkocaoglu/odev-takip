@@ -198,6 +198,9 @@ describe('GET /api/v1/admin/digests', () => {
     expect(items.every((i) => i.class.name === 'Gönderim Sınıfı')).toBe(true);
     expect(items.every((i) => i.missing_course_count === 0 && i.total_courses === 2)).toBe(true);
     expect(items.every((i) => i.is_revoked === false)).toBe(true);
+    // Görüntülenme alanları listede bulunur (gönderim sonrası doldurulur).
+    expect(items[0]).toHaveProperty('first_viewed_at');
+    expect(items[0]).toHaveProperty('last_viewed_at');
     // token dışarı sızmaz
     expect(res.body.items[0]).not.toHaveProperty('token');
   });

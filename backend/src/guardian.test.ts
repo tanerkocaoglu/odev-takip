@@ -295,4 +295,19 @@ describe('GET /api/v1/guardian/reports/:id (detay)', () => {
       .set('Authorization', `Bearer ${guardianToken}`);
     expect(res.status).toBe(404);
   });
+
+  it('girişli detay görünümü görüntüleme takibini günceller (migration #6)', async () => {
+    db.prepare(`UPDATE weekly_digests SET first_viewed_at = NULL, last_viewed_at = NULL WHERE id = 'g-dig-2'`).run();
+
+    const res = await request(app)
+      .get('/api/v1/guardian/reports/g-dig-2')
+      .set('Authorization', `Bearer ${guardianToken}`);
+    expect(res.status).toBe(200);
+
+    const row = db
+      .prepare(`SELECT first_viewed_at, last_viewed_at FROM weekly_digests WHERE id = 'g-dig-2'`)
+      .get() as { first_viewed_at: string | null; last_viewed_at: string | null };
+    expect(row.first_viewed_at).not.toBeNull();
+    expect(row.last_viewed_at).not.toBeNull();
+  });
 });

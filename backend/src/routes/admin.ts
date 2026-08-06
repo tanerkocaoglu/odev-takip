@@ -1765,6 +1765,7 @@ router.get('/digests', (req, res) => {
   const rows = db
     .prepare(
       `SELECT d.id, d.student_id, d.week_id, d.status, d.send_count, d.sent_at, d.is_revoked,
+              d.first_viewed_at, d.last_viewed_at,
               u_s.full_name AS student_name, u_g.full_name AS guardian_name,
               w.week_no, w.start_date AS week_start, w.label AS week_label,
               c.id AS class_id, c.name AS class_name,
@@ -1799,6 +1800,8 @@ router.get('/digests', (req, res) => {
     send_count: number;
     sent_at: string | null;
     is_revoked: number;
+    first_viewed_at: string | null;
+    last_viewed_at: string | null;
     student_name: string;
     guardian_name: string;
     week_no: number;
@@ -1823,6 +1826,8 @@ router.get('/digests', (req, res) => {
       send_count: r.send_count,
       sent_at: r.sent_at,
       is_revoked: r.is_revoked === 1,
+      first_viewed_at: r.first_viewed_at,
+      last_viewed_at: r.last_viewed_at,
       missing_course_count: Math.max(r.total_courses - r.done_courses, 0),
       total_courses: r.total_courses,
     })),
