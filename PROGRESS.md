@@ -303,6 +303,78 @@ birim, GuardianHomePage filtreler, DigestSendPage görüntülenme sütunu.
 
 ---
 
+## Atama takası + öğretmen atamalarını devretme ✅
+
+### Süreç özeti
+
+İki ilişkili özellik: (1) iki `class_courses` kaydının öğretmenlerini tek
+işlemde takas etmek (sınıflar arası dahil), (2) ayrılan öğretmenin tüm
+atamalarını tek hedef öğretmene devredip ardından silmesini mümkün kılmak
+("önce devret, sonra sil"). İkisi de yalnızca `class_courses.teacher_id`
+günceller → **şema değişikliği/migration yok** (teyit edildi).
+
+**Bilinçli tasarım kararı (spec §2'ye işlendi):** geçmiş raporlar atamayı
+(kişiyi değil) izler — takas/devir sonrası yeni öğretmen o atamanın geçmiş
+raporlarını görür/düzenler, eski öğretmen kendi listesinden erişemez. "Yan
+etki" değil, tasarımın parçasıdır.
+
+### Yapılanlar
+
+**Backend (`admin.ts`)**
+- `POST /admin/class-courses/swap` `{ cc_id_a, cc_id_b }`: aynı atama → 400;
+  var olmayan/silinmiş atama → 404; öğretmenler `role='teacher'` + silinmemiş
+  değilse → 400; aynı öğretmene ait iki atama → 409. **Tek transaction**'da
+  takaslı `UPDATE`; per-atama audit (`class_course.teacher_reassign`,
+  `diff { from_teacher_id, to_teacher_id }`).
+- `POST /admin/teachers/:id/transfer-assignments` `{ target_teacher_id }`:
+  kaynak/hedef `role='teacher'` + silinmemiş; hedef=kaynak → 409; kaynağın 0
+  ataması → 409. **Tek transaction**'da tüm `class_courses` devredilir;
+  per-atama audit. Devir sonrası `DELETE /admin/teachers/:id` 409 → 204.
+
+**Frontend**
+- `ClassCoursesPage`: **sınıf filtresi kaldırıldı**, tüm atamalar tek listede
+  (Sınıf sütunu eklendi), isim araması (sınıf/ders/öğretmen) — sayfalama
+  YOK (40-50 satır; sayfa kapsamlı seçim çapraz sınıf takasını bozardı).
+  Satır checkbox'ları; tam 2 satır seçilince "Yer değiştir" aktifleşir, aynı
+  öğretmen engeli satır altında gösterilir. Forma "Sınıf" seçici eklendi
+  (eskiden sayfa filtresinden geliyordu).
+- `TeachersPage`: satırda "Atamaları devret" → modal (kaynağın atama sayısı +
+  hedef öğretmen dropdown, kaynak hariç) → transfer → liste yenilenir.
+
+**Spec**
+- §2: bilinçli tasarım kararı (atama kişiden bağımsız).
+- §6 Admin: Atamalar (filtresiz + arama + "Yer değiştir"), Öğretmenler'e
+  "atamaları devret".
+- §7.2: **soft-delete üç mekanizması** notu (`deleted_at` soft delete /
+  `enrollments` tarihli geçerlilik / `weeks` korumalı + `weekly_digests.is_revoked`
+  + immutable rapor/audit).
+
+**Testler:** backend swap (çapraz sınıf takas + audit, aynı atama 400, aynı
+öğretmen 409, 404), transfer (devir öncesi sil 409, reassigned, kaynak 0,
+sil 204, 0 atama 409, hedef=kaynak 409, hedef yok 404); frontend
+`admin-swap.test.tsx` (seçim + swap çağrısı + aynı öğretmen engeli + devir
+modalı).
+
+### Doğrulamalar
+
+**Statik** — root + backend typecheck ✅, lint ✅, build ✅.
+**Testler** — backend **195/195** (17 dosya), frontend **52/52** (9 dosya).
+**Canlı (db:reset + çalışan sunucu):**
+1. Çapraz sınıf takas: ÖKLİD Cebir (Örnek Kişi 5) ↔ PİSAGOR Geometri (Mehmet
+   Demir) → öğretmenler değişti; rapor görünümünde yeni öğretmen ✅.
+2. `cc_id_a === cc_id_b` → **400** ✅.
+3. Audit: `class_course.teacher_reassign` 2 satır, `diff from/to` doğru ✅.
+4. Devir: öğretmen 5 (Sayılar, 8 atama) → öğretmen 2; silme **önce 409,
+   sonra 204**; kaynak 0, hedef +8; devir audit 8 ✅.
+5. Temizlik: `db:reset` → temiz seed; backend dev sunucu yeniden başlatıldı.
+
+### Commit'ler
+
+- `c8b944b` — backend swap + transfer + spec (bilinçli karar, §6, §7.2 soft-delete notu) + testler
+- `7fa9f93` — frontend (Atamalar filtresiz + arama + Yer değiştir; Öğretmenler devir modalı) + testler
+
+---
+
 ## Aşama 2a retrofit — OTP kaldırıldı, username + şifre girişi ✅
 
 ### Süreç özeti
