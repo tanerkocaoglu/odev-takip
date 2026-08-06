@@ -36,10 +36,10 @@ beforeAll(() => {
     'class_courses',
     'courses',
     'classes',
-    'schools',
     'weeks',
     'academic_years',
     'students',
+    'schools',
     'guardians',
     'users',
   ];
@@ -98,12 +98,19 @@ describe('seed', () => {
     // 40 temel + 1 taşınan (yeni) + 2 kardeş = 43
     expect(count('enrollments')).toBe(43);
     expect(count('weeks')).toBe(21);
-    // 40 (week 19: 8 sınıf × 5 ders) + 5 (week 8 geçmiş bloğu: sınıf 1 × 5 ders)
+    // 38 (week 19: sınıf 1 → 3 ders, sınıf 2-8 → 5 ders) + 2 (week 20: sınıf 1
+    // Fonksiyonlar+Sayılar — risk penceresi) + 5 (week 8 geçmiş bloğu: sınıf 1 × 5)
     expect(count('reports')).toBe(45);
-    // week 19: sınıf 1=4, 2=6, 3=6, 4=6, 5..8=5 → (4+6+6+6+5+5+5+5)×5 = 210
-    // week 8 bloğu: sınıf 1 × 5 öğrenci × 5 ders = 25
+    // week 19: sınıf 1=4, 2=6, 3=6, 4=6, 5..8=5 → 3×(4+6+6+6+5+5+5+5) − kısmi…
+    // (sınıf 1 yalnızca 3 ders: 12) + sınıf 2-8 (190) = 202; week 20: sınıf 1 × 2 ders
+    // × 4 öğrenci = 8; week 8: sınıf 1 × 5 öğrenci × 5 ders = 25 → 202+8+25 = 235
     expect(count('report_entries')).toBe(235);
     expect(count('homeworks')).toBe(45);
+    // Aşama 6 seed ekleri: 4 okul; okul atanan öğrenciler 20 (1..20), null 22 (21..42);
+    // teslimler (risk penceresi week 19+20); gönderilmiş digest'ler (görüntülenen + değil)
+    expect(count('schools')).toBe(4);
+    expect(count('submissions')).toBeGreaterThan(0);
+    expect(count('weekly_digests')).toBe(4);
   });
 
   it('seed idempotenttir — ikinci çalıştırmada kayıt çoğalmaz', async () => {
@@ -118,6 +125,9 @@ describe('seed', () => {
       reports: count('reports'),
       report_entries: count('report_entries'),
       homeworks: count('homeworks'),
+      schools: count('schools'),
+      submissions: count('submissions'),
+      weekly_digests: count('weekly_digests'),
     };
 
     await seedDatabase('test-admin-password', 'test-user-password');
@@ -132,19 +142,103 @@ describe('seed', () => {
     expect(count('reports')).toBe(before.reports);
     expect(count('report_entries')).toBe(before.report_entries);
     expect(count('homeworks')).toBe(before.homeworks);
+    expect(count('schools')).toBe(before.schools);
+    expect(count('submissions')).toBe(before.submissions);
+    expect(count('weekly_digests')).toBe(before.weekly_digests);
   });
 
-  it('geçen hafta raporları completed durumundadır', () => {
+  it('geçen hafta + risk penceresi raporları completed durumundadır', () => {
     const row = db
       .prepare(
-        `SELECT status, COUNT(*) AS c FROM reports
-         WHERE week_id = (SELECT id FROM weeks WHERE week_no = 19)
-         GROUP BY status`,
+        `SELECT w.week_no, r.status, COUNT(*) AS c FROM reports r
+         JOIN weeks w ON w.id = r.week_id
+         WHERE w.week_no IN (19, 20)
+         GROUP BY w.week_no, r.status
+         ORDER BY w.week_no`,
       )
-      .all() as { status: string; c: number }[];
-    expect(row).toHaveLength(1);
-    expect(row[0].status).toBe('completed');
-    expect(row[0].c).toBe(40);
+      .all() as { week_no: number; status: string; c: number }[];
+    // Week 19: 38 completed (sınıf 1 → 3 ders + sınıf 2-8 → 35); week 20: 2 completed.
+    expect(row).toEqual([
+      { week_no: 19, status: 'completed', c: 38 },
+      { week_no: 20, status: 'completed', c: 2 },
+    ]);
+  });
+
+  it('Aşama 6 seed: okullar atanmış, teslimler risk senaryosunu kurar, digest görüntüleme karışık', () => {
+    // 1) Okul + sınıf seviyesi: öğrencilerin bir kısmına atandı, kalanı null.
+    const assigned = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM students
+         WHERE school_id IS NOT NULL AND grade_level IS NOT NULL`,
+      )
+      .get() as { c: number };
+    const unassigned = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM students
+         WHERE school_id IS NULL AND grade_level IS NULL`,
+      )
+      .get() as { c: number };
+    expect(assigned.c).toBe(20);
+    expect(unassigned.c).toBe(22);
+    // Örnek: öğrenci 1 Örnek Okul 1 + seviye; öğrenci 21 okulsuz.
+    const s1 = db
+      .prepare(
+        `SELECT s.school_id, s.grade_level FROM students s WHERE s.id = 'seed-student-001'`,
+      )
+      .get() as { school_id: string; grade_level: string };
+    expect(s1.school_id).toBe('seed-school-001');
+    expect(s1.grade_level).toBe('6');
+    const s21 = db
+      .prepare(`SELECT school_id FROM students WHERE id = 'seed-student-021'`)
+      .get() as { school_id: string | null };
+    expect(s21.school_id).toBeNull();
+
+    // 2) Risk penceresi: öğrenci 002 ve 005 TESLİM ETMEZ; 001 teslim eder.
+    const missing = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM submissions s
+         JOIN students st ON st.id = s.student_id
+         WHERE st.id IN ('seed-student-002','seed-student-005')`,
+      )
+      .get() as { c: number };
+    const submitted001 = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM submissions WHERE student_id = 'seed-student-001'`,
+      )
+      .get() as { c: number };
+    expect(missing.c).toBe(0);
+    expect(submitted001.c).toBeGreaterThan(0);
+    // 001 düşük puan; 004 iki hafta absent (risk satırları).
+    const entry001 = db
+      .prepare(
+        `SELECT MIN(homework_score) AS h FROM report_entries
+         WHERE student_id = 'seed-student-001'`,
+      )
+      .get() as { h: number };
+    expect(entry001.h).toBe(2);
+    const absentWeeks004 = db
+      .prepare(
+        `SELECT COUNT(DISTINCT w.week_no) AS c FROM report_entries re
+         JOIN reports r ON r.id = re.report_id
+         JOIN weeks w ON w.id = r.week_id
+         WHERE re.student_id = 'seed-student-004' AND re.attendance = 'absent'
+           AND w.week_no IN (19, 20)`,
+      )
+      .get() as { c: number };
+    expect(absentWeeks004.c).toBe(2);
+
+    // 3) Digest'ler: 4 sent, 2 görüntülenmiş + 2 görüntülenmemiş.
+    const digests = db
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN first_viewed_at IS NOT NULL AND last_viewed_at IS NOT NULL
+                    THEN 1 ELSE 0 END) AS viewed,
+           SUM(CASE WHEN first_viewed_at IS NULL THEN 1 ELSE 0 END) AS not_viewed
+         FROM weekly_digests WHERE status = 'sent'`,
+      )
+      .get() as { viewed: number; not_viewed: number };
+    expect(digests.viewed).toBe(2);
+    expect(digests.not_viewed).toBe(2);
   });
 
   it('gerçek dershane yapısı: 5 öğretmen tek dersini 8 sınıfta verir; ders günü sabittir', () => {

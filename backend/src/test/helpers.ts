@@ -26,10 +26,10 @@ const CLEAN_TABLES = [
   'class_courses',
   'courses',
   'classes',
-  'schools',
   'weeks',
   'academic_years',
   'students',
+  'schools',
   'guardians',
   'users',
 ];

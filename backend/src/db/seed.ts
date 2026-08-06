@@ -42,6 +42,7 @@ import { normalizeTurkish } from '../utils/text.js';
 import { hashPassword } from '../utils/hash.js';
 import { nextUsername } from '../utils/username.js';
 import { calculateDueDate, type WeekRecord } from '../utils/weeks.js';
+import { buildSnapshot } from '../services/digests.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -128,6 +129,34 @@ const CLASS_NAMES = [
 ];
 
 const COURSE_NAMES = ['Cebir', 'Geometri', 'Problem Çözme', 'Fonksiyonlar', 'Sayılar'];
+
+/** Okullar (migration #6) — arayüzde "Okul"; öğrencilerin bir kısmına atanır. */
+const SCHOOL_NAMES = ['Örnek Okul 1', 'Örnek Okul 5', 'Örnek Okul 4', 'Örnek Okul 6'];
+/** Okul atanan öğrencilerin sınıf seviyeleri (deterministik dönüşümlü). */
+const SEED_GRADE_LEVELS = ['6', '7', '8', '9', '10'];
+/** Okul + sınıf seviyesi atanacak öğrenci üst sınırı (1..20 dolu, 21..42 null). */
+const SCHOOL_ASSIGN_UP_TO = 20;
+
+/**
+ * Risk senaryosu satırları (Aşama 6 — kasıtlı, rastgele değil). Sınıf 1 (ÖKLİD)
+ * öğrencilerine week 19 + week 20 raporlarında uygulanır:
+ * - 001 → düşük ortalama (puan 2)
+ * - 002 → teslim etmeme (puan iyi ama hiç teslim yok)
+ * - 004 → ardışık devamsızlık (iki hafta da absent)
+ * - 005 → birden çok: düşük ortalama + teslim etmeme
+ */
+const RISK_ENTRY_OVERRIDES: Record<
+  string,
+  { attendance: string; homework_score: number | null; interest_score: number | null }
+> = {
+  '001': { attendance: 'present', homework_score: 2, interest_score: 2 },
+  '002': { attendance: 'present', homework_score: 7, interest_score: 8 },
+  '004': { attendance: 'absent', homework_score: null, interest_score: null },
+  '005': { attendance: 'present', homework_score: 3, interest_score: 3 },
+};
+
+/** Teslim etmeyen risk öğrencileri (pad'li numara) — diğer herkes teslim eder. */
+const MISSING_SUBMISSION_STUDENTS = new Set(['002', '005']);
 
 const STUDENTS_PER_CLASS = 5;
 const CLASS_COUNT = CLASS_NAMES.length;
@@ -320,6 +349,16 @@ export async function seedDatabase(
     });
   });
 
+  // --- Okullar (4) — `classes`/`courses` deseni; öğrencilerin bir kısmına atanır ---
+  SCHOOL_NAMES.forEach((name, i) => {
+    insert('schools', {
+      id: `seed-school-${pad(i + 1)}`,
+      name,
+      name_normalized: normalizeTurkish(name),
+      deleted_at: null,
+    });
+  });
+
   // --- Veliler (40) + Öğrenciler (40) — sınıf başına 5 ---
   for (let s = 1; s <= CLASS_COUNT * STUDENTS_PER_CLASS; s++) {
     const studentUserId = `seed-user-student-${pad(s)}`;
@@ -417,6 +456,21 @@ export async function seedDatabase(
     });
   });
 
+  // --- Okul + sınıf seviyesi ataması (kademeli — 1..20 dolu, 21..42 null) ---
+  // Gerçek dünyada bu alan zamanla doldurulur; null kalanlar da doğaldır.
+  // Fill-gaps deseni (`AND school_id IS NULL`): re-run'da üzerine yazılmaz.
+  const assignSchool = db.prepare(
+    `UPDATE students SET school_id = ?, grade_level = ?
+     WHERE id = ? AND school_id IS NULL`,
+  );
+  for (let s = 1; s <= SCHOOL_ASSIGN_UP_TO; s++) {
+    assignSchool.run(
+      `seed-school-${pad(((s - 1) % SCHOOL_NAMES.length) + 1)}`,
+      SEED_GRADE_LEVELS[(s - 1) % SEED_GRADE_LEVELS.length],
+      `seed-student-${pad(s)}`,
+    );
+  }
+
   // --- Enrollments (ayrılanlar kapanır, yeni kayıtlar açılır) ---
   // Temel üyeler: öğrenci 1..40, sınıf = (s-1)//5
   for (let s = 1; s <= CLASS_COUNT * STUDENTS_PER_CLASS; s++) {
@@ -487,10 +541,36 @@ export async function seedDatabase(
     });
   }
 
-  // --- Geçen hafta (week 19) raporları: completed — 8 sınıf × 5 ders = 40 ---
+  // --- Risk penceresi: week 19 + week 20 (son 3 hafta = 19/20/21) ---
+  // Sınıf 1 (ÖKLİD) raporları iki haftaya bölünür: 3 ders week 19, 2 ders week 20.
+  // Toplam rapor/entry/homework sayısı DEĞİŞMEZ (sınıf 1'in 5 dersi iki haftaya
+  // dağılır; 38 + 2 + 5 (week 8) = 45). Böylece:
+  // - Risk penceresinde sınıf 1'de İKİ komşu hafta (19, 20) completed veri olur →
+  //   ardışık devamsızlık senaryosu tetiklenebilir (tek hafta yeterli olmazdı).
+  // - week 20'deki 2 ders completed olduğu için "Bu hafta N raporunuz gecikti"
+  //   banner'ı yine görünür (diğer 38 week-20 ataması boş).
   const lastWeek = weeks.find((w) => w.week_no === LAST_WEEK_NO)!;
-  buildReportBlockForWeek(lastWeek, classCourses, weeks, (cc) =>
-    currentWeekStudentNumbers(cc.classIndex),
+  const currentWeek = weeks.find((w) => w.week_no === 20)!;
+  const riskClassCourses = classCourses.filter(
+    (cc) => cc.classIndex === 0 && cc.courseIdx >= 3, // ÖKLİD · Fonksiyonlar + Sayılar
+  );
+
+  // Week 19: sınıf 1 hariç tümü + sınıf 1'in ilk 3 dersi (toplam 38 rapor).
+  buildReportBlockForWeek(
+    lastWeek,
+    classCourses.filter((cc) => !(cc.classIndex === 0 && cc.courseIdx >= 3)),
+    weeks,
+    (cc) => currentWeekStudentNumbers(cc.classIndex),
+    RISK_ENTRY_OVERRIDES,
+  );
+
+  // Week 20: yalnızca sınıf 1'in son 2 dersi (2 rapor) — risk satırları burada.
+  buildReportBlockForWeek(
+    currentWeek,
+    riskClassCourses,
+    weeks,
+    () => currentWeekStudentNumbers(0),
+    RISK_ENTRY_OVERRIDES,
   );
 
   // --- Geçmiş blok: week 8 — yalnızca sınıf 1 (değişimden önceki sınıf) ---
@@ -502,18 +582,95 @@ export async function seedDatabase(
     const baseStart = 1;
     return Array.from({ length: STUDENTS_PER_CLASS }, (_, i) => baseStart + i);
   });
+
+  // --- Teslim verileri (risk penceresi: week 19 + 20) ---
+  // Öğrencinin sınıfındaki window ödevlerine teslim eklenir; yalnızca
+  // MISSING_SUBMISSION_STUDENTS (002, 005) teslim etmez → "teslim etmeme"
+  // senaryosu tetiklenir. Diğer herkes teslim eder → risk listesi yalnızca
+  // hedeflenen öğrencileri gösterir.
+  const windowHomeworks = db
+    .prepare(
+      `SELECT h.id, h.week_id, cc.class_id, w.start_date AS week_start
+       FROM homeworks h
+       JOIN class_courses cc ON cc.id = h.class_course_id
+       JOIN weeks w ON w.id = h.week_id
+       WHERE h.week_id IN ('seed-week-19','seed-week-20')`,
+    )
+    .all() as Array<{ id: string; week_id: string; class_id: string; week_start: string }>;
+  const enrollStmt = db.prepare(
+    `SELECT s.id AS student_id FROM enrollments e
+     JOIN students s ON s.id = e.student_id AND s.deleted_at IS NULL
+     JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+     WHERE e.class_id = ? AND e.start_date <= ?
+       AND (e.end_date IS NULL OR e.end_date >= ?)`,
+  );
+  const insertSubmission = db.prepare(
+    `INSERT OR IGNORE INTO submissions
+       (id, homework_id, student_id, note, submitted_at, is_late, status,
+        reviewed_by, reviewed_at, files_purged_at)
+     VALUES (?, ?, ?, NULL, ?, 0, 'submitted', NULL, NULL, NULL)`,
+  );
+  for (const hw of windowHomeworks) {
+    const students = enrollStmt.all(hw.class_id, hw.week_start, hw.week_start) as Array<{
+      student_id: string;
+    }>;
+    for (const st of students) {
+      const num = st.student_id.replace('seed-student-', '');
+      if (MISSING_SUBMISSION_STUDENTS.has(num)) continue;
+      insertSubmission.run(`seed-submission-${hw.id}-${num}`, hw.id, st.student_id, createdAt);
+    }
+  }
+
+  // --- Gönderilmiş digest'ler: görüntülenmiş + görüntülenmemiş (migration #6) ---
+  // Admin "Görüntülenme" sütununun iki durumu da taze seed'de görünsün.
+  // 006, 011 → first/last_viewed dolu; 007, 012 → null.
+  const digestStudents: Array<{ num: string; viewed: boolean }> = [
+    { num: '006', viewed: true },
+    { num: '007', viewed: false },
+    { num: '011', viewed: true },
+    { num: '012', viewed: false },
+  ];
+  for (const ds of digestStudents) {
+    const studentId = `seed-student-${ds.num}`;
+    const classNum = ds.num <= '010' ? '002' : '003'; // 6-10 → PİSAGOR, 11-15 → SEVA
+    const snapshot = buildSnapshot(studentId, 'seed-week-19', `seed-class-${classNum}`);
+    insert('weekly_digests', {
+      id: `seed-digest-${ds.num}`,
+      student_id: studentId,
+      week_id: 'seed-week-19',
+      guardian_id: `seed-guardian-${ds.num}`,
+      token: `seed-token-${ds.num}`,
+      status: 'sent',
+      send_count: 1,
+      sent_at: createdAt,
+      sent_by: 'seed-user-admin-001',
+      snapshot: JSON.stringify(snapshot),
+      is_revoked: 0,
+      first_viewed_at: ds.viewed ? createdAt : null,
+      last_viewed_at: ds.viewed ? createdAt : null,
+    });
+  }
 }
 
 /**
  * Bir hafta için her class_course'a bir completed rapor + homework +
  * report_entries üretir (öğrenci listesi verilen fonksiyondan gelir).
  * due_date, ödevin verildiği tarihten sonraki bir sonraki aynı ders günüdür.
+ *
+ * Varsayılan satır: `present` + güvenli puanlar (7/8) — risk hesabında yanlış
+ * eşik tetiklenmesin. `entryOverrides` (pad'li öğrenci numarasına göre) verilirse
+ * o öğrencinin satırı için attendance/puanlar belirtildiği gibi yazılır (risk
+ * senaryoları — Aşama 6).
  */
 function buildReportBlockForWeek(
   week: WeekRecord,
   classCourses: ClassCourse[],
   allWeeks: WeekRecord[],
   studentNumbersFor: (cc: ClassCourse) => number[],
+  entryOverrides?: Record<
+    string,
+    { attendance: string; homework_score: number | null; interest_score: number | null }
+  >,
 ): void {
   const weekId = week.id;
 
@@ -549,13 +706,14 @@ function buildReportBlockForWeek(
     });
 
     for (const studentNum of studentNumbersFor(cc)) {
+      const override = entryOverrides?.[pad(studentNum)];
       insert('report_entries', {
         id: `seed-report-entry-${cc.id}-w${week.week_no}-${pad(studentNum)}`,
         report_id: reportId,
         student_id: `seed-student-${pad(studentNum)}`,
-        attendance: 'present',
-        homework_score: ((cc.courseIdx + studentNum) % 10) + 1,
-        interest_score: ((cc.dayOfWeek + studentNum) % 10) + 1,
+        attendance: override?.attendance ?? 'present',
+        homework_score: override ? override.homework_score : 7,
+        interest_score: override ? override.interest_score : 8,
         teacher_note: 'Düzenli çalışıyor.',
       });
     }

@@ -436,6 +436,82 @@ hafta (week 19/20/21) öğrencileri, risk_flags ayrı; `db:reset` ile temizlik.
 
 ---
 
+## Seed — son özellikleri gösteren demo verisi ✅
+
+### Süreç özeti
+
+`seed.ts`, son eklenen dört özelliği taze `db:reset`'te canlı gösterecek
+verilerle zenginleştirildi — **kasıtlı senaryolar, rastgele değil.** Mevcut
+yapı korundu (8 sınıf, 5 ders, 5 öğretmen, 40 öğrenci + kardeş + sınıf
+değişikliği senaryoları). Rapor/entry/homework sayıları DEĞİŞMEDİ (45/235/45):
+sınıf 1'in 5 dersi week 19 (3 ders) + week 20 (2 ders) arasında bölündü —
+toplam 38 + 2 + 5 (week 8) = 45.
+
+### Yapılanlar
+
+**1. Okul + sınıf seviyesi (kademeli)**
+- 4 okul (`seed-school-001..004`): Örnek Okul 1, Örnek Okul 5,
+  Örnek Okul 4, Örnek Okul 6 — `classes`/`courses` deseniyle.
+- Öğrenci 1..20'ye dönüşümlü okul + sınıf seviyesi (`6..10`) atandı;
+  21..42 **null** kaldı. Fill-gaps deseni (`UPDATE ... AND school_id IS NULL`)
+  → idempotent.
+
+**2. Risk senaryoları (sınıf 1 = ÖKLİD, week 19 + 20)**
+- `RISK_ENTRY_OVERRIDES` + `MISSING_SUBMISSION_STUDENTS` sabitleri; varsayılan
+  satır puanları formülden güvenli 7/8'e çekildi (yanlış eşik tetiklenmesin).
+- 001 → düşük ortalama (puan 2) · 002 → teslim etmeme (5/5 eksik) ·
+  004 → ardışık absent (week 19 **ve** 20) · 005 → çift: düşük ortalama (3) +
+  teslim etmeme. Geri kalan her öğrenci teslim eder → risk listesi **tam 4**.
+- Teslimler: window (week 19+20) ödevlerine toplu `INSERT OR IGNORE`
+  (yalnızca 002/005 atlanır) — ~200 deterministik satır.
+
+**3. Gecikme banner'ı**
+- week 20'de yalnızca sınıf 1'in 2 dersi dolu; kalan 38 week-20 ataması boş →
+  `ogretmen1` `overdue_count = 8` (banner taze seed'de görünür).
+
+**4. Digest görüntüleme durumu**
+- 4 `sent` digest (week 19, gerçek `buildSnapshot`): 006/011
+  `first_viewed_at` + `last_viewed_at` dolu, 007/012 null → admin "Görüntülendi"
+  sütununda iki durum.
+
+**Deterministik id + INSERT OR IGNORE korundu;** `schema.test.ts` idempotency
+listesine `schools`/`submissions`/`weekly_digests` eklendi.
+
+### Çözülen sorunlar
+
+- **resetDb FK sırası:** `CLEAN_TABLES`'ta `schools` öğrencilerden önce
+  siliniyordu; 20 öğrencide `school_id` FK referansı artınca `DELETE FROM
+  schools` FK ihlali fırlattı (tam pakette 11 suite patladı). `schools`,
+  `students`'tan SONRA silinecek şekilde sıra düzeltildi (`test/helpers.ts` +
+  `schema.test.ts`).
+- **Stale test.db:** schema.test'in dolu bıraktığı test.db üzerinde ardışık
+  tam koşu hata verdi; taze test.db + sıralı paket ile doğrulandı.
+
+### Doğrulamalar
+
+**Statik** — root + backend typecheck ✅, lint ✅, build ✅.
+**Testler** — backend **198/198** (17 dosya; schema.test'e +1: "Aşama 6 seed"),
+frontend **55/55** (10 dosya). `schema.test.ts`: rapor 45 / entry 235 /
+homeworks 45 **korundu**; week 19 completed 38 + week 20 2; okul atanan 20 /
+null 22; teslimler > 0 ve 002/005 sıfır; digest viewed 2 + not_viewed 2.
+
+**Canlı (db:reset + çalışan sunucu):**
+1. Okul/seviye: 4 okul; admin öğrenci listesinde 20/42 okullu, öğrenci 21 null ✅.
+2. Risk: pencere H19/H20/H21 → tam 4 öğrenci: 001 `[low_score]` avg 2 ·
+   002 `[missing_submission]` 5/5 · 004 `[consecutive_absence]` ·
+   005 `[low_score + missing_submission]` avg 3 · gerisi risk-free ✅.
+3. Banner: `ogretmen1` `overdue_count = 8` ✅.
+4. Digest: `GET /admin/digests?status=sent&week_id=seed-week-19` → 4 satır,
+   2 görüntülenmiş + 2 değil; `/r/seed-token-006` → 200, PİSAGOR 5 ders ✅.
+5. Temizlik: `db:reset` → temiz seed; backend dev sunucu yeniden başlatıldı.
+
+### Commit
+
+`<yeni>` — seed: okullar + risk senaryoları + teslimler + digest görüntülenme
++ resetDb FK sırası + schema.test (schools/submissions/digests + week 19/20)
+
+---
+
 ## Aşama 2a retrofit — OTP kaldırıldı, username + şifre girişi ✅
 
 ### Süreç özeti
