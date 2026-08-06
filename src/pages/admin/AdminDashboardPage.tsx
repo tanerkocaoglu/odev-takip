@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AdminDashboard } from '../../types';
 import { DAY_LABELS } from '../../types';
-import { adminApi, ApiClientError } from '../../services/api';
+import { adminApi, downloadBackup, ApiClientError } from '../../services/api';
 import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
 
 export default function AdminDashboardPage() {
@@ -18,6 +18,9 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'missing' | 'matrix'>('missing');
   const [groupByTeacher, setGroupByTeacher] = useState(false);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupDone, setBackupDone] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,6 +37,20 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleBackup() {
+    setBackupRunning(true);
+    setBackupDone(null);
+    setBackupError(null);
+    try {
+      const filename = await downloadBackup();
+      setBackupDone(`${filename} indirildi.`);
+    } catch (err) {
+      setBackupError(err instanceof ApiClientError ? err.message : 'Yedek oluşturulamadı.');
+    } finally {
+      setBackupRunning(false);
+    }
+  }
 
   if (loading) return <LoadingState />;
   if (error) return <FormError message={error} />;
@@ -79,14 +96,27 @@ export default function AdminDashboardPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold text-text">Panel</h1>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-        >
-          Yenile
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleBackup()}
+            disabled={backupRunning}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {backupRunning ? 'Yedekleniyor…' : 'Yedek indir'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
+          >
+            Yenile
+          </button>
+        </div>
       </div>
+
+      {backupDone && <p className="text-sm font-medium text-status-sent">{backupDone}</p>}
+      {backupError && <FormError message={backupError} />}
 
       <p className="text-sm text-muted">
         Bu hafta{' '}

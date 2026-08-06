@@ -12,6 +12,9 @@
 
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
@@ -31,6 +34,9 @@ import {
   maybeCascadeSent,
   newDigestToken,
 } from '../services/digests.js';
+
+/** Backup CLI çıktısının yazıldığı dizin (script ile aynı kural). */
+const BACKUPS_DIR = path.join(import.meta.dirname, '..', '..', 'backups');
 
 /** Yerel takvimde bir gün öncesi (YYYY-MM-DD) — UTC çıkarımı yapılmaz. */
 function prevDay(iso: string): string {
@@ -2192,6 +2198,145 @@ router.get('/dashboard', (req, res) => {
       ready: digests.ready ?? 0,
       sent: digests.sent ?? 0,
     },
+  });
+});
+
+/**
+ * GET /admin/dashboard/missing — eksik rapor listesi, SAYFALI (spec §5.5).
+ * Dashboard özetinden ayrı bir uçtur: sayfa değişiminde panel/matris/sayaçlar
+ * yeniden çekilmez, yalnızca eksik sekmesi sayfalanır. `utils/pagination.ts`
+ * deseni aynen kullanılır (`parsePagination` + `paged`). `is_overdue` JS'te
+ * hesaplanıp önce sıralandığı için sayfalama kararlıdır (günü geçenler üstte).
+ */
+router.get('/dashboard/missing', (req, res) => {
+  const pagination = parsePagination(req.query as Record<string, unknown>);
+  const weekId =
+    typeof req.query.week_id === 'string' ? req.query.week_id : currentDigestWeek()?.id;
+  if (!weekId) {
+    res.json(paged([], 0, pagination));
+    return;
+  }
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(weekId) as unknown as WeekRecord;
+
+  const rows = db
+    .prepare(
+      `SELECT cc.id AS class_course_id, cc.day_of_week, cc.lesson_time, cc.teacher_id,
+              c.id AS class_id, c.name AS class_name,
+              co.name AS course_name, t.full_name AS teacher_name,
+              r.id AS report_id, r.status AS report_status
+       FROM class_courses cc
+       JOIN classes c ON c.id = cc.class_id AND c.deleted_at IS NULL
+       JOIN academic_years a ON a.id = c.academic_year_id AND a.is_active = 1
+       JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
+       JOIN users t ON t.id = cc.teacher_id
+       LEFT JOIN reports r ON r.class_course_id = cc.id AND r.week_id = ?
+       WHERE cc.deleted_at IS NULL
+         AND (r.id IS NULL OR r.status = 'draft')
+       ORDER BY cc.day_of_week, cc.lesson_time`,
+    )
+    .all(weekId) as Array<{
+    class_course_id: string;
+    day_of_week: number;
+    lesson_time: string | null;
+    teacher_id: string;
+    class_id: string;
+    class_name: string;
+    course_name: string;
+    teacher_name: string;
+    report_id: string | null;
+    report_status: string | null;
+  }>;
+
+  const missing = rows
+    .map((r) => ({
+      class_course_id: r.class_course_id,
+      class_id: r.class_id,
+      class_name: r.class_name,
+      course_name: r.course_name,
+      teacher_id: r.teacher_id,
+      teacher_name: r.teacher_name,
+      day_of_week: r.day_of_week,
+      lesson_time: r.lesson_time,
+      status: r.report_status ?? 'not_started',
+      report_id: r.report_id,
+      is_overdue: isOverdue(week, r.day_of_week),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.is_overdue) - Number(a.is_overdue) ||
+        a.day_of_week - b.day_of_week ||
+        (a.lesson_time ?? '').localeCompare(b.lesson_time ?? ''),
+    );
+
+  const slice = missing.slice(pagination.offset, pagination.offset + pagination.limit);
+  res.json(paged(slice, missing.length, pagination));
+});
+
+// ===========================================================================
+// Yedek indir — spec.md §6 Admin (madde 3)
+// ===========================================================================
+
+/**
+ * POST /admin/backup — yedek CLI'ını (db:backup) ayrı process'te spawn eder
+ * (DatabaseSync senkron kuralı — yedek sunucu isteği içinde çalışmaz) ve
+ * üretilen .zip'i istemciye indirtir. CLI stdout'a zip yolunu yazar; yol
+ * `BACKUPS_DIR` içinde değilse 500 (path traversal koruması).
+ */
+router.post('/backup', (_req, res) => {
+  const scriptPath = path.join(import.meta.dirname, '..', '..', 'scripts', 'backup.ts');
+  const tsxCli = path.join(
+    import.meta.dirname,
+    '..',
+    '..',
+    'node_modules',
+    'tsx',
+    'dist',
+    'cli.mjs',
+  );
+  const cwd = path.join(import.meta.dirname, '..', '..');
+
+  const child = spawn(process.execPath, [tsxCli, scriptPath], {
+    cwd,
+    windowsHide: true,
+    env: process.env,
+  });
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (d: Buffer) => {
+    stdout += String(d);
+  });
+  child.stderr.on('data', (d: Buffer) => {
+    stderr += String(d);
+  });
+  child.on('error', (err) => {
+    console.error('Yedek spawn hatası:', err);
+    res.status(500).json({
+      error: { code: 'INTERNAL', message: 'Yedek oluşturulamadı.' },
+    });
+  });
+  child.on('close', (code) => {
+    if (code !== 0) {
+      console.error('Yedek CLI hatası:', stderr);
+      res.status(500).json({
+        error: { code: 'INTERNAL', message: 'Yedek oluşturulamadı.' },
+      });
+      return;
+    }
+    const lines = stdout
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const zipPath = lines[lines.length - 1] ?? '';
+    const resolved = path.resolve(zipPath);
+    if (!resolved.startsWith(path.resolve(BACKUPS_DIR)) || !fs.existsSync(resolved)) {
+      console.error('Yedek dosyası bulunamadı:', zipPath);
+      res.status(500).json({
+        error: { code: 'INTERNAL', message: 'Yedek dosyası bulunamadı.' },
+      });
+      return;
+    }
+    res.download(resolved);
   });
 });
 

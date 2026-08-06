@@ -6,6 +6,7 @@ backend/db/app.db-*
 backend/db/test.db
 backend/db/test.db-*
 backend/uploads/
+backend/backups/
 .env
 backend/.env
 *.log

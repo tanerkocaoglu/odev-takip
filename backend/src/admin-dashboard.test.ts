@@ -298,3 +298,33 @@ describe('GET /api/v1/teacher/reports (sayfalama)', () => {
     expect(draft.body.items).toHaveLength(0);
   });
 });
+
+describe('GET /api/v1/admin/dashboard/missing (sayfalı eksik rapor listesi)', () => {
+  it('pageSize/page ile sayfalar; total doğru; günü geçen üstte', async () => {
+    const res = await request(app)
+      .get(`/api/v1/admin/dashboard/missing?week_id=${WEEK2.id}&pageSize=1&page=1`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.total).toBe(2);
+    expect(res.body.page).toBe(1);
+    expect(res.body.pageSize).toBe(1);
+    // Günü geçen (CC_2, Pazartesi) ilk sayfada.
+    expect(res.body.items[0].class_course_id).toBe(CC_2);
+    expect(res.body.items[0].is_overdue).toBe(true);
+
+    const page2 = await request(app)
+      .get(`/api/v1/admin/dashboard/missing?week_id=${WEEK2.id}&pageSize=1&page=2`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(page2.body.items).toHaveLength(1);
+    expect(page2.body.items[0].class_course_id).toBe(CC_3);
+    expect(page2.body.total).toBe(2);
+  });
+
+  it('veli/öğrenci erişemez (adminOnly router)', async () => {
+    const res = await request(app)
+      .get(`/api/v1/admin/dashboard/missing?week_id=${WEEK2.id}`)
+      .set('Authorization', `Bearer ${signTokenFor('test-student', 'student')}`);
+    expect(res.status).toBe(403);
+  });
+});

@@ -446,3 +446,43 @@ export const guardianApi = {
   report: (id: string) =>
     apiFetch<GuardianReportDetail>(`/guardian/reports/${encodeURIComponent(id)}`),
 };
+
+/**
+ * Admin yedek indir — `POST /admin/backup` CLI'ı spawn edip .zip'i döndürür.
+ * Yanıt dosya olduğu için blob olarak alınır ve tarayıcı indirmesi tetiklenir
+ * (openProtectedFile deseninin yedeğe uyarlanmış hâli).
+ */
+export async function downloadBackup(): Promise<string> {
+  const token = getToken();
+  if (!token) {
+    clearToken();
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Giriş yapmanız gerekiyor.');
+  }
+  const res = await fetch(`${BASE_URL}/admin/backup`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let body: ApiError | null = null;
+    try {
+      body = (await res.json()) as ApiError;
+    } catch {
+      // JSON dışı yanıt — genel hata
+    }
+    const message = body?.error.message ?? 'Yedek oluşturulamadı.';
+    throw new ApiClientError(res.status, body?.error.code ?? 'INTERNAL', message);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const cd = res.headers.get('content-disposition') ?? '';
+  const match = /filename="?([^";]+)"?/.exec(cd);
+  const filename = match?.[1] ?? 'dershane-yedek.zip';
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return filename;
+}
