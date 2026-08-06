@@ -34,6 +34,7 @@ import {
   maybeCascadeSent,
   newDigestToken,
 } from '../services/digests.js';
+import { RISK, RISK_FLAGS } from '../constants.js';
 
 /** Backup CLI çıktısının yazıldığı dizin (script ile aynı kural). */
 const BACKUPS_DIR = path.join(import.meta.dirname, '..', '..', 'backups');
@@ -2445,6 +2446,190 @@ router.get('/dashboard/missing', (req, res) => {
 
   const slice = missing.slice(pagination.offset, pagination.offset + pagination.limit);
   res.json(paged(slice, missing.length, pagination));
+});
+
+/**
+ * GET /admin/dashboard/risk — riskli öğrenci listesi (spec §6, kullanıcı kararı).
+ * Son `RISK.lookbackWeeks` hafta; üç kriter, herhangi biri tetiklerse riskli (OR):
+ * - `low_score` — ödev+ilgi ortalaması ≤ RISK.avgScoreThreshold (yalnızca
+ *   completed/sent raporlar; devamsız satırlar ortalamaya girmez).
+ * - `missing_submission` — son N haftada verilen ödevlerden
+ *   ≥ RISK.missingSubmissionMin tanesi teslim edilmemiş (ardışık şart yok).
+ * - `consecutive_absence` — son N haftada ARDIŞIK ≥ RISK.consecutiveAbsenceMin
+ *   hafta `absent` (`excused` sayılmaz).
+ * `risk_flags` ayrı rozet olarak gösterilir (tek "riskli" etiketi yeterli değil).
+ * Şema değişikliği gerekmez — mevcut report_entries/submissions üzerinden.
+ */
+router.get('/dashboard/risk', (_req, res) => {
+  const weeks = db
+    .prepare(
+      `SELECT w.* FROM weeks w
+       JOIN academic_years a ON a.id = w.academic_year_id AND a.is_active = 1
+       ORDER BY w.start_date DESC LIMIT ?`,
+    )
+    .all(RISK.lookbackWeeks) as unknown as WeekRecord[];
+  if (weeks.length === 0) {
+    res.json({ weeks: [], items: [] });
+    return;
+  }
+  const weekIds = weeks.map((w) => w.id);
+  const ph = weekIds.map(() => '?').join(',');
+
+  // 1) Puan ortalaması (completed/sent; taslak sayılmaz; absent satırlar NULL).
+  const scoreRows = db
+    .prepare(
+      `SELECT re.student_id,
+              AVG((re.homework_score + re.interest_score) / 2.0) AS avg_score
+       FROM report_entries re
+       JOIN reports r ON r.id = re.report_id AND r.status IN ('completed','sent')
+       JOIN class_courses cc ON cc.id = r.class_course_id AND cc.deleted_at IS NULL
+       JOIN classes c ON c.id = cc.class_id
+       JOIN academic_years a ON a.id = c.academic_year_id AND a.is_active = 1
+       WHERE r.week_id IN (${ph}) AND re.attendance IN ('present','late')
+       GROUP BY re.student_id`,
+    )
+    .all(...weekIds) as Array<{ student_id: string; avg_score: number }>;
+
+  // 2) Hafta bazlı devamsızlık (yalnızca absent; excused sayılmaz).
+  const absenceRows = db
+    .prepare(
+      `SELECT re.student_id, w.week_no,
+              MAX(CASE WHEN re.attendance = 'absent' THEN 1 ELSE 0 END) AS was_absent
+       FROM report_entries re
+       JOIN reports r ON r.id = re.report_id AND r.status IN ('completed','sent')
+       JOIN weeks w ON w.id = r.week_id
+       JOIN class_courses cc ON cc.id = r.class_course_id AND cc.deleted_at IS NULL
+       JOIN classes c ON c.id = cc.class_id
+       JOIN academic_years a ON a.id = c.academic_year_id AND a.is_active = 1
+       WHERE r.week_id IN (${ph})
+       GROUP BY re.student_id, w.week_no`,
+    )
+    .all(...weekIds) as Array<{ student_id: string; week_no: number; was_absent: number }>;
+
+  // 3) Teslim durumu: pencere içi completed/sent ödevler → sınıfındaki öğrenciler.
+  const homeworks = db
+    .prepare(
+      `SELECT h.id, h.week_id, cc.class_id, w.start_date AS week_start
+       FROM homeworks h
+       JOIN reports r ON r.id = h.report_id AND r.status IN ('completed','sent')
+       JOIN class_courses cc ON cc.id = h.class_course_id
+       JOIN weeks w ON w.id = h.week_id
+       WHERE h.week_id IN (${ph})`,
+    )
+    .all(...weekIds) as Array<{ id: string; week_id: string; class_id: string; week_start: string }>;
+  const submittedRows = db
+    .prepare(
+      `SELECT s.homework_id, s.student_id FROM submissions s
+       JOIN homeworks h ON h.id = s.homework_id
+       WHERE h.week_id IN (${ph})`,
+    )
+    .all(...weekIds) as Array<{ homework_id: string; student_id: string }>;
+  const submittedSet = new Set(submittedRows.map((s) => `${s.homework_id}:${s.student_id}`));
+
+  const missingCount = new Map<string, number>();
+  const enrollStmt = db.prepare(
+    `SELECT s.id FROM enrollments e
+     JOIN students s ON s.id = e.student_id AND s.deleted_at IS NULL
+     JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+     WHERE e.class_id = ? AND e.start_date <= ?
+       AND (e.end_date IS NULL OR e.end_date >= ?)`,
+  );
+  for (const hw of homeworks) {
+    const students = enrollStmt.all(hw.class_id, hw.week_start, hw.week_start) as Array<{
+      id: string;
+    }>;
+    for (const st of students) {
+      if (!submittedSet.has(`${hw.id}:${st.id}`)) {
+        missingCount.set(st.id, (missingCount.get(st.id) ?? 0) + 1);
+      }
+    }
+  }
+
+  // 4) Risk hesabı.
+  const avgByStudent = new Map(scoreRows.map((r) => [r.student_id, r.avg_score]));
+  const absentByStudent = new Map<string, Set<number>>();
+  for (const row of absenceRows) {
+    const set = absentByStudent.get(row.student_id) ?? new Set();
+    if (row.was_absent === 1) set.add(row.week_no);
+    absentByStudent.set(row.student_id, set);
+  }
+  const orderedWeekNos = weeks.map((w) => w.week_no).sort((a, b) => a - b);
+
+  const students = db
+    .prepare(
+      `SELECT s.id AS student_id, u.full_name AS student_name, s.grade_level,
+              sch.name AS school_name, c.name AS class_name
+       FROM students s
+       JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+       LEFT JOIN schools sch ON sch.id = s.school_id AND sch.deleted_at IS NULL
+       LEFT JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
+       LEFT JOIN classes c ON c.id = e.class_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY u.full_name_normalized`,
+    )
+    .all() as Array<{
+    student_id: string;
+    student_name: string;
+    grade_level: string | null;
+    school_name: string | null;
+    class_name: string | null;
+  }>;
+
+  const items: Array<{
+    student_id: string;
+    student_name: string;
+    class_name: string | null;
+    school_name: string | null;
+    grade_level: string | null;
+    risk_flags: string[];
+    avg_score: number | null;
+    missing_submission_count: number;
+  }> = [];
+  for (const st of students) {
+    const flags: string[] = [];
+    const avg = avgByStudent.get(st.student_id);
+    const absentWeeks = absentByStudent.get(st.student_id) ?? new Set();
+    const missing = missingCount.get(st.student_id) ?? 0;
+
+    if (avg !== undefined && avg <= RISK.avgScoreThreshold) flags.push(RISK_FLAGS.LOW_SCORE);
+    if (missing >= RISK.missingSubmissionMin) flags.push(RISK_FLAGS.MISSING_SUBMISSION);
+
+    let consecutive = false;
+    for (let i = 0; i < orderedWeekNos.length - 1; i++) {
+      if (
+        absentWeeks.has(orderedWeekNos[i]) &&
+        absentWeeks.has(orderedWeekNos[i + 1])
+      ) {
+        consecutive = true;
+        break;
+      }
+    }
+    if (consecutive) flags.push(RISK_FLAGS.CONSECUTIVE_ABSENCE);
+
+    if (flags.length > 0) {
+      items.push({
+        student_id: st.student_id,
+        student_name: st.student_name,
+        class_name: st.class_name,
+        school_name: st.school_name,
+        grade_level: st.grade_level,
+        risk_flags: flags,
+        avg_score: avg === undefined ? null : Number(avg.toFixed(2)),
+        missing_submission_count: missing,
+      });
+    }
+  }
+
+  res.json({
+    weeks: weeks.map((w) => ({
+      id: w.id,
+      week_no: w.week_no,
+      start_date: w.start_date,
+      end_date: w.end_date,
+      label: w.label,
+    })),
+    items,
+  });
 });
 
 // ===========================================================================

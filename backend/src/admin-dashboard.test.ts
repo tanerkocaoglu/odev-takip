@@ -328,3 +328,112 @@ describe('GET /api/v1/admin/dashboard/missing (sayfalı eksik rapor listesi)', (
     expect(res.status).toBe(403);
   });
 });
+
+describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
+  // Kontrollü fixture: risk-class + 4 öğrenci, week 2 ve 3'te completed raporlar.
+  // - r-stu-1: düşük ortalama (3/3)          → low_score
+  // - r-stu-2: teslim etmeme (2 ödev de yok)  → missing_submission
+  // - r-stu-3: ardışık absent (week 2 + 3)    → consecutive_absence
+  // - r-stu-4: temiz (8/9 + teslimler)        → listede YOK
+  beforeAll(() => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+       VALUES (?, ?, ?, ?, NULL)`,
+    ).run('risk-class', 'ds-year', 'Risk Sinif', 'risk sinif');
+    db.prepare(
+      `INSERT INTO courses (id, name, name_normalized, deleted_at) VALUES (?, ?, ?, NULL)`,
+    ).run('risk-course', 'Risk Ders', 'risk ders');
+    db.prepare(
+      `INSERT INTO class_courses (id, class_id, course_id, teacher_id, day_of_week, lesson_time, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+    ).run('risk-cc', 'risk-class', 'risk-course', 'test-teacher', 1, '09:00');
+
+    const insU = db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, username, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
+    );
+    const insS = db.prepare(
+      `INSERT INTO students (id, user_id, guardian_id, deleted_at) VALUES (?, ?, NULL, NULL)`,
+    );
+    const insE = db.prepare(
+      `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+       VALUES (?, ?, ?, ?, NULL)`,
+    );
+    const names = ['r-stu-1', 'r-stu-2', 'r-stu-3', 'r-stu-4'];
+    names.forEach((s, i) => {
+      insU.run(s, `Risk Ogrenci ${i + 1}`, `risk ogrenci ${i + 1}`, `r-ogrenci-${i + 1}`, now);
+      insS.run(`${s}-rec`, s);
+      insE.run(`${s}-enr`, `${s}-rec`, 'risk-class', '2026-07-20');
+    });
+
+    const insRep = db.prepare(
+      `INSERT INTO reports
+         (id, class_course_id, week_id, topic_covered, prev_homework_id,
+          prev_homework_text, status, completed_at, created_by, updated_at)
+       VALUES (?, ?, ?, NULL, NULL, NULL, 'completed', ?, ?, ?)`,
+    );
+    const insHw = db.prepare(
+      `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
+       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    );
+    const insEntry = db.prepare(
+      `INSERT INTO report_entries
+         (id, report_id, student_id, attendance, homework_score, interest_score, teacher_note)
+       VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+    );
+    for (const wnum of [2, 3]) {
+      const weekId = `ds-week-${wnum}`;
+      const repId = `risk-rep-${wnum}`;
+      insRep.run(repId, 'risk-cc', weekId, now, 'test-teacher', now);
+      insHw.run(`risk-hw-${wnum}`, repId, 'risk-cc', weekId, `Odev ${wnum}`, `2026-08-1${wnum}`);
+      insEntry.run(`risk-e1-${wnum}`, repId, 'r-stu-1-rec', 'present', 3, 3);
+      insEntry.run(`risk-e2-${wnum}`, repId, 'r-stu-2-rec', 'present', 7, 8);
+      insEntry.run(`risk-e3-${wnum}`, repId, 'r-stu-3-rec', 'absent', null, null);
+      insEntry.run(`risk-e4-${wnum}`, repId, 'r-stu-4-rec', 'present', 8, 9);
+    }
+
+    const insSub = db.prepare(
+      `INSERT INTO submissions
+         (id, homework_id, student_id, note, submitted_at, is_late, status, reviewed_by, reviewed_at, files_purged_at)
+       VALUES (?, ?, ?, NULL, ?, 0, 'submitted', NULL, NULL, NULL)`,
+    );
+    for (const wnum of [2, 3]) {
+      for (const s of ['r-stu-1-rec', 'r-stu-3-rec', 'r-stu-4-rec']) {
+        insSub.run(`risk-sub-${wnum}-${s}`, `risk-hw-${wnum}`, s, '2026-08-12T10:00:00.000Z');
+      }
+    }
+  });
+
+  it('üç kriteri OR olarak değerlendirir; risk_flags ayrı ayrı; temiz öğrenci listede yok', async () => {
+    const res = await request(app)
+      .get('/api/v1/admin/dashboard/risk')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.weeks).toHaveLength(3);
+
+    const items = res.body.items as Array<{
+      student_id: string;
+      risk_flags: string[];
+      missing_submission_count: number;
+      avg_score: number | null;
+    }>;
+    const byId = Object.fromEntries(items.map((i) => [i.student_id, i]));
+
+    expect(byId['r-stu-4-rec']).toBeUndefined();
+    expect(byId['r-stu-1-rec'].risk_flags).toEqual(['low_score']);
+    expect(byId['r-stu-1-rec'].avg_score).toBe(3);
+    expect(byId['r-stu-2-rec'].risk_flags).toEqual(['missing_submission']);
+    expect(byId['r-stu-2-rec'].missing_submission_count).toBe(2);
+    expect(byId['r-stu-3-rec'].risk_flags).toEqual(['consecutive_absence']);
+  });
+
+  it('öğretmen rolü 403 döner', async () => {
+    const res = await request(app)
+      .get('/api/v1/admin/dashboard/risk')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.status).toBe(403);
+  });
+});

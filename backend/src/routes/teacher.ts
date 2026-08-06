@@ -325,6 +325,10 @@ router.get('/dashboard', (req, res) => {
       label: week.label,
     },
     items,
+    // İç hatırlatma (Aşama 6): gecikmiş taslak sayısı — dashboard üstünde
+    // "Bu hafta N raporunuz gecikti" banner'ı için (mevcut is_overdue'dan
+    // türetilir; arka plan mekanizması yok).
+    overdue_count: items.filter((i) => i.is_overdue).length,
   });
 });
 
