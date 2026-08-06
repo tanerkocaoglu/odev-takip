@@ -24,6 +24,7 @@ import type {
   Paged,
   PublicDigestResponse,
   ReportSaveInput,
+  RiskList,
   School,
   Student,
   StudentHomework,
@@ -345,6 +346,8 @@ export const adminApi = {
   /** Admin panel — özet + eksik + matris (spec §5.5). */
   dashboard: (weekId?: string) =>
     apiFetch<AdminDashboard>(`/admin/dashboard${query({ week_id: weekId })}`),
+  /** Riskli öğrenci listesi — son 3 hafta, üç kriter OR (spec §6). */
+  risk: () => apiFetch<RiskList>('/admin/dashboard/risk'),
   digests: {
     /** Haftalık gönderim listesi (pending + ready + sent). */
     list: (params: { week_id?: string; class_id?: string; status?: string } = {}) =>

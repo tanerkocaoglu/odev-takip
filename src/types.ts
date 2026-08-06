@@ -200,6 +200,8 @@ export interface TeacherDashboardItem {
 export interface TeacherDashboard {
   week: TeacherDashboardWeek | null;
   items: TeacherDashboardItem[];
+  /** Bu hafta günü geçmiş taslak rapor sayısı — iç hatırlatma banner'ı için. */
+  overdue_count: number;
 }
 
 export interface ReportEntry {
@@ -410,6 +412,33 @@ export interface AdminDashboard {
   missing: AdminDashboardMissingItem[];
   matrix: AdminDashboardMatrixRow[];
   digests: { pending: number; ready: number; sent: number };
+}
+
+// ---------- Riskli öğrenciler (Aşama 6) ----------
+
+export type RiskFlag = 'low_score' | 'missing_submission' | 'consecutive_absence';
+
+export const RISK_FLAG_LABELS: Record<RiskFlag, string> = {
+  low_score: 'Düşük ortalama',
+  missing_submission: 'Teslim etmeme',
+  consecutive_absence: 'Devamsızlık',
+};
+
+export interface RiskStudent {
+  student_id: string;
+  student_name: string;
+  class_name: string | null;
+  school_name: string | null;
+  grade_level: string | null;
+  /** Nedenler ayrı ayrı gösterilir (tek "riskli" etiketi yeterli değildir). */
+  risk_flags: RiskFlag[];
+  avg_score: number | null;
+  missing_submission_count: number;
+}
+
+export interface RiskList {
+  weeks: Array<{ id: string; week_no: number; start_date: string; end_date: string; label: string }>;
+  items: RiskStudent[];
 }
 
 /** Haftalık gönderim listesi satırı — GET /admin/digests. */

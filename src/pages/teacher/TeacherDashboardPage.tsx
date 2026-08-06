@@ -64,6 +64,16 @@ export default function TeacherDashboardPage() {
         </button>
       )}
 
+      {/* İç hatırlatma: ders günü geçmiş taslaklar — üstte belirgin sayaç (Aşama 6). */}
+      {!error && data && data.overdue_count > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-att-late/50 bg-att-late/10 px-4 py-3">
+          <span className="tabular text-sm font-semibold text-att-late">
+            Bu hafta {data.overdue_count} raporunuz gecikti
+          </span>
+          <span className="text-sm text-muted">— aşağıdaki kayıtların ders günü geçti.</span>
+        </div>
+      )}
+
       {!error && data && data.items.length === 0 && (
         <EmptyState message="Bu hafta doldurulacak rapor yok." />
       )}
@@ -76,7 +86,7 @@ export default function TeacherDashboardPage() {
                 to={`/teacher/reports/${item.class_course_id}/${data.week!.id}`}
                 className={
                   'flex items-center justify-between rounded-md border bg-surface px-4 py-3 transition-colors hover:border-accent ' +
-                  (item.is_overdue ? 'border-att-late/50' : 'border-border')
+                  (item.is_overdue ? 'border-att-late/50 bg-att-late/5' : 'border-border')
                 }
               >
                 <div className="min-w-0">

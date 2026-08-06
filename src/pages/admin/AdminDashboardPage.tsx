@@ -7,8 +7,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { AdminDashboard } from '../../types';
-import { DAY_LABELS } from '../../types';
+import type { AdminDashboard, RiskList } from '../../types';
+import { DAY_LABELS, RISK_FLAG_LABELS, type RiskFlag } from '../../types';
 import { adminApi, downloadBackup, ApiClientError } from '../../services/api';
 import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
 
@@ -16,11 +16,16 @@ export default function AdminDashboardPage() {
   const [data, setData] = useState<AdminDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'missing' | 'matrix'>('missing');
+  const [tab, setTab] = useState<'missing' | 'matrix' | 'risk'>('missing');
   const [groupByTeacher, setGroupByTeacher] = useState(false);
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupDone, setBackupDone] = useState<string | null>(null);
   const [backupError, setBackupError] = useState<string | null>(null);
+
+  // Risk sekmesi — sekmeye girince tembel yüklenir.
+  const [risk, setRisk] = useState<RiskList | null>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+  const [riskError, setRiskError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,9 +39,25 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
+  const loadRisk = useCallback(async () => {
+    setRiskLoading(true);
+    setRiskError(null);
+    try {
+      setRisk(await adminApi.risk());
+    } catch (err) {
+      setRiskError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setRiskLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab === 'risk') void loadRisk();
+  }, [tab, loadRisk]);
 
   async function handleBackup() {
     setBackupRunning(true);
@@ -73,6 +94,7 @@ export default function AdminDashboardPage() {
         [
           ['missing', 'Eksik raporlar'],
           ['matrix', 'Tam matris'],
+          ['risk', 'Riskli öğrenciler'],
         ] as const
       ).map(([key, label]) => (
         <button
@@ -292,6 +314,68 @@ export default function AdminDashboardPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {tab === 'risk' && (
+        <div className="space-y-3">
+          {risk && risk.weeks.length > 0 && (
+            <p className="text-sm text-muted">
+              Son{' '}
+              <span className="tabular font-semibold text-text">{risk.weeks.length}</span> hafta
+              değerlendirildi (
+              {risk.weeks.map((w) => `Hafta ${w.week_no}`).join(', ')}).
+            </p>
+          )}
+
+          {riskLoading ? (
+            <LoadingState />
+          ) : riskError ? (
+            <FormError message={riskError} />
+          ) : risk && risk.items.length === 0 ? (
+            <EmptyState message="Bu kriterlerle riskli öğrenci yok." />
+          ) : (
+            risk && (
+              <div className="overflow-hidden rounded-md border border-border bg-surface">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
+                      <th className="px-3 py-2">Öğrenci</th>
+                      <th className="px-3 py-2">Sınıf</th>
+                      <th className="px-3 py-2">Okul</th>
+                      <th className="px-3 py-2">Sınıf seviyesi</th>
+                      <th className="px-3 py-2">Risk nedeni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {risk.items.map((s) => (
+                      <tr key={s.student_id} className="border-b border-border last:border-b-0">
+                        <td className="px-3 py-2 font-medium text-text">{s.student_name}</td>
+                        <td className="px-3 py-2 text-[13px] text-text">{s.class_name ?? '—'}</td>
+                        <td className="px-3 py-2 text-[13px] text-muted">
+                          {s.school_name ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-[13px] text-muted">
+                          {s.grade_level ?? '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            {s.risk_flags.map((flag) => (
+                              <span
+                                key={flag}
+                                className="inline-flex items-center rounded-full bg-att-absent/10 px-2 py-0.5 text-xs font-medium text-att-absent"
+                              >
+                                {RISK_FLAG_LABELS[flag as RiskFlag]}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          )}
         </div>
       )}
     </div>

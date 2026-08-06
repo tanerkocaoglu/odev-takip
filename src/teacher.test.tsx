@@ -99,6 +99,7 @@ const DASHBOARD = {
       is_overdue: false,
     },
   ],
+  overdue_count: 1,
 };
 
 describe('TeacherDashboardPage', () => {
@@ -117,8 +118,27 @@ describe('TeacherDashboardPage', () => {
     expect(screen.getByText('Günü geçti')).toBeInTheDocument();
     expect(screen.getByText('Taslak')).toBeInTheDocument();
 
+    // İç hatırlatma banner'ı (Aşama 6).
+    expect(screen.getByText('Bu hafta 1 raporunuz gecikti')).toBeInTheDocument();
+
     const link = screen.getByRole('link', { name: /ÖKLİD · Matematik/ });
     expect(link).toHaveAttribute('href', '/teacher/reports/cc1/w1');
+  });
+
+  it('gecikme yokken banner gösterilmez', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, { week: DASHBOARD.week, items: DASHBOARD.items, overdue_count: 0 }),
+    );
+    render(
+      <MemoryRouter>
+        <TeacherDashboardPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('ÖKLİD · Matematik')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/raporunuz gecikti/)).not.toBeInTheDocument();
   });
 
   it('boş haftada boş durum gösterilir', async () => {
