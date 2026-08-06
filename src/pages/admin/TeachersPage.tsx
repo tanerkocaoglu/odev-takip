@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Teacher } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import { useList } from '../../hooks/useList';
@@ -20,6 +20,8 @@ export default function TeachersPage() {
   const { items, total, page, pageSize, loading, error, setError, setQ, setPage, reload } =
     useList<Teacher>((params) => adminApi.teachers.list(params));
 
+  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
+
   const [formOpen, setFormOpen] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -31,6 +33,22 @@ export default function TeachersPage() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+
+  // Atamaları devretme — hedef dropdown + kaynağın atama sayısı.
+  const [transferTeacher, setTransferTeacher] = useState<Teacher | null>(null);
+  const [transferCount, setTransferCount] = useState(0);
+  const [targetTeacherId, setTargetTeacherId] = useState('');
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+
+  useEffect(() => {
+    adminApi.teachers
+      .list({ pageSize: 100 })
+      .then((res) => setAllTeachers(res.items))
+      .catch(() => {
+        // Hedef listesi yüklenemezse devir modali boş kalır.
+      });
+  }, []);
 
   function openCreate() {
     setFullName('');
@@ -85,6 +103,36 @@ export default function TeachersPage() {
     }
   }
 
+  async function openTransfer(teacher: Teacher) {
+    setTransferTeacher(teacher);
+    setTargetTeacherId('');
+    setTransferError(null);
+    setTransferCount(0);
+    try {
+      const cc = await adminApi.classCourses.list();
+      setTransferCount(cc.items.filter((x) => x.teacher_id === teacher.id).length);
+    } catch {
+      setTransferError('Atama sayısı yüklenemedi.');
+    }
+  }
+
+  async function handleTransfer(event: FormEvent) {
+    event.preventDefault();
+    if (!transferTeacher) return;
+    setTransferSubmitting(true);
+    setTransferError(null);
+    try {
+      await adminApi.teachers.transferAssignments(transferTeacher.id, targetTeacherId);
+      setTransferTeacher(null);
+      setTargetTeacherId('');
+      await reload();
+    } catch (err) {
+      setTransferError(err instanceof ApiClientError ? err.message : 'Devir yapılamadı.');
+    } finally {
+      setTransferSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -113,6 +161,13 @@ export default function TeachersPage() {
                   <td className="px-3 py-2 font-medium text-text">{teacher.full_name}</td>
                   <td className="px-3 py-2 text-muted">{teacher.email}</td>
                   <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void openTransfer(teacher)}
+                      className="mr-3 text-sm font-medium text-muted hover:text-text"
+                    >
+                      Atamaları devret
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -171,6 +226,52 @@ export default function TeachersPage() {
             <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
             <PrimaryButton type="submit" disabled={submitting}>
               {submitting ? 'Oluşturuluyor…' : 'Öğretmen oluştur'}
+            </PrimaryButton>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={transferTeacher !== null}
+        title={`${transferTeacher?.full_name ?? ''} — atamaları devret`}
+        onClose={() => setTransferTeacher(null)}
+      >
+        <form onSubmit={handleTransfer} className="space-y-4">
+          <p className="text-sm text-muted">
+            {transferCount > 0 ? (
+              <>
+                <span className="tabular font-medium text-text">{transferCount}</span> atama
+                aşağıdaki öğretmene devredilecek. Devir sonrası bu öğretmenin ataması
+                kalmayacağı için silinebilir.
+              </>
+            ) : (
+              'Bu öğretmenin devredilecek ataması yok.'
+            )}
+          </p>
+          <Field label="Hedef öğretmen" htmlFor="t-transfer-target">
+            <select
+              id="t-transfer-target"
+              value={targetTeacherId}
+              onChange={(e) => setTargetTeacherId(e.target.value)}
+              required
+              disabled={transferCount === 0}
+              className={inputClass}
+            >
+              <option value="">Seçin…</option>
+              {allTeachers
+                .filter((t) => t.id !== transferTeacher?.id)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.full_name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <FormError message={transferError} />
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={() => setTransferTeacher(null)}>İptal</SecondaryButton>
+            <PrimaryButton type="submit" disabled={transferSubmitting || transferCount === 0}>
+              {transferSubmitting ? 'Devrediliyor…' : 'Atamaları devret'}
             </PrimaryButton>
           </div>
         </form>

@@ -218,6 +218,12 @@ export const adminApi = {
       }),
     remove: (id: string) =>
       apiFetch<void>(`/admin/class-courses/${id}`, { method: 'DELETE' }),
+    /** İki atamanın öğretmenlerini tek transaction'da takas eder. */
+    swap: (cc_id_a: string, cc_id_b: string) =>
+      apiFetch<{ items: ClassCourse[] }>('/admin/class-courses/swap', {
+        method: 'POST',
+        body: JSON.stringify({ cc_id_a, cc_id_b }),
+      }),
   },
   teachers: {
     list: (params: { q?: string; page?: number; pageSize?: number } = {}) =>
@@ -239,6 +245,12 @@ export const adminApi = {
       }),
     remove: (id: string) =>
       apiFetch<void>(`/admin/teachers/${id}`, { method: 'DELETE' }),
+    /** Öğretmenin tüm atamalarını tek hedef öğretmene devreder. */
+    transferAssignments: (id: string, target_teacher_id: string) =>
+      apiFetch<{ reassigned: number }>(`/admin/teachers/${id}/transfer-assignments`, {
+        method: 'POST',
+        body: JSON.stringify({ target_teacher_id }),
+      }),
   },
   guardians: {
     list: (params: { q?: string; page?: number; pageSize?: number } = {}) =>
