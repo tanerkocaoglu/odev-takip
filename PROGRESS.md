@@ -507,7 +507,7 @@ null 22; teslimler > 0 ve 002/005 sıfır; digest viewed 2 + not_viewed 2.
 
 ### Commit
 
-`<yeni>` — seed: okullar + risk senaryoları + teslimler + digest görüntülenme
+`847f33f` — seed: okullar + risk senaryoları + teslimler + digest görüntülenme
 + resetDb FK sırası + schema.test (schools/submissions/digests + week 19/20)
 
 ---
