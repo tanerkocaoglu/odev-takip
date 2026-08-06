@@ -349,6 +349,7 @@ npm test              # vitest + supertest — backend testleri
 npm run db:migrate    # bekleyen migration'ları çalıştır
 npm run db:seed       # örnek veri + ilk admin (idempotent)
 npm run db:reset      # db sil + migrate + seed
+npm run db:backup     # yedek: VACUUM INTO kopyası + uploads → tek .zip (backend/backups/)
 cd ..
 ```
 

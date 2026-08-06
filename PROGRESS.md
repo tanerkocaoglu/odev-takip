@@ -203,6 +203,106 @@ Aşama 5 sonrası seed, gerçek dershane desenine oturtuldu (önceki ~200 öğre
 
 ---
 
+## İyileştirmeler — 5 maddelik plan (Aşama 5 sonrası) ✅
+
+### Süreç özeti
+
+Beş bağımsız iyileştirme onaylandı ve uygulandı. **4 ve 5 tek şema
+değişikliği** (migration #6), 1-3 mevcut tablolara dokunmadı ya da yalnızca
+uygulama katmanında kaldı.
+
+### Yapılanlar
+
+**Migration #6 (`schools_grade_view`)**
+- `schools` (id, name, name_normalized, deleted_at) + kısmi UNIQUE — `classes`/
+  `courses` deseninin birebir kopyası. Arayüzde **"Okul"** (asla "sınıf" —
+  `classes` ile karışmaz, spec §3.1 terim uyarısı).
+- `students.school_id` (FK) + `students.grade_level` (CHECK: 1..12, Hazırlık,
+  Mezun) — trend grafikleri için normalize edilmiş veri; grafikler kapsam dışı.
+- `weekly_digests.first_viewed_at` + `last_viewed_at` (görüntüleme takibi;
+  ayrı log tablosu yok).
+
+**1. Veli paneli filtreleme (hafta + ders)**
+- `GET /guardian/reports` satırlarına `relative_week_no` (görece hafta etiketi)
+  + `courses` (ders bazlı filtre) eklendi. **"İlk aktif hafta" enrollment
+  bazlı** (kullanıcı kararı): o sınıfın en erken `enrollments.start_date`'inin
+  düştüğü haftanın `week_no`'su — rapor durumuna dayanmaz, rapor doldurulmamış
+  hafta etiketi kaydırmaz. Mutlak `week_no` sıralaması ve due_date/prev_homework
+  hesabı değişmedi. GuardianHomePage'e hafta + ders dropdown'ları (gösterim
+  katmanı filtre).
+
+**2. Admin eksik raporlar sayfalama**
+- `GET /admin/dashboard/missing` — `utils/pagination.ts` deseni
+  (`parsePagination` + `paged`); `is_overdue` JS'te önce hesaplanıp sıralanır
+  (günü geçen üstte, sayfalama kararlı). Dashboard özeti/matris/sayaçlar ayrı
+  kaldı.
+
+**3. Veritabanı yedeği**
+- `npm run db:backup` (scripts/backup.ts) — `VACUUM INTO` (tutarlı, WAL güvenli)
+  + uploads → tek .zip (`backend/backups/`, gitignore'landı). `adm-zip` eklendi.
+- `POST /admin/backup` (adminOnly) — CLI'ı `child_process` ile spawn eder
+  (DatabaseSync senkron kuralı: yedek sunucu isteği içinde değil), `res.download`;
+  BACKUPS_DIR path guard. Admin panelde "Yedek indir" butonu (blob indirme).
+
+**4. Veli görüntüleme takibi**
+- `markDigestViewed(digestId)` — `first_viewed_at = COALESCE(first_viewed_at,
+  now)`, `last_viewed_at = now`. `/r/{token}` (public) ve `/guardian/reports/:id`
+  (girişli) görünümlerinde çağrılır. **Bot önizleme atlaması** (ek not):
+  `User-Agent`'ta WhatsApp/facebookexternalhit/telegrambot/slackbot/linkedinbot/
+  twitterbot/discordbot/skypeuripreview vb. imzaları varsa yazma atlanır (sayfa
+  yine 200). Admin digest listesinde "Görüntülendi: 3 Şub" / "Henüz
+  görüntülenmedi".
+
+**5. Okul + sınıf seviyesi**
+- Okullar CRUD (`/admin/schools`: normalized arama, 409, öğrenci koruması) +
+  admin "Okullar" sayfası/sekmesi. Öğrenci create/patch `school_id` (FK
+  doğrulama) + `grade_level` (zod enum); listede "Okul" + "Sınıf seviyesi"
+  sütunları; formda okul seçici + **hızlı okul ekleme**.
+
+**Testler:** schools CRUD + öğrenci okul/seviye (backend +4), migration-backfill
+#6 rewind (user_version 6), görüntüleme takibi (public bot/normal + guardian +
+admin list), guardian relative-week/courses, missing sayfalama, `createBackup`
+birim, GuardianHomePage filtreler, DigestSendPage görüntülenme sütunu.
+
+### Doğrulamalar
+
+**Statik** — root + backend typecheck ✅, lint ✅, build ✅.
+**Testler** — backend **191/191** (17 dosya), frontend **48/48** (8 dosya).
+**Canlı (db:reset + çalışan sunucu):**
+1. `user_version = 6`; `schools` + students/weekly_digests yeni kolonlar ✅.
+2. Okul oluştur → öğrenciye `school_id` + `grade_level='8'` → listede `school_name` ✅; aynı ad (normalized) → **409** ✅.
+3. Rapor tamamla → digest gönder → `/r` normal UA → `last_viewed_at` SET;
+   **WhatsApp UA → 200 ama yazma YOK** (NULL) ✅.
+4. `GET /admin/dashboard/missing?pageSize=5` → 39 kayıt, sayfalar 5/5 ✅;
+   admin digest listesinde first/last_viewed ✅.
+5. `npm run db:backup` → `dershane-yedek-*.zip` (uploads + veritabani/app.db) ✅;
+   `POST /admin/backup` → `200 application/zip` + attachment; öğretmen → 403 ✅.
+6. Temizlik: `db:reset` → temiz seed; backend dev sunucu yeniden başlatıldı.
+
+### Çözülen sorunlar
+
+- **Test DB kalıntısı:** `schools` CLEAN_TABLES'da yoktu; önceki koşudan kalan
+  satırlar sonraki koşuda 409/404 üretiyordu → test/helpers.ts + schema.test.ts
+  temizlik listelerine `schools` eklendi (2 ardışık tam koşuyla doğrulandı).
+- **Shell mojibake (canlı doğrulamada):** PowerShell'den Türkçe karakterli
+  JSON (`Atatürk`) bozuldu → yanlış 201; uygulama hatası değil, shell
+  kodlaması (testteki `Örnek Okul 7` 409'u gerçek mantığı kanıtlar).
+- **ALTER DROP COLUMN (FK/CHECK):** migration-backfill rewind'inde
+  `students.school_id` (FK) ve `grade_level` (CHECK) drop edilebildiği doğrulandı
+  (SQLite davranışı), `user_version` 6.
+
+### Commit'ler
+
+- `4cba8e8` — spec + migration #6 + backfill rewind
+- `b53d04f` — okullar CRUD + öğrenci school_id/grade_level
+- `1ba72bd` — görüntüleme takibi + bot UA atlaması
+- `84b0231` — veli görece hafta + ders listesi + CLEAN_TABLES düzeltmesi
+- `2e661ca` — eksik rapor sayfalama + yedek (CLI + endpoint + buton)
+- `7d6e2a8` — frontend (Okullar sayfası, öğrenci formu, veli filtreleri,
+  görüntülenme sütunu)
+
+---
+
 ## Aşama 2a retrofit — OTP kaldırıldı, username + şifre girişi ✅
 
 ### Süreç özeti
