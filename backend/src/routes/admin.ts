@@ -500,6 +500,106 @@ router.delete('/courses/:id', (req, res) => {
   res.status(204).end();
 });
 
+// ---------- Okullar (schools) — migration #6 ----------
+// `classes`/`courses` deseninin birebir kopyası. Arayüzde "Okul" olarak
+// anılır (spec §3.1 terim uyarısı — `classes` dershane grubudur).
+
+const schoolSchema = z.object({
+  name: z.string().trim().min(1, 'Okul adı boş olamaz.'),
+});
+
+router.get('/schools', (req, res) => {
+  const q = typeof req.query.q === 'string' ? normalizeTurkish(req.query.q.trim()) : '';
+  const rows = q
+    ? db
+        .prepare(
+          `SELECT * FROM schools WHERE deleted_at IS NULL AND name_normalized LIKE ?
+           ORDER BY name`,
+        )
+        .all(`%${q}%`)
+    : db.prepare(`SELECT * FROM schools WHERE deleted_at IS NULL ORDER BY name`).all();
+  res.json({ items: rows });
+});
+
+router.post('/schools', (req, res) => {
+  const { name } = schoolSchema.parse(req.body);
+
+  const clash = db
+    .prepare(`SELECT id FROM schools WHERE name_normalized = ? AND deleted_at IS NULL`)
+    .get(normalizeTurkish(name));
+  if (clash) {
+    throw new AppError('CONFLICT', 409, 'Bu okul adı zaten var.');
+  }
+
+  const id = randomUUID();
+  db.prepare(
+    `INSERT INTO schools (id, name, name_normalized, deleted_at)
+     VALUES (?, ?, ?, NULL)`,
+  ).run(id, name, normalizeTurkish(name));
+  const row = db.prepare(`SELECT * FROM schools WHERE id = ?`).get(id);
+  res.status(201).json(row);
+});
+
+const schoolPatchSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+});
+
+router.patch('/schools/:id', (req, res) => {
+  const { id } = req.params;
+  const input = schoolPatchSchema.parse(req.body);
+
+  const current = db
+    .prepare(`SELECT id FROM schools WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Okul bulunamadı.');
+  }
+
+  if (input.name !== undefined) {
+    const clash = db
+      .prepare(
+        `SELECT id FROM schools WHERE name_normalized = ? AND id != ? AND deleted_at IS NULL`,
+      )
+      .get(normalizeTurkish(input.name), id);
+    if (clash) {
+      throw new AppError('CONFLICT', 409, 'Bu okul adı zaten var.');
+    }
+    db.prepare(`UPDATE schools SET name = ?, name_normalized = ? WHERE id = ?`).run(
+      input.name,
+      normalizeTurkish(input.name),
+      id,
+    );
+  }
+
+  const row = db.prepare(`SELECT * FROM schools WHERE id = ?`).get(id);
+  res.json(row);
+});
+
+router.delete('/schools/:id', (req, res) => {
+  const { id } = req.params;
+  const current = db
+    .prepare(`SELECT id FROM schools WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!current) {
+    throw new AppError('NOT_FOUND', 404, 'Okul bulunamadı.');
+  }
+
+  const used = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM students WHERE school_id = ? AND deleted_at IS NULL`,
+    )
+    .get(id) as { c: number };
+  if (used.c > 0) {
+    throw new AppError('CONFLICT', 409, 'Bu okula öğrenci bağlı, önce öğrenciyi düzenleyin.');
+  }
+
+  db.prepare(`UPDATE schools SET deleted_at = ? WHERE id = ?`).run(
+    new Date().toISOString(),
+    id,
+  );
+  res.status(204).end();
+});
+
 // ---------- Atamalar (class_courses) ----------
 
 const classCourseSchema = z.object({
@@ -1169,11 +1269,20 @@ router.delete('/guardians/:id', (req, res) => {
 
 // ---------- Öğrenci ----------
 
+/** Sınıf seviyesi sabit kümesi (spec §3.1) — trend grafikleri için normalize edilmiş veri. */
+const GRADE_LEVELS = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'Hazırlık', 'Mezun',
+] as const;
+
+const gradeLevelSchema = z.enum(GRADE_LEVELS, { message: 'Geçersiz sınıf seviyesi.' });
+
 const studentSchema = z.object({
   full_name: z.string().trim().min(1, 'Ad boş olamaz.'),
   guardian_id: z.string().trim().min(1),
   class_id: z.string().trim().min(1),
   password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
+  school_id: z.string().trim().min(1).nullable().optional(),
+  grade_level: gradeLevelSchema.nullable().optional(),
 });
 
 router.get('/students', (req, res) => {
@@ -1214,7 +1323,8 @@ router.get('/students', (req, res) => {
   const rows = db
     .prepare(
       `SELECT u.id, u.full_name, u.username, u.is_active,
-              s.id AS student_id, s.guardian_id,
+              s.id AS student_id, s.guardian_id, s.grade_level,
+              sch.name AS school_name, s.school_id,
               gu.full_name AS guardian_name,
               c.name AS class_name, e.class_id
        FROM users u
@@ -1222,6 +1332,7 @@ router.get('/students', (req, res) => {
        JOIN enrollments e ON e.student_id = s.id AND e.end_date IS NULL
        LEFT JOIN guardians g ON g.id = s.guardian_id AND g.deleted_at IS NULL
        LEFT JOIN users gu ON gu.id = g.user_id
+       LEFT JOIN schools sch ON sch.id = s.school_id AND sch.deleted_at IS NULL
        JOIN classes c ON c.id = e.class_id
        WHERE ${where.join(' AND ')}
        ORDER BY u.full_name
@@ -1255,6 +1366,15 @@ router.post(
       throw new AppError('NOT_FOUND', 404, 'Sınıf bulunamadı.');
     }
 
+    if (input.school_id !== undefined && input.school_id !== null) {
+      const school = db
+        .prepare(`SELECT id FROM schools WHERE id = ? AND deleted_at IS NULL`)
+        .get(input.school_id);
+      if (!school) {
+        throw new AppError('NOT_FOUND', 404, 'Okul bulunamadı.');
+      }
+    }
+
     const userId = randomUUID();
     const studentId = randomUUID();
     const enrollmentId = randomUUID();
@@ -1273,9 +1393,15 @@ router.post(
       ).run(userId, input.full_name, normalizeTurkish(input.full_name), username, passwordHash, now);
 
       db.prepare(
-        `INSERT INTO students (id, user_id, guardian_id, deleted_at)
-         VALUES (?, ?, ?, NULL)`,
-      ).run(studentId, userId, input.guardian_id);
+        `INSERT INTO students (id, user_id, guardian_id, school_id, grade_level, deleted_at)
+         VALUES (?, ?, ?, ?, ?, NULL)`,
+      ).run(
+        studentId,
+        userId,
+        input.guardian_id,
+        input.school_id ?? null,
+        input.grade_level ?? null,
+      );
 
       db.prepare(
         `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
@@ -1304,6 +1430,8 @@ router.post(
 const studentPatchSchema = z.object({
   full_name: z.string().trim().min(1).optional(),
   guardian_id: z.string().trim().min(1).optional(),
+  school_id: z.string().trim().min(1).nullable().optional(),
+  grade_level: gradeLevelSchema.nullable().optional(),
 });
 
 router.patch('/students/:id', (req, res) => {
@@ -1334,6 +1462,15 @@ router.patch('/students/:id', (req, res) => {
     }
   }
 
+  if (input.school_id !== undefined && input.school_id !== null) {
+    const school = db
+      .prepare(`SELECT id FROM schools WHERE id = ? AND deleted_at IS NULL`)
+      .get(input.school_id);
+    if (!school) {
+      throw new AppError('NOT_FOUND', 404, 'Okul bulunamadı.');
+    }
+  }
+
   const userSets: string[] = [];
   const userValues: Array<string | number> = [];
   if (input.full_name !== undefined) {
@@ -1345,16 +1482,31 @@ router.patch('/students/:id', (req, res) => {
     db.prepare(`UPDATE users SET ${userSets.join(', ')} WHERE id = ?`).run(...userValues);
   }
 
+  const studentSets: string[] = [];
+  const studentValues: Array<string | null> = [];
   if (input.guardian_id !== undefined) {
-    db.prepare(`UPDATE students SET guardian_id = ? WHERE user_id = ?`).run(
-      input.guardian_id,
-      id,
+    studentSets.push(`guardian_id = ?`);
+    studentValues.push(input.guardian_id);
+  }
+  if (input.school_id !== undefined) {
+    studentSets.push(`school_id = ?`);
+    studentValues.push(input.school_id ?? null);
+  }
+  if (input.grade_level !== undefined) {
+    studentSets.push(`grade_level = ?`);
+    studentValues.push(input.grade_level ?? null);
+  }
+  if (studentSets.length > 0) {
+    studentValues.push(id);
+    db.prepare(`UPDATE students SET ${studentSets.join(', ')} WHERE user_id = ?`).run(
+      ...studentValues,
     );
   }
 
   const row = db
     .prepare(
-      `SELECT u.id, u.full_name, u.username, s.id AS student_id, s.guardian_id
+      `SELECT u.id, u.full_name, u.username, s.id AS student_id, s.guardian_id,
+              s.school_id, s.grade_level
        FROM users u JOIN students s ON s.user_id = u.id WHERE u.id = ?`,
     )
     .get(id);

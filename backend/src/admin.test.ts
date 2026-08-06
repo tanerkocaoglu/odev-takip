@@ -816,3 +816,121 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
     expect(log.action).toBe('student.password_reset');
   });
 });
+
+describe('Okullar + öğrenci okul / sınıf seviyesi (migration #6)', () => {
+  let schoolAId: string;
+  let classId: string;
+  let guardianId: string;
+
+  beforeAll(async () => {
+    const s = await adminRequest('post', '/api/v1/admin/schools').send({
+      name: 'Örnek Okul 1',
+    });
+    schoolAId = s.body.id as string;
+
+    const years = await adminRequest('get', '/api/v1/admin/academic-years');
+    const yearId = (years.body.items as Array<{ id: string; name: string }>).find(
+      (y) => y.name === YEAR.name,
+    )!.id;
+    const c = await adminRequest('post', '/api/v1/admin/classes').send({
+      academic_year_id: yearId,
+      name: 'OKUL SINIFI',
+    });
+    classId = c.body.id as string;
+
+    const g = await adminRequest('post', '/api/v1/admin/guardians').send({
+      full_name: 'Okul Veli',
+      whatsapp_phone: '+905339990099',
+      password: 'Sifre123',
+    });
+    guardianId = g.body.id as string;
+  });
+
+  it('okul oluşturur; Türkçe harf duyarsız arama; aynı ad 409', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/schools').send({
+      name: 'Örnek Okul 7',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.name_normalized).toBe('istanbul lisesi');
+
+    const search = await adminRequest('get', '/api/v1/admin/schools?q=ISTANBUL');
+    expect(search.body.items.length).toBe(1);
+
+    const clash = await adminRequest('post', '/api/v1/admin/schools').send({
+      name: 'Örnek Okul 7',
+    });
+    expect(clash.status).toBe(409);
+  });
+
+  it('öğrenci oluşturmada okul + sınıf seviyesi atanır; listede görünür', async () => {
+    const created = await adminRequest('post', '/api/v1/admin/students').send({
+      full_name: 'Okullu Öğrenci',
+      guardian_id: guardianId,
+      class_id: classId,
+      password: 'Sifre123',
+      school_id: schoolAId,
+      grade_level: '8',
+    });
+    expect(created.status).toBe(201);
+
+    const list = await adminRequest('get', '/api/v1/admin/students?q=okullu');
+    const row = (
+      list.body.items as Array<{
+        school_id: string | null;
+        school_name: string | null;
+        grade_level: string | null;
+      }>
+    )[0];
+    expect(row.school_id).toBe(schoolAId);
+    expect(row.school_name).toBe('Örnek Okul 1');
+    expect(row.grade_level).toBe('8');
+  });
+
+  it('okulu olan öğrenci varken okul silinemez (409); boş okul silinebilir', async () => {
+    const del = await adminRequest('delete', `/api/v1/admin/schools/${schoolAId}`);
+    expect(del.status).toBe(409);
+    expect(del.body.error.code).toBe('CONFLICT');
+
+    const free = await adminRequest('post', '/api/v1/admin/schools').send({ name: 'Boş Okul' });
+    const delFree = await adminRequest('delete', `/api/v1/admin/schools/${free.body.id}`);
+    expect(delFree.status).toBe(204);
+  });
+
+  it('geçersiz sınıf seviyesi 400; olmayan okul 404', async () => {
+    const bad = await adminRequest('post', '/api/v1/admin/students').send({
+      full_name: 'Hatalı Seviye',
+      guardian_id: guardianId,
+      class_id: classId,
+      password: 'Sifre123',
+      grade_level: '13',
+    });
+    expect(bad.status).toBe(400);
+
+    const list = await adminRequest('get', '/api/v1/admin/students?q=okullu');
+    const student = (list.body.items as Array<{ id: string }>)[0];
+    const noSchool = await adminRequest(
+      'patch',
+      `/api/v1/admin/students/${student.id}`,
+    ).send({ school_id: 'yok-okul' });
+    expect(noSchool.status).toBe(404);
+  });
+
+  it('PATCH okul / sınıf seviyesi değiştirir; null ile temizlenebilir', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/students?q=okullu');
+    const student = (list.body.items as Array<{ id: string }>)[0];
+
+    const patched = await adminRequest(
+      'patch',
+      `/api/v1/admin/students/${student.id}`,
+    ).send({ grade_level: 'Hazırlık' });
+    expect(patched.status).toBe(200);
+    expect(patched.body.grade_level).toBe('Hazırlık');
+
+    const cleared = await adminRequest(
+      'patch',
+      `/api/v1/admin/students/${student.id}`,
+    ).send({ school_id: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.school_id).toBeNull();
+  });
+});
