@@ -22,11 +22,12 @@ export default function StudentsPage() {
   const [classFilter, setClassFilter] = useState('');
   const [schools, setSchools] = useState<School[]>([]);
 
-  const { items, total, page, pageSize, loading, error, setError, setQ, setPage, reload } =
+  const { items, total, page, pageSize, loading, error, setError, q, setQ, setPage, reload } =
     useList<Student>((params) =>
       adminApi.students.list({ ...params, classId: classFilter || undefined }),
     );
 
+  // ---------- Yeni öğrenci oluşturma ----------
   const [formOpen, setFormOpen] = useState(false);
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
@@ -45,6 +46,18 @@ export default function StudentsPage() {
   const [newSchoolSubmitting, setNewSchoolSubmitting] = useState(false);
   const [newSchoolError, setNewSchoolError] = useState<string | null>(null);
 
+  // ---------- Düzenleme modalı ----------
+  const [editStudent, setEditStudent] = useState<Student | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editSchoolId, setEditSchoolId] = useState('');
+  const [editGradeLevel, setEditGradeLevel] = useState('');
+  const [editGuardianId, setEditGuardianId] = useState('');
+  const [editGuardianQuery, setEditGuardianQuery] = useState('');
+  const [editGuardianResults, setEditGuardianResults] = useState<Guardian[]>([]);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // ---------- Sınıf değişikliği ----------
   const [moveStudent, setMoveStudent] = useState<Student | null>(null);
   const [moveClassId, setMoveClassId] = useState('');
   const [moveWeekId, setMoveWeekId] = useState('');
@@ -52,6 +65,7 @@ export default function StudentsPage() {
   const [moveSubmitting, setMoveSubmitting] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
 
+  // ---------- Şifre sıfırlama ----------
   const [resetStudent, setResetStudent] = useState<Student | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
@@ -76,9 +90,7 @@ export default function StudentsPage() {
     adminApi.schools
       .list()
       .then((res) => setSchools(res.items))
-      .catch(() => {
-        // Okul listesi yüklenemezse form okulsuz çalışır.
-      });
+      .catch(() => { });
   }, []);
 
   const searchGuardians = useCallback(async (q: string) => {
@@ -86,15 +98,20 @@ export default function StudentsPage() {
     setGuardianResults(data.items);
   }, []);
 
-  useEffect(() => {
-    searchGuardians(guardianQuery);
-  }, [guardianQuery, searchGuardians]);
+  const searchEditGuardians = useCallback(async (q: string) => {
+    const data = await adminApi.guardians.list({ q, pageSize: 10 });
+    setEditGuardianResults(data.items);
+  }, []);
+
+  useEffect(() => { searchGuardians(guardianQuery); }, [guardianQuery, searchGuardians]);
+  useEffect(() => { searchEditGuardians(editGuardianQuery); }, [editGuardianQuery, searchEditGuardians]);
 
   useEffect(() => {
     reload(1, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classFilter]);
 
+  // ---------- Yeni öğrenci ----------
   function openCreate() {
     setFullName('');
     setPassword('');
@@ -149,6 +166,40 @@ export default function StudentsPage() {
     }
   }
 
+  // ---------- Öğrenci düzenleme ----------
+  function openEdit(student: Student) {
+    setEditStudent(student);
+    setEditFullName(student.full_name);
+    setEditSchoolId(student.school_id ?? '');
+    setEditGradeLevel(student.grade_level ?? '');
+    setEditGuardianId(student.guardian_id ?? '');
+    setEditGuardianQuery('');
+    setEditGuardianResults([]);
+    setEditError(null);
+  }
+
+  async function handleEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editStudent) return;
+    setEditSubmitting(true);
+    setEditError(null);
+    try {
+      await adminApi.students.patch(editStudent.id, {
+        full_name: editFullName.trim(),
+        school_id: editSchoolId || null,
+        grade_level: editGradeLevel || null,
+        guardian_id: editGuardianId || undefined,
+      });
+      setEditStudent(null);
+      await reload();
+    } catch (err) {
+      setEditError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
+  // ---------- Sınıf değişikliği ----------
   function openMove(student: Student) {
     setMoveStudent(student);
     setMoveClassId('');
@@ -175,6 +226,7 @@ export default function StudentsPage() {
     }
   }
 
+  // ---------- Şifre sıfırlama ----------
   async function handleReset(event: FormEvent) {
     event.preventDefault();
     if (!resetStudent) return;
@@ -205,7 +257,7 @@ export default function StudentsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
-          <SearchBox value={''} onChange={(v) => setQ(v)} placeholder="Öğrenci veya veli ara…" />
+          <SearchBox value={q} onChange={(v) => setQ(v)} placeholder="Öğrenci veya veli ara…" />
           <Field label="Sınıf" htmlFor="st-class-filter">
             <select
               id="st-class-filter"
@@ -233,50 +285,59 @@ export default function StudentsPage() {
       ) : items.length === 0 ? (
         <EmptyState message="Öğrenci bulunamadı." />
       ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
+        <div className="overflow-x-auto rounded-md border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
               <tr>
-                <th className="px-3 py-2">Ad</th>
-                <th className="px-3 py-2">Veli</th>
-                <th className="px-3 py-2">Sınıf</th>
-                <th className="px-3 py-2">Okul</th>
-                <th className="px-3 py-2">Sınıf seviyesi</th>
-                <th className="px-3 py-2">Kullanıcı adı</th>
-                <th className="px-3 py-2" />
+                <th className="whitespace-nowrap px-3 py-2">Ad</th>
+                <th className="whitespace-nowrap px-3 py-2">Veli</th>
+                <th className="whitespace-nowrap px-3 py-2">Sınıf</th>
+                <th className="whitespace-nowrap px-3 py-2">Okul</th>
+                <th className="whitespace-nowrap px-3 py-2">Sınıf seviyesi</th>
+                <th className="whitespace-nowrap px-3 py-2">Kullanıcı adı</th>
+                <th className="whitespace-nowrap px-3 py-2" />
               </tr>
             </thead>
             <tbody>
               {items.map((student) => (
                 <tr key={student.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{student.full_name}</td>
-                  <td className="px-3 py-2 text-muted">{student.guardian_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-muted">{student.class_name}</td>
-                  <td className="px-3 py-2 text-muted">{student.school_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-muted">
+                  <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{student.full_name}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted">{student.guardian_name ?? '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted">{student.class_name}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted">{student.school_name ?? '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-muted">
                     {student.grade_level ? GRADE_LEVEL_LABELS[student.grade_level] ?? student.grade_level : '—'}
                   </td>
-                  <td className="tabular px-3 py-2 text-muted">{student.username}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetStudent(student);
-                        setResetPassword('');
-                        setResetError(null);
-                      }}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Şifre sıfırla
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openMove(student)}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Sınıf değiştir
-                    </button>
-                    <DangerButton onClick={() => handleDelete(student)}>Sil</DangerButton>
+                  <td className="whitespace-nowrap tabular px-3 py-2 text-muted">{student.username}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(student)}
+                        className="text-sm font-medium text-muted hover:text-text"
+                      >
+                        Düzenle
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResetStudent(student);
+                          setResetPassword('');
+                          setResetError(null);
+                        }}
+                        className="text-sm font-medium text-muted hover:text-text"
+                      >
+                        Şifre sıfırla
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openMove(student)}
+                        className="text-sm font-medium text-muted hover:text-text"
+                      >
+                        Sınıf değiştir
+                      </button>
+                      <DangerButton onClick={() => handleDelete(student)}>Sil</DangerButton>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -286,6 +347,7 @@ export default function StudentsPage() {
       )}
       <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
 
+      {/* ---- Yeni öğrenci oluşturma ---- */}
       <Modal open={formOpen} title="Yeni öğrenci" onClose={() => setFormOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
           <Field label="Ad soyad" htmlFor="st-name">
@@ -424,6 +486,103 @@ export default function StudentsPage() {
         </form>
       </Modal>
 
+      {/* ---- Düzenleme modalı ---- */}
+      <Modal
+        open={editStudent !== null}
+        title={`${editStudent?.full_name ?? ''} — düzenle`}
+        onClose={() => setEditStudent(null)}
+      >
+        <form onSubmit={handleEdit} className="space-y-4">
+          <Field label="Ad soyad" htmlFor="ed-name">
+            <input
+              id="ed-name"
+              value={editFullName}
+              onChange={(e) => setEditFullName(e.target.value)}
+              required
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Veli değiştir (boş bırakılırsa değişmez)" htmlFor="ed-guardian-search">
+            <input
+              id="ed-guardian-search"
+              value={editGuardianQuery}
+              onChange={(e) => setEditGuardianQuery(e.target.value)}
+              className={inputClass}
+              placeholder="Yeni veli adı yazın…"
+            />
+          </Field>
+          {editGuardianResults.length > 0 && (
+            <div className="max-h-32 overflow-y-auto rounded-md border border-border">
+              {editGuardianResults.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => {
+                    setEditGuardianId(g.id);
+                    setEditGuardianQuery(g.full_name);
+                    setEditGuardianResults([]);
+                  }}
+                  className={
+                    'block w-full px-3 py-2 text-left text-sm transition-colors ' +
+                    (editGuardianId === g.id
+                      ? 'bg-accent/10 font-medium text-accent'
+                      : 'text-text hover:bg-bg')
+                  }
+                >
+                  {g.full_name} · {g.username}
+                </button>
+              ))}
+            </div>
+          )}
+          {editGuardianId && !editGuardianQuery.trim() && (
+            <p className="text-xs text-muted">
+              Seçili veli: {editStudent?.guardian_name ?? editGuardianId}
+            </p>
+          )}
+          <Field label="Okul" htmlFor="ed-school">
+            <select
+              id="ed-school"
+              value={editSchoolId}
+              onChange={(e) => setEditSchoolId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Seçilmedi</option>
+              {schools.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Sınıf seviyesi" htmlFor="ed-grade">
+            <select
+              id="ed-grade"
+              value={editGradeLevel}
+              onChange={(e) => setEditGradeLevel(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Seçilmedi</option>
+              {GRADE_LEVELS.map((g) => (
+                <option key={g} value={g}>
+                  {GRADE_LEVEL_LABELS[g]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="text-xs text-muted">
+            Sınıf değişikliği için "Sınıf değiştir" işlemini kullanın.
+          </p>
+          <FormError message={editError} />
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={() => setEditStudent(null)}>İptal</SecondaryButton>
+            <PrimaryButton type="submit" disabled={editSubmitting}>
+              {editSubmitting ? 'Kaydediliyor…' : 'Kaydet'}
+            </PrimaryButton>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Sınıf değiştirme ---- */}
       <Modal
         open={moveStudent !== null}
         title={`${moveStudent?.full_name ?? ''} — sınıf değiştir`}
@@ -475,6 +634,7 @@ export default function StudentsPage() {
         </form>
       </Modal>
 
+      {/* ---- Şifre sıfırlama ---- */}
       <Modal
         open={resetStudent !== null}
         title={`${resetStudent?.full_name ?? ''} — şifre sıfırla`}
@@ -482,8 +642,7 @@ export default function StudentsPage() {
       >
         <form onSubmit={handleReset} className="space-y-4">
           <p className="text-sm text-muted">
-            Kullanıcı adı: {resetStudent?.username}. Eski oturumlar bu işlemle
-            sona erer.
+            Kullanıcı adı: {resetStudent?.username}. Eski oturumlar bu işlemle sona erer.
           </p>
           <Field label="Yeni şifre (öğrenciye iletin)" htmlFor="st-reset">
             <input

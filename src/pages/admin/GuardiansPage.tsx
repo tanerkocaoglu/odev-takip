@@ -17,7 +17,7 @@ import {
 } from '../../components/admin/ui';
 
 export default function GuardiansPage() {
-  const { items, total, page, pageSize, loading, error, setError, setQ, setPage, reload } =
+  const { items, total, page, pageSize, loading, error, setError, q, setQ, setPage, reload } =
     useList<Guardian>((params) => adminApi.guardians.list(params));
 
   const [formOpen, setFormOpen] = useState(false);
@@ -25,6 +25,7 @@ export default function GuardiansPage() {
   const [fullName, setFullName] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [consentAt, setConsentAt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -38,6 +39,7 @@ export default function GuardiansPage() {
     setFullName('');
     setWhatsappPhone('');
     setPassword('');
+    setConsentAt(false);
     setFormError(null);
     setFormOpen(true);
   }
@@ -46,6 +48,7 @@ export default function GuardiansPage() {
     setEditId(guardian.id);
     setFullName(guardian.full_name);
     setWhatsappPhone(guardian.whatsapp_phone);
+    setConsentAt(guardian.consent_at !== null);
     setFormError(null);
     setFormOpen(true);
   }
@@ -59,13 +62,18 @@ export default function GuardiansPage() {
         await adminApi.guardians.patch(editId, {
           full_name: fullName.trim(),
           whatsapp_phone: whatsappPhone.trim(),
+          consent_at: consentAt,
         });
       } else {
-        await adminApi.guardians.create({
+        const created = await adminApi.guardians.create({
           full_name: fullName.trim(),
           whatsapp_phone: whatsappPhone.trim(),
           password,
         });
+        // Oluşturma sırasında KVKK kutusu işaretlendiyse ayrı PATCH ile kaydet.
+        if (consentAt) {
+          await adminApi.guardians.patch(created.id, { consent_at: true });
+        }
       }
       setFormOpen(false);
       await reload();
@@ -102,10 +110,21 @@ export default function GuardiansPage() {
     }
   }
 
+  /** Tek tıkla KVKK onayı aç/kapat — tablo satırından. */
+  async function toggleConsent(guardian: Guardian) {
+    const newValue = guardian.consent_at === null;
+    try {
+      await adminApi.guardians.patch(guardian.id, { consent_at: newValue });
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <SearchBox value={''} onChange={(v) => setQ(v)} placeholder="Veli ara…" />
+        <SearchBox value={q} onChange={(v) => setQ(v)} placeholder="Veli ara…" />
         <PrimaryButton onClick={openCreate}>Yeni veli</PrimaryButton>
       </div>
 
@@ -123,6 +142,9 @@ export default function GuardiansPage() {
                 <th className="px-3 py-2">Kullanıcı adı</th>
                 <th className="px-3 py-2">WhatsApp</th>
                 <th className="px-3 py-2">Çocuk</th>
+                <th className="px-3 py-2" title="KVKK açık rızası — rapor gönderimi için zorunlu">
+                  KVKK
+                </th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -133,6 +155,23 @@ export default function GuardiansPage() {
                   <td className="tabular px-3 py-2 text-muted">{guardian.username}</td>
                   <td className="tabular px-3 py-2 text-muted">{guardian.whatsapp_phone}</td>
                   <td className="tabular px-3 py-2 text-muted">{guardian.child_count ?? 0}</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleConsent(guardian)}
+                      title={
+                        guardian.consent_at
+                          ? `Onay verildi: ${new Date(guardian.consent_at).toLocaleDateString('tr-TR')}`
+                          : 'KVKK onayı yok — tıklayarak ver'
+                      }
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${guardian.consent_at
+                        ? 'bg-[#d1fadf] text-[#067647]'
+                        : 'bg-[#fef3c7] text-[#B45309]'
+                        }`}
+                    >
+                      {guardian.consent_at ? '✓ Onaylı' : '✗ Onaysız'}
+                    </button>
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <button
                       type="button"
@@ -206,6 +245,21 @@ export default function GuardiansPage() {
               Kullanıcı adı: otomatik üretilir (veli…). Şifre değişimi için "Şifre sıfırla".
             </p>
           )}
+          {/* KVKK açık rızası — yeni veli oluşturma ve düzenleme için */}
+          <label className="flex cursor-pointer items-center gap-2 text-sm" htmlFor="g-consent">
+            <input
+              id="g-consent"
+              type="checkbox"
+              checked={consentAt}
+              onChange={(e) => setConsentAt(e.target.checked)}
+              className="h-4 w-4 accent-[var(--accent)]"
+            />
+            <span>
+              KVKK açık rızası alındı{' '}
+              <span className="text-xs text-muted">(rapor göndermek için zorunlu)</span>
+            </span>
+          </label>
+
           <FormError message={formError} />
           <div className="flex justify-end gap-2">
             <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>

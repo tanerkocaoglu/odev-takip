@@ -17,7 +17,7 @@ import {
 } from '../../components/admin/ui';
 
 export default function TeachersPage() {
-  const { items, total, page, pageSize, loading, error, setError, setQ, setPage, reload } =
+  const { items, total, page, pageSize, loading, error, setError, q, setQ, setPage, reload } =
     useList<Teacher>((params) => adminApi.teachers.list(params));
 
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
@@ -136,7 +136,7 @@ export default function TeachersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <SearchBox value={''} onChange={(v) => { setQ(v); }} placeholder="Öğretmen ara…" />
+        <SearchBox value={q} onChange={(v) => { setQ(v); }} placeholder="Öğretmen ara…" />
         <PrimaryButton onClick={openCreate}>Yeni öğretmen</PrimaryButton>
       </div>
 

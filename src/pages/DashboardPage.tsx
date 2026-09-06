@@ -47,7 +47,7 @@ export default function DashboardPage() {
       .catch(() => setHealth(null));
   }, []);
 
-  // Rol bazlı paneller hazır: giriş sonrası ana sayfa role göre yönlendirir.
+  // Rol bazlı paneller: giriş sonrası ana sayfa role göre yönlendirir.
   const roleHome =
     user?.role === 'student'
       ? '/student'
@@ -55,7 +55,9 @@ export default function DashboardPage() {
         ? '/teacher'
         : user?.role === 'admin'
           ? '/admin'
-          : null;
+          : user?.role === 'guardian'
+            ? '/guardian'
+            : null;
   if (roleHome) return <Navigate to={roleHome} replace />;
 
   return (

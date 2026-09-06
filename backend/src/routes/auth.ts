@@ -50,17 +50,17 @@ function loadAuthUser(userId: string): LoadedUser | null {
     )
     .get(userId) as
     | {
-        id: string;
-        full_name: string;
-        username: string | null;
-        email: string | null;
-        role: Role;
-        tv: number;
-        is_active: number;
-        deleted_at: string | null;
-        student_id: string | null;
-        guardian_id: string | null;
-      }
+      id: string;
+      full_name: string;
+      username: string | null;
+      email: string | null;
+      role: Role;
+      tv: number;
+      is_active: number;
+      deleted_at: string | null;
+      student_id: string | null;
+      guardian_id: string | null;
+    }
     | undefined;
 
   if (!row || row.deleted_at !== null || row.is_active !== 1) {
@@ -110,7 +110,7 @@ router.post(
   '/login',
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 100, // Demo süreci için rate limit 100 yapıldı
     // IP + hesap bazlı — aynı identifier'a farklı IP'lerden de sınırlı.
     keyFn: (req) =>
       `${req.ip}:login:${String(req.body?.identifier ?? '').toLowerCase()}`,
@@ -127,13 +127,13 @@ router.post(
       )
       .get(idKey, idKey) as
       | {
-          id: string;
-          username: string | null;
-          email: string | null;
-          password_hash: string | null;
-          role: Role;
-          is_active: number;
-        }
+        id: string;
+        username: string | null;
+        email: string | null;
+        password_hash: string | null;
+        role: Role;
+        is_active: number;
+      }
       | undefined;
 
     // Eşleşme anahtarı rolü doğrulamalı: email → admin/teacher,

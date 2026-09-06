@@ -36,14 +36,14 @@ export interface LoginRequest {
 export interface ApiError {
   error: {
     code:
-      | 'VALIDATION_ERROR'
-      | 'UNAUTHORIZED'
-      | 'FORBIDDEN'
-      | 'NOT_FOUND'
-      | 'CONFLICT'
-      | 'RATE_LIMITED'
-      | 'INTERNAL'
-      | 'GONE';
+    | 'VALIDATION_ERROR'
+    | 'UNAUTHORIZED'
+    | 'FORBIDDEN'
+    | 'NOT_FOUND'
+    | 'CONFLICT'
+    | 'RATE_LIMITED'
+    | 'INTERNAL'
+    | 'GONE';
     message: string;
     fields?: Record<string, string>;
   };
@@ -119,6 +119,8 @@ export interface Guardian {
   username: string;
   whatsapp_phone: string;
   phone_secondary: string | null;
+  /** KVKK açık rızası zaman damgası; null ise onay alınmamış. */
+  consent_at: string | null;
   child_count?: number;
 }
 

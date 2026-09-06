@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -22,21 +22,10 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     <div className="min-h-screen bg-bg">
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-          <span className="text-sm font-semibold text-text">
+          <Link to="/" className="text-sm font-semibold text-text hover:text-accent transition-colors">
             Dershane Ödev Takip
-          </span>
+          </Link>
           <nav className="flex items-center gap-4">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                isActive
-                  ? 'text-sm font-medium text-accent'
-                  : 'text-sm font-medium text-muted hover:text-text'
-              }
-            >
-              Ana sayfa
-            </NavLink>
             {user?.role === 'admin' && (
               <NavLink
                 to="/admin"

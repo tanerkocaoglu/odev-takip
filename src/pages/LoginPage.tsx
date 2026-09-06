@@ -41,7 +41,12 @@ export default function LoginPage() {
     setFieldErrors({});
     try {
       await login(identifier.trim(), password);
-      navigate(from, { replace: true });
+
+      // Kullanıcı başka birinin hesabından çıkmışsa ve "from" sadece kök bir dizinse
+      // kendi rolüne ait dashboard'a gidebilmesi için / dizinine gönderiyoruz.
+      // Özel bir alt link (örn. /teacher/reports/...) varsa dokunmuyoruz.
+      const isRootPath = ['/', '/admin', '/teacher', '/student', '/guardian'].includes(from);
+      navigate(isRootPath ? '/' : from, { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError) {
         setFormError(err.message);

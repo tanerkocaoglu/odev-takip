@@ -272,6 +272,8 @@ export const adminApi = {
         full_name: string;
         whatsapp_phone: string;
         phone_secondary: string | null;
+        /** KVKK açık rızası: true → zaman damgası yaz, false → null'a sıfırla */
+        consent_at: boolean;
       }>,
     ) =>
       apiFetch<Guardian>(`/admin/guardians/${id}`, {

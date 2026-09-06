@@ -1305,6 +1305,8 @@ const guardianPatchSchema = z.object({
   full_name: z.string().trim().min(1).optional(),
   whatsapp_phone: z.string().trim().min(10).optional(),
   phone_secondary: z.string().trim().min(10).optional().nullable(),
+  // KVKK açık rızası: true → şimdiki zamanı yaz, false → null'a sıfırla
+  consent_at: z.boolean().optional(),
 });
 
 router.patch('/guardians/:id', (req, res) => {
@@ -1345,6 +1347,10 @@ router.patch('/guardians/:id', (req, res) => {
       guardianValues.push(value ? normalizePhone(value) : null);
     }
   }
+  if (input.consent_at !== undefined) {
+    guardianSets.push(`consent_at = ?`);
+    guardianValues.push(input.consent_at ? new Date().toISOString() : null);
+  }
   if (guardianSets.length > 0) {
     guardianValues.push(current.id);
     db.prepare(
@@ -1354,7 +1360,7 @@ router.patch('/guardians/:id', (req, res) => {
 
   const row = db
     .prepare(
-      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.username, g.whatsapp_phone, g.phone_secondary
+      `SELECT g.id AS id, u.id AS user_id, u.full_name, u.username, g.whatsapp_phone, g.phone_secondary, g.consent_at
        FROM users u JOIN guardians g ON g.user_id = u.id WHERE g.id = ?`,
     )
     .get(id);
