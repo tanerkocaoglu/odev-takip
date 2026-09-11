@@ -106,11 +106,15 @@ const loginSchema = z.object({
 // (Yüklenme sırasında bir kez üretilir; doğrulanması amaçlanan bir hash değil.)
 const DUMMY_HASH = hashPasswordSync('timing-equality-dummy');
 
+// LOGIN_RATE_LIMIT_MAX env'den okunur; varsayılan 5 (production güvenli).
+// Demo ortamında .env'e LOGIN_RATE_LIMIT_MAX=10 yazarak gevşetilebilir.
+const LOGIN_RATE_LIMIT_MAX = Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 5);
+
 router.post(
   '/login',
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100, // Demo süreci için rate limit 100 yapıldı
+    max: LOGIN_RATE_LIMIT_MAX,
     // IP + hesap bazlı — aynı identifier'a farklı IP'lerden de sınırlı.
     keyFn: (req) =>
       `${req.ip}:login:${String(req.body?.identifier ?? '').toLowerCase()}`,
