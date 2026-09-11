@@ -37,12 +37,6 @@ function CardIcon({ Icon }: { Icon: LucideIcon }) {
   );
 }
 
-const TAB_ICONS: Record<'missing' | 'matrix' | 'risk', LucideIcon> = {
-  missing: AlertTriangle,
-  matrix: Grid3x3,
-  risk: AlertCircle,
-};
-
 export default function AdminDashboardPage() {
   const reduceMotion = useReducedMotion();
   const [data, setData] = useState<AdminDashboard | null>(null);
@@ -112,7 +106,8 @@ export default function AdminDashboardPage() {
           <Skeleton className="h-7 w-24" />
           <Skeleton className="h-9 w-44" />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Skeleton className="h-24" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
@@ -135,30 +130,50 @@ export default function AdminDashboardPage() {
     grouped.set(item.teacher_name, list);
   }
 
+  const filters: {
+    key: 'missing' | 'matrix' | 'risk';
+    label: string;
+    icon: LucideIcon;
+    count: number | null;
+  }[] = [
+    { key: 'missing', label: 'Eksik raporlar', icon: AlertTriangle, count: data.missing.length },
+    { key: 'matrix', label: 'Tam matris', icon: Grid3x3, count: data.matrix.length },
+    {
+      key: 'risk',
+      label: 'Riskli öğrenciler',
+      icon: AlertCircle,
+      count: risk ? risk.items.length : null,
+    },
+  ];
+
   const tabs = (
-    <div className="flex gap-1 border-b border-border">
-      {(
-        [
-          ['missing', 'Eksik raporlar'],
-          ['matrix', 'Tam matris'],
-          ['risk', 'Riskli öğrenciler'],
-        ] as const
-      ).map(([key, label]) => {
-        const Icon = TAB_ICONS[key];
+    <div className="grid gap-3 sm:grid-cols-3">
+      {filters.map(({ key, label, icon: Icon, count }) => {
+        const isActive = tab === key;
         return (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
+            aria-label={label}
+            aria-pressed={isActive}
             className={
-              'inline-flex items-center gap-1.5 rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
-              (tab === key
-                ? 'border-accent text-accent'
-                : 'border-transparent text-muted hover:text-text')
+              'card-interactive elevation-1 flex items-center gap-3 rounded-md border bg-surface p-3 text-left ' +
+              (isActive ? 'border-accent' : 'border-border')
             }
           >
-            <Icon size={15} aria-hidden="true" />
-            {label}
+            <span
+              className={
+                'flex h-9 w-9 shrink-0 items-center justify-center rounded-full ' +
+                (isActive ? 'bg-accent/10 text-accent' : 'bg-bg text-muted')
+              }
+            >
+              <Icon size={18} aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+              {label}
+            </span>
+            {count !== null && <Badge tone="neutral">{count}</Badge>}
           </button>
         );
       })}
@@ -191,21 +206,25 @@ export default function AdminDashboardPage() {
       {backupDone && <p className="text-sm font-medium text-status-sent">{backupDone}</p>}
       {backupError && <FormError message={backupError} />}
 
-      {/* Özet kartları — Level 1; tıklanabilir olanlar Level 2 hover */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="elevation-1 rounded-md border border-border bg-surface p-4">
+      {/* Özet kartları — üst kenarlık anlam rengi; tıklanabilirler Level 2 hover */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="elevation-1 rounded-md border border-border border-t-2 border-t-status-sent bg-surface p-4">
           <CardIcon Icon={CheckCircle} />
-          <p className="tabular mt-2 text-2xl font-semibold text-text">
-            {completed}
-            <span className="text-base font-normal text-muted"> / {total}</span>
-          </p>
+          <p className="tabular mt-2 text-2xl font-semibold text-text">{completed}</p>
           <p className="mt-1 text-xs text-muted">
-            Bu hafta tamamlanan{data.week ? ` · ${data.week.label}` : ''}
+            Tamamlanan rapor{data.week ? ` · ${data.week.label}` : ''}
           </p>
+        </div>
+        <div className="elevation-1 rounded-md border border-border border-t-2 border-t-att-late bg-surface p-4">
+          <CardIcon Icon={AlertTriangle} />
+          <p className="tabular mt-2 text-2xl font-semibold text-text">
+            {Math.max(0, total - completed)}
+          </p>
+          <p className="mt-1 text-xs text-muted">Eksik rapor</p>
         </div>
         <Link
           to="/admin/digests"
-          className="card-interactive elevation-1 block rounded-md border border-border bg-surface p-4"
+          className="card-interactive elevation-1 block rounded-md border border-border border-t-2 border-t-status-completed bg-surface p-4"
         >
           <CardIcon Icon={Send} />
           <p className="tabular mt-2 text-2xl font-semibold text-text">
@@ -218,7 +237,7 @@ export default function AdminDashboardPage() {
         </Link>
         <Link
           to="/admin/reports"
-          className="card-interactive elevation-1 block rounded-md border border-border bg-surface p-4"
+          className="card-interactive elevation-1 block rounded-md border border-border border-t-2 border-t-accent bg-surface p-4"
         >
           <CardIcon Icon={Archive} />
           <p className="mt-2 text-base font-semibold text-text">Tüm raporlar</p>

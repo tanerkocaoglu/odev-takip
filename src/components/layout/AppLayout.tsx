@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import BrandLogo from '../BrandLogo';
 import { useAuth } from '../../context/AuthContext';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -21,9 +22,9 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
   return (
     <div className="min-h-screen bg-bg">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-          <Link to="/" className="text-sm font-semibold text-text hover:text-accent transition-colors">
-            Dershane Ödev Takip
+        <div className="mx-auto flex h-20 max-w-5xl items-center justify-between px-4">
+          <Link to="/" className="flex items-center transition-opacity hover:opacity-80">
+            <BrandLogo className="h-16 w-auto object-contain" />
           </Link>
           <nav className="flex items-center gap-4">
             {user?.role === 'admin' && (

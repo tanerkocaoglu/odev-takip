@@ -36,7 +36,7 @@ describe('App — girişsiz', () => {
     );
     await waitFor(() => {
       expect(
-        screen.getByRole('heading', { name: 'Dershane Ödev Takip' }),
+        screen.getByRole('img', { name: 'Ödev Takip' }),
       ).toBeInTheDocument();
     });
   });
@@ -50,7 +50,7 @@ describe('App — girişsiz', () => {
       </MemoryRouter>,
     );
     expect(
-      screen.getByRole('heading', { name: 'Dershane Ödev Takip' }),
+      screen.getByRole('img', { name: 'Ödev Takip' }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('E-posta veya kullanıcı adı')).toBeInTheDocument();
     expect(screen.getByLabelText('Şifre')).toBeInTheDocument();

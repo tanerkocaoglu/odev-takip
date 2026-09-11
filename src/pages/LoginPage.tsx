@@ -10,6 +10,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { ApiClientError } from '../services/api';
 
@@ -62,14 +63,11 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg px-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-center text-xl font-semibold text-text">
-          Dershane Ödev Takip
-        </h1>
-        <p className="mt-1 text-center text-sm text-muted">
-          E-posta veya kullanıcı adınızla giriş yapın
-        </p>
+        <div className="flex justify-center">
+          <BrandLogo className="h-16 w-auto object-contain" />
+        </div>
 
-        <div className="mt-4 rounded-md border border-border bg-surface p-6">
+        <div className="mt-6 rounded-md border border-border bg-surface p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label

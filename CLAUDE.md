@@ -342,6 +342,9 @@ Dört rolden üçü telefondadır: veli WhatsApp linkinden gelir, öğrenci foto
 yükler, öğretmen dersten sonra telefondan doldurabilir. **Yalnızca admin
 paneli masaüstü önceliklidir; kalan her şey mobil önceliklidir.**
 
+- Admin navigasyonu **sol sabit dikey menü**dür (üstte marka, ortada ikon+etiket
+  sekmeler, altta kullanıcı + çıkış); dar ekranda `<lg` ikon-only şeride
+  daralır. Diğer üç rol üst header navigasyonunu kullanır.
 - Dokunma hedefi minimum 44×44px — `compact` yoğunlukta bile mobilde
   butonlar ve puan seçicileri bu boyutun altına inmez.
 - Rapor giriş tablosu dar ekranda **yatay kaydırılmaz**, öğrenci başına kart

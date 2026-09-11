@@ -5,6 +5,120 @@
 
 ---
 
+## Marka görseli — "Ödev Takip" ✅
+
+### Süreç özeti
+
+Üç yerdeki marka metni görsel öğesi kaldırılıp `src/assets/logo.png` logosu
+kullanıldı: admin sol menüsü, üst çubuk (AppLayout) ve giriş ekranı (LoginPage).
+Marka adı "Ödev Takip" olarak hem erişilebilirlik metnine
+(`alt`) hem de tarayıcı sekmesi başlığına (`index.html <title>`) işlendi.
+
+### Yapılanlar
+
+- `src/components/BrandLogo.tsx` (yeni): tek `<img>` (`alt="Ödev Takip"`), boyut/kırpma `className` ile verilir.
+- **AdminLayout:** marka bloğu logoya döndü; genişte `h-16 object-contain`,
+  `<lg` ikon-only durumda `h-16 w-16 object-cover` (kare merkez kırpma).
+- **AppLayout (üst çubuk):** marka linki `<img h-16 object-contain>`; başlık
+  yüksekliği `h-14 → h-20` (64px logo sığsın).
+- **LoginPage:** marka `<h1>` metni ve "…giriş yapın" alt yazısı kaldırıldı →
+  ortalanmış `<img h-16 object-contain>`.
+- **`index.html`:** `<title>` → "Ödev Takip".
+- Logo kendi renklerini taşır; tasarım token'larına/renk paletine dokunulmadı.
+
+### Doğrulamalar
+
+- typecheck ✅, lint ✅, build ✅, frontend **62/62** (12 dosya) ✅.
+- `App.test.tsx`: marka başlığı sorguları yeni logoya güncellendi
+  (`getByRole('img', { name: 'Ödev Takip' })`);
+  `admin-layout.test.tsx`'e logo testi eklendi.
+- Canlı ekran görüntüleri: admin sidebar geniş + dar (kare), üst çubuk
+  (öğretmen), giriş ekranı.
+
+### Not
+
+- İstenen `src/assets/logo.jpeg` repoda yok; mevcut tek marka görseli
+  `src/assets/logo.png` (1024×1024) kullanıldı.
+
+### Etkilenen dosyalar
+
+```
+src/components/BrandLogo.tsx (yeni)
+src/components/admin/AdminLayout.tsx
+src/components/layout/AppLayout.tsx
+src/pages/LoginPage.tsx
+index.html
+src/App.test.tsx
+src/admin-layout.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
+## Admin navigasyonu — üst sekmelerden sol sabit menüye ✅
+
+### Süreç özeti
+
+Admin panelinin navigasyon kabuğu üst sekmeli `AdminLayout`'tan sol sabit dikey
+menüye çevrildi (ikon + etiket, aktif sekmede accent sol şerit + hafif dolgu;
+üstte kurum/marka, altta kullanıcı + çıkış). **Route'lar, veri akışı ve API
+çağrıları birebir aynı kaldı** — yalnızca kabuk değişti. Diğer üç rolün
+navigasyonu (`AppLayout`) etkilenmedi.
+
+### Yapılanlar
+
+- **`App.tsx`:** admin dalı `AppLayout → AdminLayout` yerine doğrudan
+  `<ProtectedRoute roles={['admin']}><AdminLayout/></ProtectedRoute>` oldu.
+  URL'ler/route ağacı değişmedi.
+- **`AdminLayout.tsx` (yeniden yazıldı):** `flex min-h-screen` → sol `aside`
+  (sabit), sağda `<main class="admin-content">`. 12 sekme `NavLink` (ikon +
+  etiket, `aria-label` korunur), aktif vurgu accent sol şerit + `bg-accent/10`.
+  Altta kullanıcı adı/rol + Çıkış. `h1 "Yönetim"` korundu (erişilebilirlik +
+  `App.test.tsx` uyumu).
+- **Mobil:** `<lg` (>640px değil; `lg`=1024px) altında menü **ikon-only
+  şeride** daralır (`w-16`, etiketler gizli) — JS state yok. Masaüstünde sabit
+  `lg:w-60` (~240px).
+- **Panel özet kartları 4'e çıktı**, üst kenarlık anlam rengiyle: Tamamlanan
+  (yeşil `status-sent`), Eksik (`total-completed`, amber `att-late`), Bekleyen
+  gönderim (mavi `status-completed`), Rapor arşivi (accent). Yeni API alanı
+  gerekmedi.
+- **Filtre sekmeleri** ("Eksik raporlar / Tam matris / Riskli öğrenciler")
+  düz metinden **sayı rozetli kart-butonlara** dönüştü (`card-interactive` +
+  `elevation-1`, ikonlu daire; aktifte accent kenarlık). `role=button` +
+  `aria-label` korundu.
+- `src/admin-layout.test.tsx` (yeni): 12 linkin href'i, aktif içerik ve
+  "Yönetim" başlığı sabitlendi.
+
+### Doğrulamalar
+
+- typecheck ✅, lint ✅, build ✅, frontend **61/61** (12 dosya) ✅.
+- `App.test.tsx` ve `admin-risk.test.tsx` **değişmeden** geçti (başlık +
+  filtre butonu erişilebilir adları korundu).
+- Canlı (headless Chrome, gerçek app.db): masaüstü sidebar (1440px), dar ekran
+  ikon-only (700px) ve Haftalar sekmesi; `adminContent:true` (satır hover
+  kapsamı korunur).
+
+### Etkilenen dosyalar
+
+```
+src/App.tsx
+src/components/admin/AdminLayout.tsx
+src/pages/admin/AdminDashboardPage.tsx
+src/admin-layout.test.tsx (yeni)
+CLAUDE.md (admin navigasyon notu)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Admin — paylaşılan bileşenlerle tüm sekmelerin görsel dili ✅
 
 ### Süreç özeti
