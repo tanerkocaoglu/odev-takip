@@ -302,7 +302,7 @@ describe('POST /api/v1/teacher/reports (get-or-create)', () => {
       interest_score: number | null;
       teacher_note: string | null;
     }>) {
-      expect(entry.attendance).toBe('present');
+      expect(entry.attendance).toBe('absent');
       expect(entry.homework_score).toBeNull();
       expect(entry.interest_score).toBeNull();
       expect(entry.teacher_note).toBeNull();
@@ -512,6 +512,24 @@ describe('POST /api/v1/teacher/reports/:id/complete', () => {
   });
 
   it('entegrasyon zinciri: eksik puanla tamamla 400, doldurunca 200 + completed', async () => {
+    // 0) Üst alanları doldur + tüm satırları 'present' yap (puanlar boş).
+    //    Yeni varsayılan 'absent' olduğu için satırlar açıkça present yapılmazsa
+    //    puan zorunluluğu tetiklenmez.
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        topic_covered: 'Konu',
+        homework_description: 'Ödev',
+        entries: studentIds.map((sid) => ({
+          student_id: sid,
+          attendance: 'present',
+          homework_score: null,
+          interest_score: null,
+          teacher_note: null,
+        })),
+      });
+
     // 1) Hiç puan girilmeden tamamla → 400, fields öğrenci id'lerini içerir.
     const missing = await request(app)
       .post(`/api/v1/teacher/reports/${reportId}/complete`)
@@ -624,6 +642,64 @@ describe('POST /api/v1/teacher/reports/:id/complete', () => {
   });
 });
 
+describe('POST /api/v1/teacher/reports/:id/complete (üst alan zorunluluğu)', () => {
+  it('işlenen konu/yapılacak ödev boşken tamamlanamaz (400); doldurunca 200', async () => {
+    const created = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: CC_OWN_FUTURE, week_id: WEEK2.id });
+    const reportId = created.body.report.id as string;
+    const studentIds = (created.body.entries as Array<{ student_id: string }>).map(
+      (e) => e.student_id,
+    );
+
+    // Puanlar dolu, ama topic + yapılacak ödev boş → 400 (üst alan zorunlu).
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        entries: studentIds.map((sid) => ({
+          student_id: sid,
+          attendance: 'present',
+          homework_score: 7,
+          interest_score: 8,
+          teacher_note: null,
+        })),
+      });
+
+    const both = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(both.status).toBe(400);
+    expect(both.body.error.code).toBe('VALIDATION_ERROR');
+    expect(both.body.error.fields.topic_covered).toBeDefined();
+    expect(both.body.error.fields.homework_description).toBeDefined();
+
+    // Yalnızca konu doldurulunca yapılacak ödev hâlâ eksik.
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ topic_covered: 'Parabol' });
+    const onlyHw = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(onlyHw.status).toBe(400);
+    expect(onlyHw.body.error.fields.topic_covered).toBeUndefined();
+    expect(onlyHw.body.error.fields.homework_description).toBeDefined();
+
+    // İkisi de dolu → tamamlanır.
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ homework_description: 'Sayfa 20' });
+    const done = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(done.status).toBe(200);
+    expect(done.body.report.status).toBe('completed');
+  });
+});
+
 describe('Yılın son haftası (spec §5.2 sınır durumu)', () => {
   it('tek haftalı yılda due_date null; tarih girilmeden tamamla 400, girilince 200', async () => {
     // 1) Rapor oluştur — sonraki hafta yok, due_date hesaplanamaz, homework yok.
@@ -649,6 +725,7 @@ describe('Yılın son haftası (spec §5.2 sınır durumu)', () => {
       .put(`/api/v1/teacher/reports/${reportId}`)
       .set('Authorization', `Bearer ${teacherToken}`)
       .send({
+        topic_covered: 'Son hafta konusu',
         due_date: '2026-08-15',
         homework_description: 'Son hafta ödevi',
         entries: [

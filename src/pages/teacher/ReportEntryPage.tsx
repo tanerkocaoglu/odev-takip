@@ -300,7 +300,7 @@ export default function ReportEntryPage() {
             placeholder="Geçen haftanın ödevi…"
           />
         </Field>
-        <Field label="İşlenen konu" htmlFor="topic">
+        <Field label="İşlenen konu" htmlFor="topic" error={completeErrors.topic_covered}>
           <input
             id="topic"
             className={inputClass}
@@ -309,7 +309,11 @@ export default function ReportEntryPage() {
             placeholder="Bu hafta işlenen konu…"
           />
         </Field>
-        <Field label="Yapılacak ödev" htmlFor="next-homework">
+        <Field
+          label="Yapılacak ödev"
+          htmlFor="next-homework"
+          error={completeErrors.homework_description}
+        >
           <input
             id="next-homework"
             className={inputClass}

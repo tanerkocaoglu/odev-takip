@@ -438,10 +438,14 @@ router.post('/reports', (req, res) => {
       )
       .all(cc.class_id, week.start_date) as { student_id: string }[];
 
+    // Yeni satırlar 'absent' başlar (spec §5.1): öğretmen yoklama almadan
+    // bırakırsa sessizce "herkes geldi" varsayılmaz; rapor "herkes yok" gibi
+    // görünerek hatayı fark ettirir. Varsayılan UI'da da "Gelmedi" olarak
+    // yansır (satırlar payload'dan gelir).
     const insertEntry = db.prepare(
       `INSERT INTO report_entries
          (id, report_id, student_id, attendance, homework_score, interest_score, teacher_note)
-       VALUES (?, ?, ?, 'present', NULL, NULL, NULL)`,
+       VALUES (?, ?, ?, 'absent', NULL, NULL, NULL)`,
     );
     for (const student of students) {
       insertEntry.run(randomUUID(), reportId, student.student_id);
@@ -684,14 +688,33 @@ router.post('/reports/:id/complete', (req, res) => {
 
   // Yılın son haftası: homeworks satırı (due_date) yoksa tamamlanamaz (spec §5.2).
   const homework = db
-    .prepare(`SELECT due_date FROM homeworks WHERE report_id = ?`)
-    .get(id) as { due_date: string } | undefined;
+    .prepare(`SELECT due_date, description FROM homeworks WHERE report_id = ?`)
+    .get(id) as { due_date: string; description: string } | undefined;
   if (!homework || !homework.due_date) {
     throw new AppError(
       'VALIDATION_ERROR',
       400,
       'Yılın son haftası — teslim tarihini belirleyin.',
       { due_date: 'Teslim tarihi zorunlu.' },
+    );
+  }
+
+  // Üst alanlar zorunlu (spec §5.1): işlenen konu + yapılacak ödev açıklaması
+  // boş bırakılırsa rapor tamamlanamaz. (Verilmiş olan ödev çoğunlukla otomatik
+  // dolduğu için bu kurala dahil değildir.)
+  const topFields: Record<string, string> = {};
+  if (!report.topic_covered || report.topic_covered.trim() === '') {
+    topFields.topic_covered = 'İşlenen konu girilmeli.';
+  }
+  if (!homework.description || homework.description.trim() === '') {
+    topFields.homework_description = 'Yapılacak ödev girilmeli.';
+  }
+  if (Object.keys(topFields).length > 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'İşlenen konu ve yapılacak ödev girilmelidir.',
+      topFields,
     );
   }
 

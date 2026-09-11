@@ -283,6 +283,33 @@ describe('ReportEntryPage', () => {
     expect(interest.value).toBe('6');
   });
 
+  it('yeni raporda varsayılan "absent"; Tümünü geldi yap puan alanlarını açar', async () => {
+    const absentReport = {
+      ...REPORT,
+      entries: REPORT.entries.map((e) => ({
+        ...e,
+        attendance: 'absent',
+        homework_score: null,
+        interest_score: null,
+      })),
+    };
+    vi.stubGlobal('fetch', mockFetch(200, absentReport));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    // Sunucudan 'absent' geldiğinde puan alanları devre dışı.
+    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
+
+    // "Tümünü geldi yap" gerçekten durumu değiştirir → puan alanları açılır.
+    fireEvent.click(screen.getByRole('button', { name: 'Tümünü geldi yap' }));
+    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı')).not.toBeDisabled();
+  });
+
   it('son hafta (homework yok) uyarısı gösterilir', async () => {
     const lastWeekReport = {
       ...REPORT,

@@ -50,6 +50,7 @@ async function completeReport(ccId: string, weekId: string): Promise<void> {
     .put(`/api/v1/teacher/reports/${id}`)
     .set('Authorization', `Bearer ${teacherToken}`)
     .send({
+      topic_covered: 'Konu',
       homework_description: 'Ödev',
       entries: entries.map((e) => ({
         student_id: e.student_id,

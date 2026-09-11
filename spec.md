@@ -410,6 +410,10 @@ CREATE INDEX idx_report_entries_student ON report_entries(student_id);
 > veritabanı seviyesinde zorlar. `present`/`late` durumunda puanların dolu
 > olması zorunluluğu **raporun tamamlanması** anında uygulama tarafında
 > kontrol edilir (taslak halinde boş kalabilmelidir).
+>
+> **Not:** Tablodaki `DEFAULT 'present'` yalnızca şema bütünlüğü içindir;
+> uygulama `attendance`'ı **her zaman explicit yazar** (yeni satırlar `absent`
+> — §5.1). Bu yüzden DEFAULT'ın davranışsal etkisi yoktur.
 
 **`submissions`** — öğrenci ödev teslimi
 ```sql
@@ -536,7 +540,16 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
    devamsızlık + 2 puan + not.
 4. Otomatik `draft` olarak kaydedilir (debounce ~2sn).
 5. "Tamamla" → `status = 'completed'`, `completed_at` set edilir.
-   Doğrulama: devamsız olmayan her öğrenci için iki puan da dolu olmalı.
+   Doğrulama: **işlenen konu** ve **yapılacak ödev açıklaması** boş olamaz;
+   ayrıca devamsız olmayan her öğrenci için iki puan da dolu olmalı.
+
+> **Devamsızlık varsayılanı:** `POST /teacher/reports` ile oluşturulan yeni
+> `report_entries` satırları **`absent` ("Gelmedi")** başlar. Böylece öğretmen
+> yoklama almadan raporu tamamlarsa sistem sessizce "herkes geldi" varsaymaz;
+> rapor "herkes yok" gibi görünerek hatayı fark ettirir. "Tümünü geldi yap"
+> kısayolu durumu gerçekten değiştirir. Bu değişiklik **yalnızca yeni
+> satırları** etkiler; mevcut draft satırlar olduğu gibi bırakılır (öğretmenin
+> daha önce işaretlediği değerler sessizce değiştirilmez).
 
 ### 5.2 Ödev son tarihi
 

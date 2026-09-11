@@ -5,6 +5,77 @@
 
 ---
 
+## Rapor tamamlama doğrulaması + devamsızlık varsayılanı 'absent' ✅
+
+### Süreç özeti
+
+İki gerçek eksik/tutarsızlık giderildi (spec §5.1):
+1. **Üst alan zorunluluğu:** `POST /teacher/reports/:id/complete` artık
+   `reports.topic_covered` (işlenen konu) ve `homeworks.description`
+   (yapılacak ödev) boşsa `400 VALIDATION_ERROR` döner. Önceden yalnızca
+   öğrenci puanları doğrulanıyordu; bu iki alan boşken rapor tamamlanabiliyordu.
+2. **Devamsızlık varsayılanı `absent`:** Yeni `report_entries` satırları artık
+   `absent` ("Gelmedi") başlar (önce `present`). Böylece öğretmen yoklama almadan
+   raporu tamamlarsa sistem sessizce "herkes geldi" varsaymaz; rapor "herkes yok"
+   gibi görünerek hatayı fark ettirir ve **"Tümünü geldi yap"** butonu ilk kez
+   gerçekten işlev görür.
+
+**Kullanıcı kararları:** yalnızca yeni satırlar `absent` (mevcut draft'lara
+dokunulmadı — öğretmenin işaretlediği değer sessizce değiştirilmez); **migration
+yok** (uygulama `attendance`'ı zaten explicit yazıyor; şemadaki `DEFAULT
+'present'` fiilen kullanılmıyor); ek bir "attendance açıkça seçilmeli" kuralı
+eklenmedi (varsayılan `absent` zaten "işaretlenmemiş" sinyalini görünür kılar).
+
+### Yapılanlar
+
+- **`backend/src/routes/teacher.ts`**
+  - `POST /reports`: satır insert `'present'` → `'absent'`.
+  - `POST /reports/:id/complete`: `due_date` kontrolünden sonra `topic_covered`
+    + `homeworks.description` (trim) boşsa 400; `fields`'a `topic_covered` /
+    `homework_description`. Puan ve `sent` kontrolleri aynen korundu.
+- **`src/pages/teacher/ReportEntryPage.tsx`** — "İşlenen konu" ve "Yapılacak
+  ödev" alanlarına `completeErrors.*` ile alan-altı hata gösterimi bağlandı.
+- **Docs:** `spec.md` §3.2 (DEFAULT yalnızca şema bütünlüğü notu) + §5.1
+  (zorunlu alanlar + absent varsayılanı maddesi).
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅.
+**Testler** — backend **244/244** (22 dosya; +1 üst-alan zorunluluğu testi,
+get-or-create artık `absent`, complete helper'larına `topic_covered` eklendi),
+frontend **86/86** (15 dosya; `teacher.test.tsx` +1: absent varsayılan +
+"Tümünü geldi yap").
+
+**Canlı (gerçek app.db + çalışan sunucu; `seed-class-course-003-1` +
+`seed-week-20` boş çifti, artefakt sonunda silindi):**
+1. `POST /teacher/reports` → 201; 4 satırın tamamı API'de ve **DB'de
+   `absent`** (gerçek başlangıç değeri).
+2. topic + hw boşken `complete` → **400**;
+   `fields = { topic_covered: "İşlenen konu girilmeli.",
+   homework_description: "Yapılacak ödev girilmeli." }`.
+3. Yalnızca konu doldurulunca `complete` → yine **400** (homework eksik).
+4. **Canlı tarayıcı (headless Chrome/CDP):** rapor ekranında varsayılan
+   devamsızlık **`absent` ("Gelmedi")**; "Tümünü geldi yap" tıklanınca
+   gerçekten **`present`** oluyor.
+5. Temizlik: oluşturulan test raporu silindi (`kalan=0`).
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts
+backend/src/teacher.test.ts
+backend/src/admin-dashboard.test.ts admin-digests.test.ts digests.test.ts
+src/pages/teacher/ReportEntryPage.tsx
+src/teacher.test.tsx
+spec.md  PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğretmen geçmiş raporlarına filtreleme (sınıf/hafta/durum/arama) ✅
 
 ### Süreç özeti
