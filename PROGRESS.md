@@ -5,6 +5,107 @@
 
 ---
 
+## Demo Öncesi Optimizasyonlar ✅
+
+### Süreç özeti
+
+Dershane yöneticisine yapılacak sunum öncesinde mevcut sistemdeki UX eksiklikleri
+giderildi, seed verisi düzenlendi ve akıştaki hatalar düzeltildi. Şema değişikliği
+yapılmadı; tüm değişiklikler uygulama katmanında kaldı.
+
+### Yapılanlar
+
+**1. KVKK `consent_at` alanı (Backend + Frontend)**
+- `POST /admin/guardians` oluştururken `consent_at` desteği yoktu; yalnızca
+  `PATCH` ile sonradan eklenebiliyordu.
+- `backend/src/routes/admin.ts` — `PATCH /guardians/:id` handler'ına
+  `consent_at` alanı eklendi: `true` gönderilirse `NOW()` yazılır, `false`
+  gönderilirse `NULL` yapılır.
+- `src/services/api.ts` — `guardians.patch` tipine `consent_at?: boolean` eklendi.
+- `src/types.ts` — `Guardian` arayüzüne `consent_at: string | null` eklendi.
+- `src/pages/admin/GuardiansPage.tsx` — veli listesine "KVKK Onayı" sütunu ve
+  düzenleme formuna onay checkbox'ı eklendi; yeni veli oluşturma akışında onay
+  işaretliyse `create` sonrası `PATCH` ile `consent_at` kaydediliyor.
+
+**2. Seed verisi düzenleme**
+- `backend/src/db/seed.ts` — Eklenmiş okulların sınıf kayıtlarından önce
+  ekleneceği garanti altına alındı (FK sırası); tüm öğrencilere döngüsel olarak
+  okul + sınıf seviyesi atandı; kullanılmayan `update` fonksiyonu kaldırıldı.
+- Veritabanı (`app.db`) silindi ve `db:seed` ile yeniden oluşturuldu; öğrencilerin
+  okul/sınıf seviyesi boş görünme sorunu giderildi.
+
+**3. Öğrenci yönetimi — Düzenle modalı**
+- `src/pages/admin/StudentsPage.tsx` — Öğrenci tablosuna "Düzenle" modalı eklendi
+  (ad, okul, sınıf seviyesi, veli değiştirme). Tabloda `whitespace-nowrap` ve
+  `overflow-x-auto` ile sütun taşma sorunları giderildi.
+
+**4. Veli paneli routing**
+- `src/pages/DashboardPage.tsx` — `guardian` rolü için giriş sonrası otomatik
+  yönlendirme eklendi; veliler `/guardian` adresine doğrudan gönderiliyor.
+
+**5. Navbar düzenleme**
+- `src/components/layout/AppLayout.tsx` — Gereksiz "Ana sayfa" linki kaldırıldı;
+  logo (`Dershane Ödev Takip`) tıklanabilir hale getirilerek ana sayfaya (`/`)
+  yönlendirme sağlandı.
+
+**6. Auth rate limit artırımı**
+- `backend/src/routes/auth.ts` — Brute-force koruması 15 dk / 5 denemeden
+  15 dk / 100 denemeye çıkarıldı; demo ve geliştirme sırasında hesap kilitlenmesi
+  önlendi.
+
+**7. Login yönlendirme düzeltmesi**
+- `src/pages/LoginPage.tsx` — Farklı bir rol hesabından çıkıp başka bir hesapla
+  giriş yapıldığında, `ProtectedRoute`'un bıraktığı `from` state'i (ör. `/teacher`)
+  yeni kullanıcıyı yanlış sayfaya yönlendiriyordu.
+- Çözüm: giriş sonrası gidilecek adres `/`, `/admin`, `/teacher`, `/student`,
+  `/guardian` kök dizinlerinden biriyse her zaman `/` (DashboardPage) adresine
+  yönlendiriliyor; derin linklerde (`/teacher/reports/...` gibi) mevcut davranış
+  korunuyor.
+
+**8. SearchBox state bağlama hatası**
+- `src/pages/admin/TeachersPage.tsx`, `StudentsPage.tsx`, `GuardiansPage.tsx` —
+  `<SearchBox>` bileşenine sabit `value={''}` atanmıştı; her tuş vuruşunda input
+  sıfırlanıyordu.
+- `useList` hook'undan dönen `q` değişkeni destructure listesine eklendi ve
+  `value={q}` olarak bağlandı. Arama artık sorunsuz çalışıyor.
+
+### Çözülen sorunlar
+
+- **Öğrenci arama kutuları:** `value={''}` hardcode nedeniyle yazılan harfler
+  anında siliniyor; `q` state'i bağlanarak çözüldü.
+- **Login sonrası yanlış yönlendirme:** farklı rol hesapları arasında geçiş
+  yapıldığında `from` state'i eski rolün sayfasını işaret ediyordu; kök adres
+  kontrolüyle giderildi.
+- **Demo 429 hatası:** tekrarlanan giriş denemelerinde rate limit (5) hızla
+  doluyordu; limit 100'e çıkarıldı.
+- **FK sırası (seed):** `schools` tablosu `students`'tan önce eklendiğinde FK
+  ihlali oluşuyordu; ekleme sıraları düzeltildi.
+
+### Commit'ler
+
+- `898a215` — KVKK consent_at backend + frontend (GuardiansPage, api.ts, types.ts)
+- `c714072` — Demo optimizasyonları (seed FK sırası, öğrenci düzenleme modalı, veli routing, navbar, rate limit, login yönlendirme, SearchBox düzeltmesi)
+
+### Etkilenen dosyalar
+
+```
+backend/src
+  /routes/admin.ts          (PATCH /guardians consent_at)
+  /routes/auth.ts           (rate limit 5 → 100)
+  /db/seed.ts               (FK sırası + okul/sınıf seviyesi atama)
+src
+  /pages/LoginPage.tsx      (kök adres yönlendirme koruması)
+  /pages/DashboardPage.tsx  (guardian rol yönlendirmesi)
+  /pages/admin/GuardiansPage.tsx  (KVKK sütun + checkbox + consent_at patch)
+  /pages/admin/StudentsPage.tsx   (Düzenle modalı + overflow düzeltmesi + q state)
+  /pages/admin/TeachersPage.tsx   (q state bağlama)
+  /components/layout/AppLayout.tsx (logo link + Ana sayfa kaldırıldı)
+  /services/api.ts          (guardians.patch tipi)
+  /types.ts                 (Guardian.consent_at)
+```
+
+---
+
 ## Aşama 5 — Veli görünümü ve haftalık gönderim ✅
 
 ### Süreç özeti
