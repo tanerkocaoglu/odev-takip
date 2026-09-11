@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Send } from 'lucide-react';
 import type { AdminDigestItem, DigestSnapshot, ClassItem } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
@@ -156,6 +157,12 @@ export default function DigestSendPage() {
       </Badge>
     );
 
+  // Önizlenen digest gönderilmemişse (pending/ready, iptal değil) ders
+  // kartlarında "Düzenle" gösterilir. sent/iptal → hiç gösterilmez.
+  const previewItem = items?.find((i) => i.id === previewId) ?? null;
+  const canEditPreview =
+    previewItem !== null && previewItem.status !== 'sent' && !previewItem.is_revoked;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -222,7 +229,25 @@ export default function DigestSendPage() {
               Kapat
             </button>
           </div>
-          <ReportSnapshot snapshot={preview} showStudent />
+          <ReportSnapshot
+            snapshot={preview}
+            showStudent
+            renderCourseAction={
+              canEditPreview
+                ? (course) =>
+                    course.status === 'completed' ? (
+                      <Link
+                        to={`/teacher/reports/${course.class_course_id}/${preview.week.id}?returnTo=${encodeURIComponent(
+                          '/admin/digests',
+                        )}`}
+                        className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-text transition-colors hover:bg-bg"
+                      >
+                        Düzenle
+                      </Link>
+                    ) : null
+                : undefined
+            }
+          />
         </div>
       )}
 

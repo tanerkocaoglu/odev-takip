@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type {
   Attendance,
   ReportEntry,
@@ -32,6 +32,14 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 export default function ReportEntryPage() {
   const { classCourseId = '', weekId = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Dönüş hedefi: admin gönderim ekranından gelindiyse oraya, aksi halde
+  // öğretmen paneline. Yalnızca uygulama içi yol kabul edilir (open redirect yok).
+  const returnToParam = searchParams.get('returnTo');
+  const returnTo =
+    returnToParam && /^\/(?!\/)/.test(returnToParam) ? returnToParam : '/teacher';
+  const returnLabel = returnTo.startsWith('/admin') ? 'Gönderim ekranına dön' : 'Geri dön';
 
   const [payload, setPayload] = useState<TeacherReportPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -214,10 +222,10 @@ export default function ReportEntryPage() {
         <FormError message={loadError} />
         <button
           type="button"
-          onClick={() => navigate('/teacher')}
+          onClick={() => navigate(returnTo)}
           className="rounded-md border border-border px-3 py-1.5 text-sm text-text hover:bg-bg"
         >
-          Geri dön
+          {returnLabel}
         </button>
       </div>
     );
@@ -251,6 +259,13 @@ export default function ReportEntryPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate(returnTo)}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-bg"
+          >
+            {returnLabel}
+          </button>
           {saveIndicator}
           {!isCompleted && (
             <PrimaryButton onClick={handleComplete} disabled={completing}>

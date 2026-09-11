@@ -12,6 +12,7 @@
  */
 
 import { BookOpen } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { DigestSnapshot, DigestSnapshotCourse } from '../types';
 import { DAY_LABELS } from '../types';
 import { AttendanceBadge, Badge } from './admin/ui';
@@ -36,9 +37,12 @@ function courseStripe(course: DigestSnapshotCourse): CourseStripe {
 export default function ReportSnapshot({
   snapshot,
   showStudent = true,
+  renderCourseAction,
 }: {
   snapshot: DigestSnapshot;
   showStudent?: boolean;
+  /** Ders kartı başlığına eklenecek isteğe bağlı aksiyon (ör. admin "Düzenle"). */
+  renderCourseAction?: (course: DigestSnapshotCourse) => ReactNode;
 }) {
   return (
     <div className="space-y-6">
@@ -84,7 +88,10 @@ export default function ReportSnapshot({
                   <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
                   {course.course_name}
                 </h3>
-                <Badge tone="warning">Bu hafta rapor girilmedi</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge tone="warning">Bu hafta rapor girilmedi</Badge>
+                  {renderCourseAction?.(course)}
+                </div>
               </div>
             </div>
           );
@@ -101,7 +108,10 @@ export default function ReportSnapshot({
                 <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
                 {course.course_name}
               </h3>
-              <Badge tone="info">Rapor hazır</Badge>
+              <div className="flex items-center gap-2">
+                <Badge tone="info">Rapor hazır</Badge>
+                {renderCourseAction?.(course)}
+              </div>
             </div>
 
             <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">

@@ -594,20 +594,29 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
    - `pending` → "4 dersten 3'ü girildi", gönder butonu aktif ama uyarılı;
      eksik ders sayısı satırda gösterilir.
 2. Sınıf filtresiyle çalışır (200 öğrenci tek listede gösterilmez).
-3. Admin tek tek veya sınıf bazında toplu olarak "Gönder"e basar.
-4. Sistem `snapshot`'ı yazar, **yeni `token` üretir**, `status = 'sent'` yapar,
+3. **Gönderim öncesi admin düzenleme:** gönderilmemiş (`pending`/`ready`, iptal
+   edilmemiş) digest önizlemesinde, `completed` durumdaki her ders kartında
+   **"Düzenle"** bağlantısı vardır. Admin mevcut `ReportEntryPage`'e gider
+   (`/teacher/reports/{classCourseId}/{weekId}?returnTo=/admin/digests`), raporu
+   düzenler; **status `completed` kalır** (henüz `sent` olmaz) ve her düzenleme
+   `audit_logs`'a `report.update` olarak yazılır (spec §2, `by_role`). Öğretmene
+   bildirim/gösterge göstermez — sessiz değişiklik. `missing` derslerde ve
+   `sent`/iptal digest'lerde "Düzenle" **görünmez**. Öğretmen ekranındaki dönüş
+   butonu admin için "Gönderim ekranına dön" olur; dönüşte liste tazelenir.
+4. Admin tek tek veya sınıf bazında toplu olarak "Gönder"e basar.
+5. Sistem `snapshot`'ı yazar, **yeni `token` üretir**, `status = 'sent'` yapar,
    `send_count` artırır ve `wa.me` linkini açar:
    ```
    https://wa.me/<numara>?text=<urlencoded mesaj>
    ```
    Numara: `guardians.whatsapp_phone` (zorunlu alan, fallback yok — §2.1/§3.1).
-5. Mesaj içeriği kısa tutulur, tam rapor linkten okunur:
+6. Mesaj içeriği kısa tutulur, tam rapor linkten okunur:
    ```
    Sayın {veli adı}, {öğrenci adı} için {hafta etiketi} haftalık
    ödev takip raporu hazır:
    {BASE_URL}/r/{token}
    ```
-6. `/r/{token}` sayfası: giriş gerektirmez, salt okunur, o haftanın tüm
+7. `/r/{token}` sayfası: giriş gerektirmez, salt okunur, o haftanın tüm
    derslerinin raporunu tek sayfada gösterir.
 
 > Toplu gönderimde `wa.me` linkleri tek tek açılır (tarayıcı çoklu sekme
@@ -806,7 +815,9 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
   (ekranda görünen sütunlar + aktif filtre, §5.7)
 - **Okul yönetimi** (CRUD; öğrenci formunda **"Okul"** seçici + hızlı ekle ve
   **"Sınıf seviyesi"** dropdown — `classes` ile karışmaz)
-- Haftalık gönderim ekranı (sınıf filtreli; digest görüntülenme bilgisi)
+- Haftalık gönderim ekranı (sınıf filtreli; digest görüntülenme bilgisi;
+  önizlemede gönderilmemiş kayıtlarda `completed` ders başına **"Düzenle"** —
+  §5.4 madde 3)
 - **Riskli öğrenci listesi** (panel sekmesi): son 3 hafta, üç kriter — herhangi
   biri tetiklerse riskli (OR); nedenler ayrı rozet ("Düşük ortalama" /
   "Teslim etmeme" / "Devamsızlık"). Tanım: ortalama(ödev+ilgi) ≤ 4; verilen

@@ -206,3 +206,84 @@ describe('DigestSendPage — yeniden gönderim (popup engelleme deseni)', () => 
     expect(screen.getByText(/Görüntülendi:/)).toBeInTheDocument();
   });
 });
+
+const SNAPSHOT = {
+  week: { id: 'w1', week_no: 20, start_date: '2026-08-03', end_date: '2026-08-09', label: 'Hafta 20' },
+  class: { id: 'c1', name: 'EURİST' },
+  student: { id: 's1', name: 'Öğrenci 1' },
+  guardian_name: 'Veli 1',
+  courses: [
+    {
+      class_course_id: 'cc1',
+      course_name: 'Cebir',
+      teacher_name: 'Hoca',
+      day_of_week: 1,
+      lesson_time: '10:00',
+      status: 'completed',
+      topic_covered: 'Konu',
+      prev_homework_text: null,
+      homework: { description: 'Ödev', due_date: '2026-08-10' },
+      entry: {
+        student_id: 's1',
+        student_name: 'Öğrenci 1',
+        attendance: 'present',
+        homework_score: 8,
+        interest_score: 7,
+        teacher_note: 'not',
+      },
+    },
+    {
+      class_course_id: 'cc2',
+      course_name: 'Geometri',
+      teacher_name: 'Hoca',
+      day_of_week: 2,
+      lesson_time: '11:00',
+      status: 'missing',
+      topic_covered: null,
+      prev_homework_text: null,
+      homework: null,
+      entry: null,
+    },
+  ],
+};
+
+function previewFetch(status: string, is_revoked = false) {
+  const items = [makeDigest({ status, is_revoked })];
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/admin/academic-years')) return ok({ items: [] });
+    if (url.includes('/preview')) return ok({ preview: SNAPSHOT });
+    if (url.includes('/admin/digests')) return ok({ week_id: null, items });
+    throw new Error(`beklenmeyen istek: ${url}`);
+  });
+}
+
+describe('DigestSendPage — gönderim öncesi düzenleme', () => {
+  it('gönderilmemiş önizlemede completed derste "Düzenle" var, missing derste yok', async () => {
+    vi.stubGlobal('fetch', previewFetch('ready'));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Öğrenci 1')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Önizle' }));
+
+    const links = await screen.findAllByRole('link', { name: 'Düzenle' });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toMatch(
+      /^\/teacher\/reports\/cc1\/w1\?returnTo=/,
+    );
+  });
+
+  it('sent digest önizlemesinde "Düzenle" hiç görünmez', async () => {
+    vi.stubGlobal(
+      'fetch',
+      previewFetch('sent', false),
+    );
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Öğrenci 1')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Önizle' }));
+
+    await screen.findByText('Cebir');
+    expect(screen.queryByRole('link', { name: 'Düzenle' })).not.toBeInTheDocument();
+  });
+});

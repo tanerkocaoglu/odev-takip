@@ -5,6 +5,96 @@
 
 ---
 
+## Gönderim öncesi admin düzenleme (DigestSendPage → rapor) ✅
+
+### Süreç özeti
+
+Admin'in "Haftalık gönderim" ekranındaki önizleme artık salt-okunur değil:
+gönderilmemiş (`pending`/`ready`, iptal edilmemiş) digest'lerde `completed`
+durumdaki her ders kartında **"Düzenle"** bağlantısı var. Admin mevcut
+`ReportEntryPage`'e gidip raporu düzeltiyor, **status `completed` kalıyor**
+(henüz `sent` olmuyor), her düzenleme `audit_logs`'a `report.update` olarak
+düşüyor ve öğretmene hiçbir bildirim/gösterge gitmiyor. **Yeni yetki/route
+gerekmedi** — admin erişimi zaten vardı; eksik olan arayüzdü. Şema
+değişikliği/migration yok.
+
+**Karar (kullanıcı):** mevcut `/teacher/reports/:classCourseId/:weekId` rotası
+kullanılır; "Düzenle" yalnızca gönderilmemiş digest'lerde ve `completed`
+derslerde (missing'de yok); ders kartı başına bir tane; dönüş aynı sekmede
+"Gönderim ekranına dön" ile.
+
+### Yapılanlar
+
+- **`ReportSnapshot.tsx`** — isteğe bağlı `renderCourseAction?(course)` prop'u;
+  ders kartı başlığına aksiyon basar. Public `/r` ve veli detayı etkilenmez.
+- **`DigestSendPage.tsx`** — önizlenen digest gönderilmemişse ve ders
+  `completed`'sa `<Link>` "Düzenle" → `/teacher/reports/{cc}/{week}?returnTo=/admin/digests`.
+  `sent`/iptal veya `missing` derslerde gösterilmez. Dönüşte sayfa yeniden
+  yüklenir (liste tazelenir).
+- **`ReportEntryPage.tsx`** — `?returnTo=` (yalnızca uygulama içi yol; open
+  redirect koruması) okunur; başlıkta "Gönderim ekranına dön"/"Geri dön" butonu
+  ve `loadError` geri butonu bu hedefi kullanır.
+- **Backend değişikliği yok** — mevcut `PUT /teacher/reports/:id` + audit akışı.
+- **`spec.md`** — §5.4'e "gönderim öncesi admin düzenleme" maddesi (numaralar
+  kaydırıldı), §6 Admin güncellendi.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅.
+**Testler** — backend **235/235** (21 dosya; +1 admin completed düzenleme +
+audit `by_role=admin`), frontend **81/81** (14 dosya; `admin-digests` +2
+görünürlük, `teacher` +2 dönüş/label).
+
+**Canlı API (gerçek app.db; hafta 20 pending, hafta 19 sent):**
+1. Pending önizleme ders durumları: `Matematik=completed`, diğer 3 ders
+   `missing`.
+2. Admin `PUT /teacher/reports/:id` → 200, `status=completed`; DB'de
+   `reports.status=completed`; `audit_logs` `report.update`
+   `{"by_role":"admin"}`.
+3. Düzenleme sonrası digest durumu **pending** kaldı (sent olmadı).
+4. **Öğretmen farkındalığı:** sahibi öğretmenin `GET /teacher/reports/:id`
+   payload'ı ve "geçmiş raporlar" satır anahtarlarında admin-düzenleme alanı
+   **YOK** ✅ (sessiz değişiklik).
+5. Sent (hafta 19) önizleme durumları: 4 ders de completed.
+
+**Canlı tarayıcı (headless Chrome/CDP, gerçek backend):**
+1. Gönderilmemiş önizlemede **Düzenle yalnızca `completed` derste (1)**;
+   `missing` derslerde **0** ✅.
+2. **Sent önizlemede Düzenle sayısı 0** ✅.
+3. Düzenle → edit ekranı (`/teacher/reports/seed-class-course-001-1/seed-week-20`)
+   → "Gönderim ekranına dön" → `/admin/digests`'e dönüş; liste için yeni istek
+   atıldı ve liste yeniden render edildi (**2 → 4 istek**, bayat değil) ✅.
+   > Not: `DigestSendPage`'de hafta seçici olmadığından (varsayılan "bu hafta"
+   > boş), tarayıcı testinde liste yanıtı hafta 20/19'ün **gerçek API
+   > verisiyle** enjekte edildi; önizleme/düzenleme/dönüş istekleri gerçek
+   > backend'e gitti.
+
+### Çözülen sorunlar
+
+- **Login rate limit (canlı script):** tekrarlı admin girişleri 15 dk / 10
+  sınırını aştı → doğrulama, login yerine DB `token_version`'ından **imzalı JWT**
+  (jwt.sign) ile yapıldı (uygulama kodu değil, doğrulama yöntemi).
+- **Tarayıcı testinde isim çakışması:** pending/sent satırlar aynı öğrenci
+  adlarını taşıdığından satır, durum etiketiyle ('Eksikli'/'Gönderildi') ve
+  açık önizleme 'Gizle' durumuyla ayrıştırıldı.
+
+### Etkilenen dosyalar
+
+```
+src/components/ReportSnapshot.tsx
+src/pages/admin/DigestSendPage.tsx
+src/pages/teacher/ReportEntryPage.tsx
+src/admin-digests.test.tsx  src/teacher.test.tsx
+backend/src/teacher.test.ts
+spec.md  PROGRESS.md
+```
+
+### Commit
+
+Bu commit — gönderim öncesi admin düzenleme + PROGRESS.
+
+---
+
 ## İlk girişte zorunlu şifre değiştirme (öğrenci/veli) ✅
 
 ### Süreç özeti

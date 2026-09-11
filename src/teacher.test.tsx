@@ -297,4 +297,35 @@ describe('ReportEntryPage', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('varsayılan dönüş "Geri dön" (öğretmen)', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, REPORT));
+    renderEntryPage();
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole('button', { name: 'Geri dön' })).toBeInTheDocument();
+  });
+
+  it('returnTo=/admin/digests ise "Gönderim ekranına dön" ve hedefe gider', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, REPORT));
+    render(
+      <MemoryRouter
+        initialEntries={['/teacher/reports/cc1/w1?returnTo=%2Fadmin%2Fdigests']}
+      >
+        <Routes>
+          <Route path="/teacher/reports/:classCourseId/:weekId" element={<ReportEntryPage />} />
+          <Route path="/admin/digests" element={<div>Gönderim Sayfası</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Gönderim ekranına dön' }));
+    await waitFor(() => {
+      expect(screen.getByText('Gönderim Sayfası')).toBeInTheDocument();
+    });
+  });
 });

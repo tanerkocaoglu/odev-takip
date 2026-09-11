@@ -586,6 +586,27 @@ describe('POST /api/v1/teacher/reports/:id/complete', () => {
     expect(audit!.action).toBe('report.update');
   });
 
+  it('admin completed raporu düzenler; status completed kalır, audit by_role=admin', async () => {
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ topic_covered: 'Admin düzeltmesi' });
+    expect(res.status).toBe(200);
+    expect(res.body.report.status).toBe('completed');
+    expect(res.body.report.topic_covered).toBe('Admin düzeltmesi');
+
+    const audit = db
+      .prepare(
+        `SELECT action, diff FROM audit_logs
+         WHERE entity_type = 'report' AND entity_id = ?
+         ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(reportId) as { action: string; diff: string } | undefined;
+    expect(audit).toBeDefined();
+    expect(audit!.action).toBe('report.update');
+    expect(JSON.parse(audit!.diff)).toMatchObject({ by_role: 'admin' });
+  });
+
   it('gönderilmiş (sent) rapor düzenlenemez ve tamamlanamaz (403)', async () => {
     db.prepare(`UPDATE reports SET status = 'sent' WHERE id = ?`).run(reportId);
 
