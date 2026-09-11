@@ -5,6 +5,123 @@
 
 ---
 
+## CSV toplu öğrenci içe aktarma + filtreli CSV dışa aktarma ✅
+
+### Süreç özeti
+
+İki ilişkili özellik: (1) admin öğrenci listesini tek CSV dosyasıyla kuruyor —
+şablon indirme + önizleme + **hepsi ya da hiçbiri** kaydetme; (2) "Raporlar",
+"Öğrenciler", "Veliler" ekranlarındaki aktif filtre/arama sonucu, ekranda görünen
+sütunlarla CSV olarak iniyor. Biçim **CSV'dir** (gerçek `.xlsx` değil); UTF-8
+**BOM'lu** yazılır (Excel Türkçe karakterleri doğru açar). **Şema değişikliği ve
+migration yok** — yalnızca mevcut tablolara okuma/yazma (teyit edildi).
+Yeni bağımlılık eklenmedi; CSV parse/üret için küçük bir iç util yazıldı.
+
+**Kullanıcı kararları:** (1) tek ortak başlangıç şifresi (hash bir kez), (2)
+UTF-8 + BOM, (3) soft-deleted kayıt eşleştirilmez → yeni kayıt açılır (açıkça
+belirtilen `username` silinmiş bir kayda denk gelirse çakışma), (4) CSV'de
+eşleşmeyen dershane sınıfı **satır hatası** (yalnızca okul ve veli otomatik
+oluşturulur).
+
+### Yapılanlar
+
+**Ortak altyapı**
+- `backend/src/utils/csv.ts` (yeni): `toCsv` (RFC 4180 escape, CRLF, isteğe
+  bağlı BOM) + `parseCsv`/`csvToRecords` (tırnaklı alan, alan içi virgül/tırnak/
+  satır sonu, CRLF/LF, BOM strip). `utils/csv.test.ts` (8 test).
+- `src/services/api.ts`: `downloadCsv(path, fallback)` — Bearer + blob +
+  `a[download]`; `adminApi.exports.{reports,students,guardians}`.
+
+**A. Toplu öğrenci içe aktarma (spec §5.6)**
+- `backend/src/services/studentImport.ts` (yeni): `prepareImport` (ayrıştır +
+  doğrula + eşleştir, **yazmaz**) ve `commitImport` (tek `BEGIN/COMMIT`,
+  hata → `ROLLBACK`). Sütunlar mevcut öğrenci/veli formundan türetildi:
+  `ogrenci_adi, dershane_sinifi, veli_adi, veli_whatsapp, okul_adi,
+  sinif_seviyesi, veli_telefon_2, ogrenci_kullanici_adi, veli_kullanici_adi`.
+- Eşleştirme: sınıf `name_normalized` (yoksa hata); okul `name_normalized`
+  (yoksa oluştur); veli normalize `whatsapp_phone` (mevcut aktif **veya** dosya
+  içi önceki satır → kardeş). Ad farkı uyarı. Soft-delete eşleşmez.
+- `backend/src/middleware/upload.ts`: `csvUploadSingle` (memory, 1 dosya, 2 MB,
+  `.csv`; boyut limiti CSV'ye özgü Türkçe mesaja çevrilir).
+- `backend/src/routes/admin.ts`: `GET /admin/students/import/template`
+  (BOM'lu başlık satırı), `POST /admin/students/import?dry_run=true|false`.
+  Hata varsa hiçbir kayıt yazılmaz; başarı `audit_logs`'a `student.import`.
+- Frontend: `StudentsPage` **"CSV ile toplu ekle"** modalı — şablon indir +
+  dosya seç + ortak şifre → **Önizle** (özet + satır/alan bazlı hata-uyarı
+  listesi) → hata yoksa **"N kaydı oluştur"**; başarıda "N öğrenci oluşturuldu."
+
+**B. Filtreli CSV dışa aktarma (spec §5.7)**
+- `backend/src/services/csvExport.ts` (yeni): üç sorgu da ekran filtrelerini
+  **SQL seviyesinde** uygular, sayfalama yok (tüm eşleşenler, 5000 sınırı),
+  UTF-8 BOM'lu CSV döner. Sütunlar ekranla birebir (raporlar: hafta/sınıf/ders/
+  gün-saat/öğrenci sayısı/durum/tamamlanma; öğrenciler: ad/veli/sınıf/okul/
+  seviye/kullanıcı adı; veliler: ad/kullanıcı adı/WhatsApp/çocuk sayısı/KVKK).
+- `GET /admin/{reports,students,guardians}/export` (`auth` + `adminOnly`).
+- Frontend: üç ekranda **"CSV indir"** butonu aktif `q`/filtreleri geçirir.
+- `src/components/admin/ui.tsx`: `SecondaryButton`'a `disabled` eklendi (buton
+  durumları için gerekliydi).
+
+**Spec** — §5.6 (içe aktarma), §5.7 (dışa aktarma), §6 Admin (butonlar).
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+**Testler** — backend **221/221** (20 dosya; `utils/csv` +8, `student-import`
++10, `csv-export` +5), frontend **71/71** (13 dosya; `csv.test.tsx` +5).
+**Canlı (çalışan dev sunucusu, gerçek app.db, admin; yazma YOK):**
+1. `GET /admin/students/import/template` → 200 `text/csv`, başlıklar doğru,
+   **ilk 3 bayt `EF BB BF`** (BOM) ✅.
+2. Kardeş + yeni okul önizlemesi (`dry_run=true`): `{new_students:2,
+   new_guardians:1, new_schools:1, matched_*:0}`, `ok=true`; app.db'de kayıt
+   oluşmadı ✅.
+3. Dışa aktarma: öğrenciler 12, veliler 12, raporlar (`status=completed`) 37
+   satır; üçü de 200 `text/csv`, **BOM `EF BB BF`**, başlıklar ekranla aynı ✅.
+4. **"Hepsi ya da hiçbiri" transaction kanıtı (gerçek app.db):** 3 satırlık CSV —
+   2 geçerli (biri ortak telefonlu kardeş, biri yeni okul) + 1 satırda **var
+   olmayan sınıf** — `dry_run=false` ile gönderildi. Yanıt **400
+   `VALIDATION_ERROR`** (`error.details.errors` = satır 3 `dershane_sinifi`);
+   işlem öncesi→sonrası DB sayımları **birebir aynı** (users 29, students 12,
+   guardians 12, schools 4) ve adı geçen kullanıcı kaydı 0 ✅. Geçerli satırlar
+   geçersizden **önce** gelse bile hiçbiri yazılmadı → `ROLLBACK`/hepsi-ya-da-
+   hiçbiri fiilen kanıtlandı.
+
+### Çözülen sorunlar
+
+- **PowerShell UTF-8 mojibake riski:** canlı doğrulama `fetch` kullanan bir Node
+  script'i ile yapıldı (Türkçe CSV gövdesi bozulmasın; CLAUDE.md kuralı).
+- **Multer boyut mesajı:** CSV limiti (2 MB) için genel 10 MB mesajı yerine
+  `csvUploadSingle` wrapper'ı CSV'ye özgü Türkçe hata üretir.
+- **Commit hata durumu 400'e çekildi:** `dry_run=false` + satır hatası artık
+  proje hata sözleşmesine uygun **`400 VALIDATION_ERROR`** döner
+  (`error.details.errors` satır listesi); önceden 200 + `ok:false` idi. Bunun
+  için `AppError`'a opsiyonel `details` alanı eklendi (geriye uyumlu).
+- **Testte `URL.createObjectURL`:** jsdom uygulamadığından `downloadCsv`
+  testleri URL stub'ı ve token ile koşuldu.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/csv.ts csv.test.ts                      (yeni)
+backend/src/services/studentImport.ts csvExport.ts        (yeni)
+backend/src/middleware/upload.ts                          (+ csvUploadSingle)
+backend/src/routes/admin.ts                               (+ template/import/export)
+backend/src/student-import.test.ts csv-export.test.ts     (yeni)
+src/types.ts                                              (+ StudentImport*)
+src/services/api.ts                                       (+ downloadCsv, exports)
+src/components/admin/ui.tsx                               (SecondaryButton disabled)
+src/pages/admin/StudentsPage.tsx                          (toplu ekle modalı + CSV indir)
+src/pages/admin/GuardiansPage.tsx AdminReportsPage.tsx    (CSV indir)
+src/csv.test.tsx                                          (yeni)
+spec.md (§5.6, §5.7, §6)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Veli rapor ekranları — aynı görsel dil ✅
 
 ### Süreç özeti
