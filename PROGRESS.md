@@ -5,6 +5,96 @@
 
 ---
 
+## Veli rapor ekranları — aynı görsel dil ✅
+
+### Süreç özeti
+
+Öğrenci ekranındaki görsel dil (`elevation-1`, duruma göre sol kenar şeridi,
+`BookOpen` ikonu, dolgulu/normalize rozetler) veli rapor ekranlarına taşındı:
+`ReportSnapshot` (özet + ders kartları), `GuardianHomePage` (rapor listesi),
+`GuardianReportDetailPage` (teslim geçmişi) ve `TokenReportPage` (`/r/{token}`,
+logo). **Route/API/veri modeli değişmedi.** `ReportSnapshot` **üç yerde**
+kullanılıyor — public, veli detayı ve **admin digest önizlemesi** — hepsi tutarlı
+görünüyor; **logo yalnızca `TokenReportPage`'e** konuldu (admin önizlemesinde yok).
+
+**Kırmızı çizgi:** Puanlar her yerde ham 1–10 gösterilir; yüzdelik/özet/ortalama
+hesabı yok (aşağıda teyit).
+
+### Yapılanlar
+
+**`src/components/ReportSnapshot.tsx`**
+- Ders kartlarına `border-l-4` durum şeridi: `missing`→amber (`att-late`),
+  `entry` yok/`present`→nötr (`status-draft`), `late`→amber, `absent`→kırmızı,
+  `excused`→mavi. Kartta `data-status`.
+- `BookOpen` ikonu (16px, `aria-hidden`, `text-muted`) ders adı yanında.
+- Özet + ders kartlarına `elevation-1`.
+- Yerel `AttendanceBadge` kaldırıldı → paylaşılan `Badge`/`AttendanceBadge`
+  (`components/admin/ui`) kullanılıyor. Metinler korundu ("Rapor hazır",
+  "Bu hafta rapor girilmedi", devamsızlık etiketleri).
+
+**`src/pages/guardian/GuardianHomePage.tsx`**
+- `PageTitle` (FileText ikonu); tablo konteynerine `elevation-1`.
+- Tüm rapor satırı **tıklanabilir + klavye erişimli**: `role="link"`,
+  `tabIndex=0`, `aria-label`, `onClick`, Enter/Space `onKeyDown`; hover
+  `hover:bg-bg`. İçteki "Aç" linki korundu (`stopPropagation`).
+- Ders sütunu `BookOpen` + `tabular` sayaç.
+
+**`src/pages/guardian/GuardianReportDetailPage.tsx`**
+- `PageTitle` (FileText); başlık h1 düzeyi/erişilebilir adı korundu.
+- Geçmiş teslimler mobil öncelikli temiz kart listesine dönüştü: sol şerit
+  (`sub-uploaded`/`sub-late`/`sub-missing`), `BookOpen`, `data-status`,
+  `elevation-1`, paylaşılan `Badge` (Yüklendi/Geç yüklendi/İncelendi/
+  Yüklenmedi), dosya çipleri.
+
+**`src/pages/TokenReportPage.tsx`**
+- Üstte ortalanmış `BrandLogo` (`h-16 object-contain`); 410/hata kartlarına
+  `elevation-1`. Logo **yalnızca burada** (admin önizlemesini etkilemez).
+
+### Doğrulamalar
+
+- typecheck ✅, lint ✅, build ✅; frontend **66/66** (12 dosya; +3 klavye/mouse
+  satır testi), backend **198/198** ✅.
+- **Ham puan teyidi:** `ReportSnapshot`'ta `homework_score` / `interest_score`
+  doğrudan basılıyor; `yüzde|percent|ortalama|average|Math.round|/10|*10`
+  aramasında hesaplama **yok** (yalnızca "ham 1–10" açıklaması). Canlıda
+  önizleme 9/7, public/detay 8/8 gösterdi.
+- **Üç kullanım yeri + admin logosuzluk (headless Chrome/CDP, canlı):**
+  - `/r/seed-token-w19-001`: logo **1**, ders şeritleri `present=rgb(90,102,114)`,
+    badge `rgb(23,92,211)`; ekran görüntüsü üstte ortalanmış logo.
+  - `/guardian/reports/:id`: aynı `ReportSnapshot`; teslim kartları
+    yeşil/amber/kırmızı.
+  - Admin `DigestSendPage` önizleme modalı (hafta 21 demo digest; `status=ready`):
+    `ReportSnapshot` birebir aynı; şeritler `missing=rgb(180,83,9)` /
+    `present=rgb(90,102,114)`, badge amber; **modal içinde logo yok** (tek logo
+    soldaki AdminLayout sidebar'ı). Demo satırları sonra silindi.
+- **Klavye/mouse (GuardianHomePage satırı):** Tab ile odak satıra geliyor
+  (`document.activeElement` = `TR | 19. hafta raporunu aç`), `outline: solid
+  2px rgb(13,107,98)` (accent, `:focus-visible`); Enter **ve** Space ile
+  detaya gidiyor; mouse tıklaması da aynı (`role="link"`, `tabIndex=0`).
+  - **Bulunan ve düzeltilen a11y sorunu:** tablo sarmalayıcısındaki
+    `overflow-hidden`, `outline-offset: 2px` halkasını kırpıyordu → satıra
+    `focus-visible:outline-offset-[-2px]` eklendi; halka artık görünür.
+- Ekran görüntüleri: public mobil+masaüstü, veli detay mobil+masaüstü, veli
+  ana ekran (hover + gerçek Tab odak halkası), admin önizleme.
+
+### Etkilenen dosyalar
+
+```
+src/components/ReportSnapshot.tsx
+src/pages/guardian/GuardianHomePage.tsx
+src/pages/guardian/GuardianReportDetailPage.tsx
+src/pages/TokenReportPage.tsx
+src/token-report.test.tsx   (+ logo + data-status)
+src/guardian.test.tsx       (+ data-status; + mouse/Enter/Space testleri)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğrenci "Ödevlerim" ekranı — admin görsel dili ✅
 
 ### Süreç özeti

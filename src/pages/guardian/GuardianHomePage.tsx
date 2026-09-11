@@ -6,12 +6,14 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { BookOpen, FileText } from 'lucide-react';
 import type { GuardianChild, GuardianReportItem } from '../../types';
 import { guardianApi, ApiClientError } from '../../services/api';
-import { LoadingState, EmptyState, FormError } from '../../components/admin/ui';
+import { LoadingState, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
 
 export default function GuardianHomePage() {
+  const navigate = useNavigate();
   const [students, setStudents] = useState<GuardianChild[] | null>(null);
   const [selected, setSelected] = useState<string>('');
   const [reports, setReports] = useState<GuardianReportItem[] | null>(null);
@@ -77,7 +79,7 @@ export default function GuardianHomePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text">Öğrenci raporlarım</h1>
+      <PageTitle icon={FileText}>Öğrenci raporlarım</PageTitle>
 
       <FormError message={error} />
 
@@ -152,7 +154,7 @@ export default function GuardianHomePage() {
           {filtered.length === 0 ? (
             <EmptyState message="Bu filtrelerle rapor yok." />
           ) : (
-            <div className="overflow-hidden rounded-md border border-border bg-surface">
+            <div className="elevation-1 overflow-hidden rounded-md border border-border bg-surface">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
@@ -165,7 +167,20 @@ export default function GuardianHomePage() {
                 </thead>
                 <tbody>
                   {filtered.map((r) => (
-                    <tr key={r.id} className="border-b border-border last:border-b-0">
+                    <tr
+                      key={r.id}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`${r.relative_week_no}. hafta raporunu aç`}
+                      onClick={() => navigate(`/guardian/reports/${r.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          navigate(`/guardian/reports/${r.id}`);
+                        }
+                      }}
+                      className="cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-bg focus-visible:outline-offset-[-2px]"
+                    >
                       <td className="px-3 py-2 text-[13px] text-text">
                         <span className="tabular font-medium">{r.relative_week_no}</span>
                         <span className="block text-xs text-muted">{r.week.label}</span>
@@ -173,8 +188,11 @@ export default function GuardianHomePage() {
                       <td className="px-3 py-2 text-[13px] text-text">
                         {r.class_name ?? '—'}
                       </td>
-                      <td className="tabular px-3 py-2 text-[13px] text-muted">
-                        {r.course_count}
+                      <td className="px-3 py-2 text-[13px] text-muted">
+                        <span className="inline-flex items-center gap-1.5">
+                          <BookOpen size={14} aria-hidden="true" />
+                          <span className="tabular">{r.course_count}</span>
+                        </span>
                       </td>
                       <td className="tabular px-3 py-2 text-[13px] text-muted">
                         {new Date(r.sent_at).toLocaleDateString('tr-TR')}
@@ -182,6 +200,7 @@ export default function GuardianHomePage() {
                       <td className="px-3 py-2 text-right">
                         <Link
                           to={`/guardian/reports/${r.id}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-sm font-medium text-accent hover:underline"
                         >
                           Aç

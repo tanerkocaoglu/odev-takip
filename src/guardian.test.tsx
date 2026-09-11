@@ -191,6 +191,63 @@ describe('GuardianHomePage', () => {
     expect(screen.getByText('12 - 18 Ocak')).toBeInTheDocument();
     expect(screen.queryByText('05 - 11 Ocak')).not.toBeInTheDocument();
   });
+
+  function renderWithDetail() {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ items: [STUDENTS.items[0]] }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => REPORTS });
+    vi.stubGlobal('fetch', fetchMock);
+    return render(
+      <MemoryRouter initialEntries={['/guardian']}>
+        <Routes>
+          <Route path="/guardian" element={<GuardianHomePage />} />
+          <Route path="/guardian/reports/:id" element={<div>DETAY-SAYFASI</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('rapor satırı mouse ile detaya gider', async () => {
+    renderWithDetail();
+    await waitFor(() => {
+      expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('link', { name: /hafta raporunu aç/i }));
+    await waitFor(() => {
+      expect(screen.getByText('DETAY-SAYFASI')).toBeInTheDocument();
+    });
+  });
+
+  it('rapor satırı Enter ile detaya gider (klavye erişilebilirliği)', async () => {
+    renderWithDetail();
+    await waitFor(() => {
+      expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
+    });
+    const row = screen.getByRole('link', { name: /hafta raporunu aç/i });
+    expect(row).toHaveAttribute('tabindex', '0');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    await waitFor(() => {
+      expect(screen.getByText('DETAY-SAYFASI')).toBeInTheDocument();
+    });
+  });
+
+  it('rapor satırı Space ile detaya gider (klavye erişilebilirliği)', async () => {
+    renderWithDetail();
+    await waitFor(() => {
+      expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
+    });
+    fireEvent.keyDown(screen.getByRole('link', { name: /hafta raporunu aç/i }), {
+      key: ' ',
+    });
+    await waitFor(() => {
+      expect(screen.getByText('DETAY-SAYFASI')).toBeInTheDocument();
+    });
+  });
 });
 
 const DETAIL = {
@@ -248,7 +305,7 @@ const DETAIL = {
 describe('GuardianReportDetailPage', () => {
   it('snapshot + ödev teslim geçmişi + dosya butonu gösterilir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, DETAIL));
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={['/guardian/reports/d1']}>
         <Routes>
           <Route path="/guardian/reports/:id" element={<GuardianReportDetailPage />} />
@@ -262,8 +319,12 @@ describe('GuardianReportDetailPage', () => {
       ).toBeInTheDocument();
     });
     expect(screen.getAllByText('Matematik').length).toBeGreaterThan(0);
+    // Puan ham: 8 ve 9 (homework_score / interest_score) aynen.
     expect(screen.getByText('8')).toBeInTheDocument();
+    expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('Yüklendi')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /odev\.jpg/ })).toBeInTheDocument();
+    // Teslim kartı durum şeridi: zamanında yüklendi.
+    expect(container.querySelector('[data-status="uploaded"]')).not.toBeNull();
   });
 });

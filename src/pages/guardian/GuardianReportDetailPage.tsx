@@ -6,15 +6,40 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { BookOpen, FileText } from 'lucide-react';
 import type { GuardianReportDetail } from '../../types';
 import { guardianApi, openProtectedFile, ApiClientError } from '../../services/api';
 import ReportSnapshot from '../../components/ReportSnapshot';
-import { LoadingState, EmptyState, FormError } from '../../components/admin/ui';
+import {
+  LoadingState,
+  EmptyState,
+  FormError,
+  PageTitle,
+  Badge,
+  type BadgeTone,
+} from '../../components/admin/ui';
 
-const SUB_LABELS = {
-  submitted: 'Yüklendi',
-  reviewed: 'İncelendi',
-} as const;
+type SubmissionItem = GuardianReportDetail['submissions'][number];
+type SubState = 'uploaded' | 'late' | 'missing';
+
+/** Sol kenar şeridi — teslim durumundan türetilir (mevcut token'lar). */
+const SUB_STRIPE: Record<SubState, string> = {
+  uploaded: 'border-l-sub-uploaded',
+  late: 'border-l-sub-late',
+  missing: 'border-l-sub-missing',
+};
+
+function subState(sub: SubmissionItem): SubState {
+  if (!sub.submission) return 'missing';
+  return sub.submission.is_late ? 'late' : 'uploaded';
+}
+
+function subBadge(sub: SubmissionItem): { tone: BadgeTone; label: string } {
+  if (!sub.submission) return { tone: 'danger', label: 'Yüklenmedi' };
+  if (sub.submission.is_late) return { tone: 'warning', label: 'Geç yüklendi' };
+  if (sub.submission.status === 'reviewed') return { tone: 'info', label: 'İncelendi' };
+  return { tone: 'positive', label: 'Yüklendi' };
+}
 
 export default function GuardianReportDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -63,10 +88,8 @@ export default function GuardianReportDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-xl font-semibold text-text">
-          {data.digest.week.label} haftalık rapor
-        </h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PageTitle icon={FileText}>{data.digest.week.label} haftalık rapor</PageTitle>
         <span className="tabular text-sm text-muted">
           {new Date(data.digest.sent_at).toLocaleDateString('tr-TR')} tarihinde
           gönderildi
@@ -78,54 +101,46 @@ export default function GuardianReportDetailPage() {
       <section>
         <h2 className="text-base font-semibold text-text">Ödev teslim geçmişi</h2>
         <div className="mt-3 space-y-3">
-          {data.submissions.map((sub) => (
-            <div
-              key={sub.course_name}
-              className="rounded-md border border-border bg-surface p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-text">
-                  {sub.course_name}
-                </h3>
-                {sub.submission ? (
-                  <span
-                    className={
-                      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-                      (sub.submission.is_late
-                        ? 'bg-att-late/10 text-att-late'
-                        : 'bg-status-sent/10 text-status-sent')
-                    }
-                  >
-                    {sub.submission.is_late
-                      ? 'Geç yüklendi'
-                      : SUB_LABELS[sub.submission.status]}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center rounded-full bg-att-absent/10 px-2 py-0.5 text-xs font-medium text-att-absent">
-                    Yüklenmedi
-                  </span>
+          {data.submissions.map((sub) => {
+            const state = subState(sub);
+            const badge = subBadge(sub);
+            return (
+              <div
+                key={sub.course_name}
+                data-status={state}
+                className={
+                  'elevation-1 rounded-md border border-border border-l-4 bg-surface p-4 ' +
+                  SUB_STRIPE[state]
+                }
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-text">
+                    <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
+                    {sub.course_name}
+                  </h3>
+                  <Badge tone={badge.tone}>{badge.label}</Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted">
+                  Ödev: {sub.description || '—'}
+                  <span className="tabular"> · son tarih: {sub.due_date}</span>
+                </p>
+                {sub.submission && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {sub.submission.files.map((file) => (
+                      <button
+                        key={file.key}
+                        type="button"
+                        onClick={() => void openFile(file.key)}
+                        className="rounded-md border border-border px-3 py-1.5 text-[13px] font-medium text-accent transition-colors hover:bg-bg"
+                      >
+                        {file.filename}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-              <p className="mt-1 text-sm text-muted">
-                Ödev: {sub.description || '—'}
-                <span className="tabular"> · son tarih: {sub.due_date}</span>
-              </p>
-              {sub.submission && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {sub.submission.files.map((file) => (
-                    <button
-                      key={file.key}
-                      type="button"
-                      onClick={() => void openFile(file.key)}
-                      className="rounded-md border border-border px-3 py-1.5 text-[13px] font-medium text-accent transition-colors hover:bg-bg"
-                    >
-                      {file.filename}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>

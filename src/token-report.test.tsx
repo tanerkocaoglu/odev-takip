@@ -79,19 +79,29 @@ afterEach(() => {
 describe('TokenReportPage', () => {
   it('geçerli snapshot içeriğini gösterir (dersler + puanlar + eksik ders)', async () => {
     vi.stubGlobal('fetch', mockFetch(200, { snapshot: SNAPSHOT, sent_at: null }));
-    renderTokenPage('tok');
+    const { container } = renderTokenPage('tok');
 
     await waitFor(() => {
       expect(screen.getByText('05 - 11 Ocak haftalık rapor')).toBeInTheDocument();
     });
+    // Marka logosu public sayfada görünür.
+    expect(
+      screen.getByRole('img', { name: 'Ödev Takip' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Örnek Kişi 6')).toBeInTheDocument();
     expect(screen.getByText('Matematik')).toBeInTheDocument();
     expect(screen.getByText('ÖKLİD')).toBeInTheDocument();
+    // Puanlar ham 1–10: 8 ve 9 aynen basılır, özet/yüzdelik yok.
     expect(screen.getByText('8')).toBeInTheDocument();
     expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('Gayretli.')).toBeInTheDocument();
     expect(screen.getByText('Bu hafta rapor girilmedi')).toBeInTheDocument();
     expect(screen.getByText('Fizik')).toBeInTheDocument();
+    // Durum şeritleri: entry present → "present", rapor girilmemiş → "missing".
+    const statuses = Array.from(container.querySelectorAll('[data-status]')).map((el) =>
+      el.getAttribute('data-status'),
+    );
+    expect(statuses).toEqual(['present', 'missing']);
   });
 
   it('iptal edilmiş token 410 gösterir', async () => {

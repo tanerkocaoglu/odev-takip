@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom';
 import type { DigestSnapshot } from '../types';
 import { publicApi, ApiClientError } from '../services/api';
 import ReportSnapshot from '../components/ReportSnapshot';
+import BrandLogo from '../components/BrandLogo';
 
 export default function TokenReportPage() {
   const { token } = useParams<{ token: string }>();
@@ -47,12 +48,16 @@ export default function TokenReportPage() {
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <div className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">
+        <div className="mb-6 flex justify-center">
+          <BrandLogo className="h-16 w-auto object-contain" />
+        </div>
+
         <h1 className="text-2xl font-semibold text-text">
           Haftalık ödev takip raporu
         </h1>
 
         {gone && (
-          <div className="mt-6 rounded-md border border-border bg-surface p-6 text-center">
+          <div className="elevation-1 mt-6 rounded-md border border-border bg-surface p-6 text-center">
             <p className="text-sm text-text">Bu rapor artık geçerli değil.</p>
             <p className="mt-1 text-sm text-muted">
               Güncel rapor için veli panelinizi kullanabilirsiniz.
@@ -61,7 +66,7 @@ export default function TokenReportPage() {
         )}
 
         {error && (
-          <div className="mt-6 rounded-md border border-border bg-surface p-6 text-center">
+          <div className="elevation-1 mt-6 rounded-md border border-border bg-surface p-6 text-center">
             <p className="text-sm text-muted">{error}</p>
           </div>
         )}

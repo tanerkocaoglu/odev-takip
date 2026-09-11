@@ -1,40 +1,36 @@
 /**
  * Salt-okunur haftalık rapor görünümü — bir `DigestSnapshot`'ı render eder.
- * Hem `/r/{token}` public sayfası hem veli paneli detayı bu bileşeni kullanır
- * (spec.md §5.4 adım 6, §6 Veli). KVKK gereği snapshot yalnızca tek öğrencinin
- * satırını içerir; bileşen bu yüzden tek satırlık bir tablo çizer.
+ * Hem `/r/{token}` public sayfası, hem veli paneli detayı, hem de admin digest
+ * önizlemesi bu bileşeni kullanır (spec.md §5.4 adım 6, §6 Veli). KVKK gereği
+ * snapshot yalnızca tek öğrencinin satırını içerir; bileşen bu yüzden tek
+ * satırlık bir tablo çizer.
+ *
+ * Görsel dil: ders kartlarında duruma göre sol kenar şeridi + `BookOpen` ikonu
+ * + `elevation-1`; rozetler paylaşılan `Badge` / `AttendanceBadge` ile dolgulu.
+ * **Puanlar her zaman ham 1–10 değeridir** — yüzdelik veya başka bir özet
+ * üretilmez (kırmızı çizgi).
  */
 
-import type { DigestSnapshot, Attendance } from '../types';
-import { ATTENDANCE_LABELS, DAY_LABELS } from '../types';
+import { BookOpen } from 'lucide-react';
+import type { DigestSnapshot, DigestSnapshotCourse } from '../types';
+import { DAY_LABELS } from '../types';
+import { AttendanceBadge, Badge } from './admin/ui';
 
-const ATT_STYLES: Record<Attendance, string> = {
-  present: 'text-present',
-  late: 'text-att-late',
-  absent: 'text-att-absent',
-  excused: 'text-excused',
+/** Sol kenar şeridi — devamsızlık veya "rapor girilmedi" durumundan türetilir. */
+type CourseStripe = 'missing' | 'neutral' | 'present' | 'late' | 'absent' | 'excused';
+
+const STRIPE_CLASS: Record<CourseStripe, string> = {
+  missing: 'border-l-att-late',
+  neutral: 'border-l-status-draft',
+  present: 'border-l-status-draft',
+  late: 'border-l-att-late',
+  absent: 'border-l-att-absent',
+  excused: 'border-l-excused',
 };
 
-const ATT_BG: Record<Attendance, string> = {
-  present: 'bg-present/10',
-  late: 'bg-att-late/10',
-  absent: 'bg-att-absent/10',
-  excused: 'bg-excused/10',
-};
-
-function AttendanceBadge({ attendance }: { attendance: Attendance }) {
-  return (
-    <span
-      className={
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-        ATT_BG[attendance] +
-        ' ' +
-        ATT_STYLES[attendance]
-      }
-    >
-      {ATTENDANCE_LABELS[attendance]}
-    </span>
-  );
+function courseStripe(course: DigestSnapshotCourse): CourseStripe {
+  if (course.status === 'missing') return 'missing';
+  return course.entry?.attendance ?? 'neutral';
 }
 
 export default function ReportSnapshot({
@@ -46,7 +42,7 @@ export default function ReportSnapshot({
 }) {
   return (
     <div className="space-y-6">
-      <div className="rounded-md border border-border bg-surface p-5">
+      <div className="elevation-1 rounded-md border border-border bg-surface p-5">
         <h2 className="text-lg font-semibold text-text">
           {snapshot.week.label} haftalık rapor
         </h2>
@@ -70,33 +66,42 @@ export default function ReportSnapshot({
         </dl>
       </div>
 
-      {snapshot.courses.map((course) =>
-        course.status === 'missing' ? (
-          <div
-            key={course.class_course_id}
-            className="rounded-md border border-border bg-surface p-5"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-text">
-                {course.course_name}
-              </h3>
-              <span className="inline-flex items-center rounded-full bg-status-draft/10 px-2 py-0.5 text-xs font-medium text-status-draft">
-                Bu hafta rapor girilmedi
-              </span>
+      {snapshot.courses.map((course) => {
+        const stripe = courseStripe(course);
+        const cardClass =
+          'elevation-1 rounded-md border border-border border-l-4 bg-surface p-5 ' +
+          STRIPE_CLASS[stripe];
+
+        if (course.status === 'missing') {
+          return (
+            <div
+              key={course.class_course_id}
+              data-status={stripe}
+              className={cardClass}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-base font-semibold text-text">
+                  <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
+                  {course.course_name}
+                </h3>
+                <Badge tone="warning">Bu hafta rapor girilmedi</Badge>
+              </div>
             </div>
-          </div>
-        ) : (
+          );
+        }
+
+        return (
           <div
             key={course.class_course_id}
-            className="rounded-md border border-border bg-surface p-5"
+            data-status={stripe}
+            className={cardClass}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-base font-semibold text-text">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-text">
+                <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
                 {course.course_name}
               </h3>
-              <span className="inline-flex items-center rounded-full bg-status-completed/10 px-2 py-0.5 text-xs font-medium text-status-completed">
-                Rapor hazır
-              </span>
+              <Badge tone="info">Rapor hazır</Badge>
             </div>
 
             <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
@@ -172,8 +177,8 @@ export default function ReportSnapshot({
               </p>
             )}
           </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
