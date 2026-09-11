@@ -72,6 +72,22 @@ frontend **85/85** (15 dosya; +3 teacher-history, +1 admin-reports).
 - Sınıf=`seed-class-001` → istekte `class_id=seed-class-001`.
 - Arama kutusuna "a" → istekte `q=...`; tablo satırları korunuyor.
 
+### Sonradan düzeltme (onay sonrası)
+
+**Arama kutusu öğretmen ekranından kaldırıldı.** Öğretmenin sınıf sayısı
+sınırlı olduğundan Durum/Sınıf/Hafta dropdown'ları yeterli görüldü; genel
+arama yalnızca admin "Tüm raporlar" ekranında kaldı (admin'de sınıf sayısı
+fazla). Backend'e dokunulmadı: `GET /teacher/reports` `q` desteği aynen durur
+(admin aynı ucu kullanır). Yalnızca `ReportHistoryPage`'den `SearchBox` +
+ona bağlı `qInput`/`q` state ve debounce kaldırıldı; admin değişmedi.
+`teacher-history.test.tsx` arama beklentisi yerine "arama kutusu yoktur"
+assertion'ı + sınıf filtresiyle boş-durum senaryosuyla güncellendi.
+
+- Statik: kök + backend `typecheck` ✅, `lint` ✅.
+- Testler: frontend **85/85**, backend **243/243** ✅.
+- Canlı tarayıcı (headless Chrome/CDP): öğretmen ekranında `input[type=search]`
+  **yok**; admin ekranında **var** (aşağıdaki "Canlı doğrulama" notuna bkz.).
+
 ### Etkilenen dosyalar
 
 ```

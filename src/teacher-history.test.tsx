@@ -1,7 +1,8 @@
 /**
- * ReportHistoryPage — geçmiş rapor filtresi (Aşama 3 eklentisi).
- * Durum/sınıf/hafta/arama sunucu taraflı sorgu parametrelerine yansır;
- * seçenekler `/teacher/reports/filters`'tan gelir.
+ * ReportHistoryPage — geçmiş rapor filtresi.
+ * Durum/sınıf/hafta sunucu taraflı sorgu parametrelerine yansır; seçenekler
+ * `/teacher/reports/filters`'tan gelir. Genel arama kutusu yalnızca admin
+ * ekranındadır — burada bulunmaz.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -37,6 +38,7 @@ const FILTERS = {
   classes: [
     { id: 'c1', name: 'ÖKLİD' },
     { id: 'c2', name: 'PİSAGOR' },
+    { id: 'c-empty', name: 'BOŞ ŞUBE' },
   ],
   weeks: [{ id: 'w1', week_no: 20, label: 'Hafta 20', start_date: '2026-08-03' }],
 };
@@ -47,7 +49,7 @@ function makeFetch() {
     if (url.includes('/teacher/reports/filters')) return ok(FILTERS);
     if (url.includes('/teacher/reports')) {
       const query = new URL(url, 'http://x').searchParams;
-      const empty = query.get('q') === 'olmayan';
+      const empty = query.get('class_id') === 'c-empty';
       return ok({
         items: empty ? [] : [report('a')],
         total: empty ? 0 : 1,
@@ -69,7 +71,7 @@ afterEach(() => {
 });
 
 describe('ReportHistoryPage — filtreler', () => {
-  it('seçenekler /teacher/reports/filters\'tan gelir', async () => {
+  it('seçenekler /teacher/reports/filters\'tan gelir; arama kutusu yoktur', async () => {
     const fetchMock = makeFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -84,9 +86,11 @@ describe('ReportHistoryPage — filtreler', () => {
     });
     expect(screen.getByRole('option', { name: 'PİSAGOR' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '20. hafta · Hafta 20' })).toBeInTheDocument();
+    // Genel arama yalnızca admin ekranında.
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
   });
 
-  it('durum/sınıf/hafta/arama sorgu parametrelerine yansır ve sayfa 1\'e döner', async () => {
+  it('durum/sınıf/hafta sorgu parametrelerine yansır ve sayfa 1\'e döner', async () => {
     const fetchMock = makeFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -119,13 +123,6 @@ describe('ReportHistoryPage — filtreler', () => {
         fetchMock.mock.calls.some(([u]) => String(u).includes('week_id=w1')),
       ).toBe(true);
     });
-
-    fireEvent.change(screen.getByLabelText('Ara'), { target: { value: 'cebir' } });
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.some(([u]) => String(u).includes('q=cebir')),
-      ).toBe(true);
-    });
   });
 
   it('sonuç yoksa filtre mesajı gösterilir', async () => {
@@ -141,7 +138,7 @@ describe('ReportHistoryPage — filtreler', () => {
       expect(screen.getAllByText('ÖKLİD · Cebir').length).toBeGreaterThan(0);
     });
 
-    fireEvent.change(screen.getByLabelText('Ara'), { target: { value: 'olmayan' } });
+    fireEvent.change(screen.getByLabelText('Sınıf'), { target: { value: 'c-empty' } });
     await waitFor(() => {
       expect(screen.getByText('Bu filtrelerle rapor bulunamadı.')).toBeInTheDocument();
     });

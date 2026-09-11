@@ -3,13 +3,14 @@
  * Tamamlananlar dashboard'da görünmez (draft düşer); bu ekran öğretmenin
  * tüm raporlarını durumuyla listeler ve düzenlemeye açar.
  *
- * Filtreler (durum + sınıf + hafta + arama) sunucu taraflıdır; sayfalama
- * doğru kalır. Seçenekler öğretmenin kapsamındaki raporlardan türetilir
+ * Filtreler (durum + sınıf + hafta) sunucu taraflıdır; sayfalama doğru kalır.
+ * Seçenekler öğretmenin kapsamındaki raporlardan türetilir
  * (`GET /teacher/reports/filters`). Admin "Tüm raporlar" ekranıyla aynı
- * görsel dil kullanılır.
+ * görsel dil kullanılır. Genel arama yalnızca admin ekranındadır; öğretmenin
+ * sınıf sayısı sınırlı olduğundan burada dropdown yeterlidir.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   ReportClassFilterOption,
@@ -23,7 +24,6 @@ import {
   LoadingState,
   EmptyState,
   FormError,
-  SearchBox,
   FilterSelect,
   StatusBadge,
 } from '../../components/admin/ui';
@@ -51,22 +51,6 @@ export default function ReportHistoryPage() {
   const [classId, setClassId] = useState('');
   const [weekId, setWeekId] = useState('');
   const [status, setStatus] = useState<StatusFilter>('');
-  const [qInput, setQInput] = useState('');
-  const [q, setQ] = useState('');
-
-  // Arama debounce (~300ms): her tuşta istek atılmaz. yalnızca arama
-  // gerçekten değişince 1. sayfaya dönülür (mount'ta sıfırlama yapılmaz).
-  const appliedQ = useRef(q);
-  useEffect(() => {
-    const next = qInput.trim();
-    if (next === appliedQ.current) return;
-    const timer = window.setTimeout(() => {
-      appliedQ.current = next;
-      setQ(next);
-      setPage(1);
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [qInput]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,7 +60,6 @@ export default function ReportHistoryPage() {
         status: status || undefined,
         class_id: classId || undefined,
         week_id: weekId || undefined,
-        q: q || undefined,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -88,7 +71,7 @@ export default function ReportHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, classId, weekId, q, page]);
+  }, [status, classId, weekId, page]);
 
   useEffect(() => {
     void load();
@@ -115,7 +98,7 @@ export default function ReportHistoryPage() {
     };
   }
 
-  const filtersActive = Boolean(status || classId || weekId || q);
+  const filtersActive = Boolean(status || classId || weekId);
 
   return (
     <div className="space-y-4">
@@ -149,14 +132,6 @@ export default function ReportHistoryPage() {
             </option>
           ))}
         </FilterSelect>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-muted">Ara</span>
-          <SearchBox
-            value={qInput}
-            onChange={setQInput}
-            placeholder="Sınıf veya ders ara"
-          />
-        </label>
         <button
           type="button"
           onClick={() => void load()}

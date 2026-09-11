@@ -841,8 +841,10 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
   gerekmez, mevcut `is_overdue` verisinden türetilir)
 - **Toplu rapor giriş ekranı** (§6.1)
 - Ödev teslim kontrol ekranı (bir ödevin tüm teslimlerini sırayla gezme)
-- Geçmiş raporlarım (durum/sınıf/hafta filtresi + sınıf/ders adı araması;
-  seçenekler yalnızca kendi atamalarındaki raporlardan — §5.5)
+- Geçmiş raporlarım (durum/sınıf/hafta filtresi; seçenekler yalnızca kendi
+  atamalarındaki raporlardan — §5.5). Genel arama kutusu **yoktur**: öğretmenin
+  sınıf sayısı sınırlı olduğundan dropdown yeterlidir; arama yalnızca admin
+  "Tüm raporlar" görünümündedir (§5.5).
 
 **Veli**
 - Öğrenci seçimi (birden fazla çocuk varsa)
