@@ -11,7 +11,7 @@ import type { AcademicYear, ClassItem, TeacherReportHistoryItem, Week } from '..
 import { DAY_LABELS } from '../../types';
 import { adminApi, teacherApi, ApiClientError } from '../../services/api';
 import Pagination from '../../components/admin/Pagination';
-import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
+import { EmptyState, FormError, LoadingState, StatusBadge } from '../../components/admin/ui';
 
 const PAGE_SIZE = 20;
 
@@ -21,30 +21,6 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Tamamlandı' },
   { value: 'sent', label: 'Gönderildi' },
 ] as const;
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'Taslak',
-  completed: 'Tamamlandı',
-  sent: 'Gönderildi',
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    draft: 'bg-status-draft/10 text-status-draft',
-    completed: 'bg-status-completed/10 text-status-completed',
-    sent: 'bg-status-sent/10 text-status-sent',
-  };
-  return (
-    <span
-      className={
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-        (styles[status] ?? 'bg-status-draft/10 text-status-draft')
-      }
-    >
-      {STATUS_LABELS[status] ?? status}
-    </span>
-  );
-}
 
 export default function AdminReportsPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);

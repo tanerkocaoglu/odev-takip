@@ -193,7 +193,7 @@ Karar verilmemiş bir durumda `comfortable` varsayılandır.
   ```
 - Tip ölçeği: `12 / 13 / 14 / 16 / 20 / 24 px`. Tablo içi metin 13px,
   gövde metni 14px, sayfa başlığı 20px. 24px yalnızca veli rapor sayfasının
-  başlığında.
+  başlığında ve admin özet kartındaki büyük sayıda.
 - Ağırlık: gövde 400, etiket ve tablo başlığı 500, sayfa başlığı 600.
   Bunun dışında ağırlık kullanılmaz.
 
@@ -273,6 +273,55 @@ bileşenler arası boşluk  8px
 **`comfortable` yoğunluk** — shadcn varsayılanları korunur; bölümler arası
 boşluk 24px, kart iç boşluğu 16–20px.
 
+### Elevation (gölge)
+
+Derinlik seviyeleri tek yerden (`index.css`) tanımlanır; ekran başına gölge
+uydurulmaz. Renk paletine dokunmaz, yalnızca derinlik kelime dağarcığı ekler.
+
+```
+Level 0 (taban)         gölgesiz, --bg üzeri
+Level 1 (kart)          0 1px 2px 0 rgba(22,32,42,0.04)
+Level 2 (hover)         0 4px 12px 0 rgba(10,120,163,0.08), kenarlık --accent,
+                        translateY(-1px)
+Level 3 (açılır menü)   0 8px 24px -4px rgba(22,32,42,0.08)
+Level 4 (modal)         backdrop rgba(22,32,42,0.35),
+                        0 16px 40px -8px rgba(22,32,42,0.16)
+```
+
+> Gölge bir **kelime dağarcığıdır, süs değil**: yalnızca yukarıdaki seviyeler
+> kullanılır. Her yükseltme "şu an önde" mesajıdır; gereksiz gölge gürültüdür.
+
+### Kart hover deseni
+
+Etkileşimli kartlarda (tıklanabilir satır/kart) hover'da:
+
+```css
+border-color: var(--accent);
+transform: translateY(-1px);
+transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1); /* + Level 2 gölge */
+```
+
+Tıklanabilir olmayan kartlar yalnızca Level 1 gölge taşır — gölge tek başına
+"tıklanabilir" işareti değildir. `prefers-reduced-motion` aktifken transform ve
+gölge geçişleri devre dışı kalır (bkz. Erişilebilirlik tabanı).
+
+### Shimmer yükleme durumu
+
+İskelet/yükleniyor durumları için `#F0F4F8` ile `#E3E7EB` arasında 1.5s
+`linear` sonsuz gradient pulse. `index.css`'teki `.shimmer` sınıfı
+`LoadingState` ve iskelet bloklarında kullanılır; metin yerine blok iskeleti
+tercih edilir.
+
+```css
+.shimmer {
+  background: linear-gradient(90deg, #F0F4F8 25%, #E3E7EB 37%, #F0F4F8 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+```
+
+`prefers-reduced-motion` aktifken animasyon durur (statik `#F0F4F8`).
+
 ### Odak halkası
 
 Rapor giriş tablosu klavyeyle doldurulur; **odağın nerede olduğu her an
@@ -301,8 +350,8 @@ paneli masaüstü önceliklidir; kalan her şey mobil önceliklidir.**
 
 ### Erişilebilirlik tabanı
 
-- `prefers-reduced-motion` desteklenir; framer-motion animasyonları bu
-  durumda devre dışı kalır.
+- `prefers-reduced-motion` desteklenir; framer-motion animasyonları **ve** CSS
+  geçişleri/gölge/transform ile shimmer animasyonu bu durumda devre dışı kalır.
 - Metin/arkaplan kontrastı en az 4.5:1.
 - Her form alanının `<label>`'ı vardır; placeholder etiket yerine geçmez.
 - Hata mesajları alanın altında, kırmızı **ve** metinle gösterilir.

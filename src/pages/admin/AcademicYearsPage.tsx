@@ -4,6 +4,7 @@ import { adminApi } from '../../services/api';
 import { ApiClientError } from '../../services/api';
 import Modal from '../../components/admin/Modal';
 import {
+  Badge,
   EmptyState,
   Field,
   FormError,
@@ -110,9 +111,7 @@ export default function AcademicYearsPage() {
                   <td className="tabular px-3 py-2 text-muted">{year.end_date}</td>
                   <td className="px-3 py-2">
                     {year.is_active === 1 ? (
-                      <span className="inline-flex rounded-full bg-status-sent/10 px-2 py-0.5 text-xs font-medium text-status-sent">
-                        Aktif
-                      </span>
+                      <Badge tone="positive">Aktif</Badge>
                     ) : (
                       <button
                         type="button"

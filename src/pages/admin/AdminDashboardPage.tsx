@@ -7,12 +7,44 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
+import {
+  AlertCircle,
+  AlertTriangle,
+  Archive,
+  CheckCircle,
+  Grid3x3,
+  LayoutDashboard,
+  Send,
+  type LucideIcon,
+} from 'lucide-react';
 import type { AdminDashboard, RiskList } from '../../types';
 import { DAY_LABELS, RISK_FLAG_LABELS, type RiskFlag } from '../../types';
 import { adminApi, downloadBackup, ApiClientError } from '../../services/api';
-import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
+import { Badge, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
+
+/** İskelet bloğu — shimmer sınıfı index.css'te tanımlı. */
+function Skeleton({ className = '' }: { className?: string }) {
+  return <div aria-hidden="true" className={'shimmer rounded ' + className} />;
+}
+
+/** Özet kartı ikonu — accent %10 daire içinde. */
+function CardIcon({ Icon }: { Icon: LucideIcon }) {
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/10 text-accent">
+      <Icon size={16} aria-hidden="true" />
+    </span>
+  );
+}
+
+const TAB_ICONS: Record<'missing' | 'matrix' | 'risk', LucideIcon> = {
+  missing: AlertTriangle,
+  matrix: Grid3x3,
+  risk: AlertCircle,
+};
 
 export default function AdminDashboardPage() {
+  const reduceMotion = useReducedMotion();
   const [data, setData] = useState<AdminDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +105,22 @@ export default function AdminDashboardPage() {
     }
   }
 
-  if (loading) return <LoadingState />;
+  if (loading) {
+    return (
+      <div aria-busy="true" className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-7 w-24" />
+          <Skeleton className="h-9 w-44" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
   if (error) return <FormError message={error} />;
   if (!data) return <EmptyState message="Veri yüklenemedi." />;
 
@@ -96,28 +143,32 @@ export default function AdminDashboardPage() {
           ['matrix', 'Tam matris'],
           ['risk', 'Riskli öğrenciler'],
         ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => setTab(key)}
-          className={
-            'rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
-            (tab === key
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted hover:text-text')
-          }
-        >
-          {label}
-        </button>
-      ))}
+      ).map(([key, label]) => {
+        const Icon = TAB_ICONS[key];
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={
+              'inline-flex items-center gap-1.5 rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
+              (tab === key
+                ? 'border-accent text-accent'
+                : 'border-transparent text-muted hover:text-text')
+            }
+          >
+            <Icon size={15} aria-hidden="true" />
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-xl font-semibold text-text">Panel</h1>
+        <PageTitle icon={LayoutDashboard}>Panel</PageTitle>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -140,35 +191,57 @@ export default function AdminDashboardPage() {
       {backupDone && <p className="text-sm font-medium text-status-sent">{backupDone}</p>}
       {backupError && <FormError message={backupError} />}
 
-      <p className="text-sm text-muted">
-        Bu hafta{' '}
-        <span className="tabular font-semibold text-text">
-          {total} rapordan {completed} tanesi tamamlandı
-        </span>
-        {data.week ? ` (${data.week.label})` : ''}.
-      </p>
-
-      <div className="flex flex-wrap gap-3">
+      {/* Özet kartları — Level 1; tıklanabilir olanlar Level 2 hover */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="elevation-1 rounded-md border border-border bg-surface p-4">
+          <CardIcon Icon={CheckCircle} />
+          <p className="tabular mt-2 text-2xl font-semibold text-text">
+            {completed}
+            <span className="text-base font-normal text-muted"> / {total}</span>
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            Bu hafta tamamlanan{data.week ? ` · ${data.week.label}` : ''}
+          </p>
+        </div>
         <Link
           to="/admin/digests"
-          className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-bg"
+          className="card-interactive elevation-1 block rounded-md border border-border bg-surface p-4"
         >
-          Bekleyen gönderim:{' '}
-          <span className="tabular font-semibold text-accent">{data.digests.ready}</span>{' '}
-          hazır ·{' '}
-          <span className="tabular font-semibold text-accent">{data.digests.pending}</span>{' '}
-          eksikli
+          <CardIcon Icon={Send} />
+          <p className="tabular mt-2 text-2xl font-semibold text-text">
+            {data.digests.ready}
+            <span className="text-base font-normal text-muted"> hazır</span>
+          </p>
+          <p className="tabular mt-1 text-xs text-muted">
+            Bekleyen gönderim · {data.digests.pending} eksikli
+          </p>
         </Link>
         <Link
           to="/admin/reports"
-          className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-bg"
+          className="card-interactive elevation-1 block rounded-md border border-border bg-surface p-4"
         >
-          Tüm raporlar
+          <CardIcon Icon={Archive} />
+          <p className="mt-2 text-base font-semibold text-text">Tüm raporlar</p>
+          <p className="mt-1 text-xs text-muted">Durum, sınıf ve haftaya göre filtreleyin</p>
         </Link>
       </div>
 
       {tabs}
 
+      {/* Sekme içeriği geçişi — prefers-reduced-motion'da animasyonsuz */}
+      <motion.div
+        key={tab}
+        initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={
+          reduceMotion
+            ? { duration: 0 }
+            : {
+                duration: 0.18,
+                ease: [0.4, 0, 0.2, 1] as [number, number, number, number],
+              }
+        }
+      >
       {tab === 'missing' && (
         <div className="space-y-4">
           <label className="flex items-center gap-2 text-sm text-muted">
@@ -196,7 +269,7 @@ export default function AdminDashboardPage() {
                       {items.map((item) => (
                         <tr
                           key={item.class_course_id}
-                          className="border-b border-border last:border-b-0"
+                          className="border-b border-border transition-colors last:border-b-0 hover:bg-bg"
                         >
                           <td className="px-3 py-2 text-[13px] text-text">
                             {item.class_name} · {item.course_name}
@@ -206,11 +279,7 @@ export default function AdminDashboardPage() {
                             {item.lesson_time ? ` · ${item.lesson_time}` : ''}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            {item.is_overdue && (
-                              <span className="inline-flex items-center rounded-full bg-att-late/10 px-2 py-0.5 text-xs font-medium text-att-late">
-                                Günü geçti
-                              </span>
-                            )}
+                            {item.is_overdue && <Badge tone="warning">Günü geçti</Badge>}
                           </td>
                         </tr>
                       ))}
@@ -235,7 +304,7 @@ export default function AdminDashboardPage() {
                     <tr
                       key={item.class_course_id}
                       className={
-                        'border-b border-border last:border-b-0 ' +
+                        'border-b border-border transition-colors last:border-b-0 hover:bg-bg ' +
                         (item.is_overdue ? 'bg-att-late/5' : '')
                       }
                     >
@@ -248,20 +317,13 @@ export default function AdminDashboardPage() {
                         {item.lesson_time ? ` · ${item.lesson_time}` : ''}
                       </td>
                       <td className="px-3 py-2">
-                        <span
-                          className={
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-                            (item.is_overdue
-                              ? 'bg-att-late/10 text-att-late'
-                              : 'bg-status-draft/10 text-status-draft')
-                          }
-                        >
+                        <Badge tone={item.is_overdue ? 'warning' : 'neutral'}>
                           {item.is_overdue
                             ? 'Günü geçti'
                             : item.status === 'draft'
                               ? 'Taslak'
                               : 'Hiç açılmamış'}
-                        </span>
+                        </Badge>
                       </td>
                     </tr>
                   ))}
@@ -281,35 +343,30 @@ export default function AdminDashboardPage() {
                   <td className="whitespace-nowrap px-3 py-2 font-medium text-text">
                     {row.class_name}
                   </td>
-                  {row.courses.map((course) => (
-                    <td
-                      key={course.class_course_id}
-                      className="min-w-[140px] px-3 py-2 align-top"
-                    >
-                      <div className="text-[13px] font-medium text-text">
-                        {course.course_name}
-                      </div>
-                      <div className="text-xs text-muted">{course.teacher_name}</div>
-                      <div className="mt-1">
-                        <span
-                          className={
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-                            (course.status === 'sent'
-                              ? 'bg-status-sent/10 text-status-sent'
-                              : course.status === 'completed'
-                                ? 'bg-status-completed/10 text-status-completed'
-                                : 'bg-status-draft/10 text-status-draft')
-                          }
-                        >
-                          {course.status === 'sent'
-                            ? 'Gönderildi'
-                            : course.status === 'completed'
-                              ? 'Tamamlandı'
-                              : 'Eksik'}
-                        </span>
-                      </div>
-                    </td>
-                  ))}
+                  {row.courses.map((course) => {
+                    const done =
+                      course.status === 'sent' || course.status === 'completed';
+                    const label =
+                      course.status === 'sent'
+                        ? 'Gönderildi'
+                        : course.status === 'completed'
+                          ? 'Tamamlandı'
+                          : 'Eksik';
+                    return (
+                      <td
+                        key={course.class_course_id}
+                        className="min-w-[140px] px-3 py-2 align-top"
+                      >
+                        <div className="text-[13px] font-medium text-text">
+                          {course.course_name}
+                        </div>
+                        <div className="text-xs text-muted">{course.teacher_name}</div>
+                        <div className="mt-1">
+                          <Badge tone={done ? 'positive' : 'warning'}>{label}</Badge>
+                        </div>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -328,7 +385,16 @@ export default function AdminDashboardPage() {
           )}
 
           {riskLoading ? (
-            <LoadingState />
+            <div aria-busy="true" className="space-y-2">
+              <Skeleton className="h-5 w-72" />
+              <div className="overflow-hidden rounded-md border border-border bg-surface">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="border-b border-border p-3 last:border-b-0">
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : riskError ? (
             <FormError message={riskError} />
           ) : risk && risk.items.length === 0 ? (
@@ -348,7 +414,10 @@ export default function AdminDashboardPage() {
                   </thead>
                   <tbody>
                     {risk.items.map((s) => (
-                      <tr key={s.student_id} className="border-b border-border last:border-b-0">
+                      <tr
+                        key={s.student_id}
+                        className="border-b border-border transition-colors last:border-b-0 hover:bg-bg"
+                      >
                         <td className="px-3 py-2 font-medium text-text">{s.student_name}</td>
                         <td className="px-3 py-2 text-[13px] text-text">{s.class_name ?? '—'}</td>
                         <td className="px-3 py-2 text-[13px] text-muted">
@@ -360,12 +429,9 @@ export default function AdminDashboardPage() {
                         <td className="px-3 py-2">
                           <div className="flex flex-wrap gap-1.5">
                             {s.risk_flags.map((flag) => (
-                              <span
-                                key={flag}
-                                className="inline-flex items-center rounded-full bg-att-absent/10 px-2 py-0.5 text-xs font-medium text-att-absent"
-                              >
+                              <Badge key={flag} tone="danger">
                                 {RISK_FLAG_LABELS[flag as RiskFlag]}
-                              </span>
+                              </Badge>
                             ))}
                           </div>
                         </td>
@@ -378,6 +444,7 @@ export default function AdminDashboardPage() {
           )}
         </div>
       )}
+      </motion.div>
     </div>
   );
 }

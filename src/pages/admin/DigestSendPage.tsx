@@ -8,10 +8,18 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { Send } from 'lucide-react';
 import type { AdminDigestItem, DigestSnapshot, ClassItem } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import ReportSnapshot from '../../components/ReportSnapshot';
-import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
+import {
+  Badge,
+  EmptyState,
+  FormError,
+  LoadingState,
+  PageTitle,
+  type BadgeTone,
+} from '../../components/admin/ui';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Eksikli',
@@ -134,31 +142,25 @@ export default function DigestSendPage() {
     }
   }
 
-  const badge = (status: string, isRevoked: boolean) => {
-    const styles: Record<string, string> = {
-      pending: 'bg-att-late/10 text-att-late',
-      ready: 'bg-status-completed/10 text-status-completed',
-      sent: isRevoked
-        ? 'bg-status-draft/10 text-status-draft'
-        : 'bg-status-sent/10 text-status-sent',
-    };
-    return (
-      <span
-        className={
-          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-          (styles[status] ?? 'bg-status-draft/10 text-status-draft')
-        }
-      >
-        {isRevoked ? 'İptal edildi' : STATUS_LABELS[status]}
-      </span>
-    );
+  const DIGEST_TONES: Record<string, BadgeTone> = {
+    pending: 'warning',
+    ready: 'info',
+    sent: 'positive',
   };
+  const badge = (status: string, isRevoked: boolean) =>
+    isRevoked ? (
+      <Badge tone="neutral">İptal edildi</Badge>
+    ) : (
+      <Badge tone={DIGEST_TONES[status] ?? 'neutral'}>
+        {STATUS_LABELS[status] ?? status}
+      </Badge>
+    );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-text">Haftalık gönderim</h1>
+          <PageTitle icon={Send}>Haftalık gönderim</PageTitle>
           <p className="text-sm text-muted">
             Hazır raporlar gönderilebilir; eksikli raporlar yalnızca eksik dersleri içerir.
           </p>
@@ -304,7 +306,7 @@ export default function DigestSendPage() {
                             type="button"
                             disabled={sendingId === item.id}
                             onClick={() => void handleSend(item)}
-                            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="card-interactive rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {sendingId === item.id ? 'Gönderiliyor…' : 'Gönder'}
                           </button>
@@ -314,7 +316,7 @@ export default function DigestSendPage() {
                             type="button"
                             disabled={sendingId === item.id}
                             onClick={() => void handleSend(item)}
-                            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="card-interactive rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {sendingId === item.id ? 'Gönderiliyor…' : 'Yeniden gönder'}
                           </button>

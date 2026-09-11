@@ -41,6 +41,13 @@
   /* Yıkıcı eylemler (sil, iptal et) — attendance.absent ile aynı kırmızı */
   --danger: 180 35 24;
 
+  /* Elevation (gölge) — CLAUDE.md "Elevation" */
+  --elevation-1: 0 1px 2px 0 rgba(22, 32, 42, 0.04);
+  --elevation-2: 0 4px 12px 0 rgba(10, 120, 163, 0.08);
+  --elevation-3: 0 8px 24px -4px rgba(22, 32, 42, 0.08);
+  --elevation-4: 0 16px 40px -8px rgba(22, 32, 42, 0.16);
+  --backdrop-4: rgba(22, 32, 42, 0.35);
+
   /* Ölçüler */
   --radius: 6px;
   --ring: 2px;
@@ -114,6 +121,59 @@ td :focus-visible {
 }
 
 /* =====================================
+   Elevation / hover / shimmer — CLAUDE.md "Tasarım kuralları"
+   ===================================== */
+
+.elevation-1 {
+  box-shadow: var(--elevation-1);
+}
+.elevation-2 {
+  box-shadow: var(--elevation-2);
+}
+.elevation-3 {
+  box-shadow: var(--elevation-3);
+}
+.elevation-4 {
+  box-shadow: var(--elevation-4);
+}
+
+/* Etkileşimli kart/satır: hover'da accent kenarlık + hafif yükselme + Level 2 */
+.card-interactive {
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.card-interactive:hover {
+  border-color: rgb(var(--accent));
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-2);
+}
+
+/* Admin veri satırları: hover'da hafif zemin + solda ince accent şeridi */
+.admin-content tbody tr {
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.admin-content tbody tr:hover {
+  background-color: rgb(var(--bg));
+}
+.admin-content tbody tr:hover > td:first-child {
+  box-shadow: inset 2px 0 0 0 rgb(var(--accent));
+}
+
+/* İskelet/yükleniyor: iki ton arası 1.5s linear sonsuz gradient pulse */
+.shimmer {
+  background: linear-gradient(90deg, #f0f4f8 25%, #e3e7eb 37%, #f0f4f8 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* =====================================
    Erişilebilirlik
    ===================================== */
 
@@ -125,5 +185,14 @@ td :focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* Hover yükselmesi ve shimmer bu durumda tamamen durur. */
+  .card-interactive:hover {
+    transform: none;
+    box-shadow: var(--elevation-1);
+  }
+  .shimmer {
+    animation: none;
+    background: #f0f4f8;
   }
 }

@@ -5,6 +5,193 @@
 
 ---
 
+## Admin — paylaşılan bileşenlerle tüm sekmelerin görsel dili ✅
+
+### Süreç özeti
+
+Admin sekmelerinin tümü (Panel, Eğitim yılı, Haftalar, Sınıflar, Dersler,
+Atamalar, Öğretmenler, Öğrenciler, Veliler, Okullar, Raporlar, Gönderim)
+paylaşılan bileşenler üzerinden tutarlı biçimde zenginleştirildi. Layout, sütun
+yapısı ve tablo verileri değişmedi; yalnızca paylaşılan bileşenlerin görsel
+katmanı güncellendi.
+
+### Yapılanlar
+
+**Paylaşılan bileşenler (`components/admin/ui.tsx`)**
+- `Badge` (tone: neutral/positive/warning/danger/info) + `StatusBadge` +
+  `AttendanceBadge` — düz metin/hafif gri rozetler tek dolgulu stile toplandı.
+- `PageTitle` — sayfa başlığı + sekme ikonu.
+- `EmptyState` — `Inbox` ikonu, yuvarlatılmış kenar, `bg-surface` + Level 1.
+- `SearchBox` — magnifier ikonu (solda) + `pl-9`.
+- `PrimaryButton` — `card-interactive` ile hover'da Level 2 yükselme.
+
+**`index.css`**
+- `.admin-content tbody tr` hover: hafif `--bg` zemin + ilk hücrede solda 2px
+  accent şeridi (`inset box-shadow`); reduced-motion'da geçiş kapalı.
+
+**`AdminLayout`**
+- 12 sekmeye tek ikon seti: Panel=LayoutDashboard, Eğitim yılı=CalendarRange,
+  Haftalar=CalendarDays, Sınıflar=Layers, Dersler=BookOpen, Atamalar=Shuffle,
+  Öğretmenler=UserCog, Öğrenciler=GraduationCap, Veliler=Users, Okullar=School,
+  Raporlar=FileText, Gönderim=Send. `<main>` artık `admin-content`.
+
+**Rozet eşlemesi**
+- Tamamlandı → mavi (`status-completed`), Gönderildi → yeşil (`status-sent`),
+  Taslak → nötr gri (`status-draft`). "Tamamlandı↔Gönderildi" ayrımı korunur.
+- Aktif / Onaylı → yeşil; Hazır (digest) → mavi (rapor tamam, gönderim
+  bekliyor); Onaysız / Günü geçti / Eksik / Eksikli → amber.
+- Risk nedenleri → kırmızı (`danger`).
+- `GuardiansPage` KVKK rozeti ham hex (`#d1fadf`/`#fef3c7`) yerine token
+  sınıflarına (`status-sent`/`att-late`) çevrildi.
+
+### Doğrulamalar
+
+- typecheck ✅, lint ✅, build ✅, frontend **58/58** (11 dosya) ✅ (davranış
+  testleri bozulmadı; ikonlar `aria-hidden`, arama/rozet metinleri korundu).
+- Canlı (headless Chrome/CDP, gerçek app.db) **önce/sonra**: Haftalar,
+  Öğrenciler, Raporlar. Hover'da satır zemini + sol accent şeridi; nav
+  sekmeleri ikonlu; Öğrenciler arama kutusunda magnifier; Raporlar
+  "Tamamlandı" mavi / "Taslak" gri dolgu.
+
+### Ek düzeltme (onay sonrası)
+
+- `StatusBadge`'de `completed` tekrar **maviye** (`status-completed`) alındı;
+  `sent` yeşil kaldı — admin "gönderildi mi" ayrımını görsel olarak korur.
+  Aynı nedenle digest `ready` rozeti de maviye çekildi.
+- `AttendanceBadge` dört durumu ayrı renkte: Geldi=gri, Geç geldi=amber,
+  Gelmedi=kırmızı, İzinli=mavi (`admin-badges.test.tsx` ile sabitlendi).
+- `.admin-content` hover'ı yalnızca `AdminLayout` kapsamında; ReportEntryPage
+  ve öğretmen dashboard'unda uygulanmıyor (canlıda `adminContent:false`).
+
+### Etkilenen dosyalar
+
+```
+src/components/admin/ui.tsx             (Badge/StatusBadge/AttendanceBadge/PageTitle/EmptyState/SearchBox/PrimaryButton)
+src/components/admin/AdminLayout.tsx    (sekme ikonları + admin-content)
+src/index.css                           (.admin-content satır hover)
+src/pages/admin/AdminDashboardPage.tsx  (Panel başlık ikonu, rozetler)
+src/pages/admin/AdminReportsPage.tsx    (paylaşılan StatusBadge)
+src/pages/admin/AdminReportViewPage.tsx (StatusBadge + AttendanceBadge + PageTitle)
+src/pages/admin/DigestSendPage.tsx      (Badge + PageTitle + card-interactive)
+src/pages/admin/AcademicYearsPage.tsx   (Aktif rozeti)
+src/pages/admin/GuardiansPage.tsx       (KVKK rozeti token)
+src/admin-badges.test.tsx               (rozet sözleşmeleri)
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
+## Admin panel — kart/rozet/sekme iç tasarımı ✅
+
+### Süreç özeti
+
+`AdminDashboardPage` özet kartları, tam matris rozetleri ve sekme başlıkları
+Stitch referansındaki gibi zenginleştirildi. Layout (üst sekmeli navigasyon,
+kart sırası, sayfa genişliği), renk paleti ve compact/comfortable yoğunluk
+kuralları değişmedi; yalnızca mevcut durum renkleri düz metin yerine dolgulu
+rozet olarak kullanıldı. `lucide-react` ikonları eklendi (zaten bağımlılıktı).
+
+### Yapılanlar
+
+- Özet kartlarına sol üstte ikon: "Bu hafta tamamlanan" → `CheckCircle`,
+  "Bekleyen gönderim" → `Send`, "Rapor arşivi" → `Archive`; `bg-accent/10`
+  daire içinde `text-accent` ikon.
+- Büyük sayı + küçük etiket hiyerarşisi: sayı `text-2xl` (24px), etiket `text-xs`
+  ve soluk. (CLAUDE.md tip notu güncellendi: 24px artık admin özet kartındaki
+  büyük sayıda da kullanılabilir.)
+- Tam matris rozetleri: "Eksik" düz griden **amber dolguya** (`bg-amber/15
+  text-amber`); "Gönderildi" ve "Tamamlandı" **yeşil dolguya** (`bg-green/15
+  text-green`).
+- Sekme başlıklarına ikon: Eksik raporlar → `AlertTriangle`, Tam matris →
+  `Grid3x3`, Riskli öğrenciler → `AlertCircle`.
+
+### Doğrulamalar
+
+- typecheck ✅, lint ✅, build ✅, frontend **56/56** ✅ (davranış testleri
+  bozulmadı; ikonlar `aria-hidden`, sekme erişilebilir adları değişmedi).
+- Canlı (headless Chrome/CDP, gerçek app.db): özet kartlarında ikon + 24px sayı;
+  "Tam matris" sekmesinde amber "Eksik" rozetleri; sekmelerde ikonlar.
+
+### Etkilenen dosyalar
+
+```
+CLAUDE.md (tip ölçeği 24px notu)
+PROGRESS.md
+src/pages/admin/AdminDashboardPage.tsx
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
+## Admin panel — elevation, hover, sekme geçişi, shimmer ✅
+
+### Süreç özeti
+
+CLAUDE.md "Tasarım kuralları"na Stitch referansından üç kural eklendi
+(elevation seviyeleri, kart hover deseni, shimmer yükleme durumu) — renk
+paleti, tipografi ve compact/comfortable yoğunluk kurallarına dokunmadan.
+Yalnızca `AdminDashboardPage` bu yeni kelime dağarcığıyla zenginleştirildi.
+Yeni rota, API çağrısı, veri alanı veya navigasyon değişikliği yok.
+
+### Yapılanlar
+
+**CLAUDE.md**
+- `### Elevation (gölge)` — Level 0–4 token'ları, tek yerden.
+- `### Kart hover deseni` — accent kenarlık + `translateY(-1px)` + Level 2 +
+  `150ms cubic-bezier(0.4,0,0.2,1)`; yalnızca etkileşimli kartlarda.
+- `### Shimmer yükleme durumu` — `#F0F4F8` ↔ `#E3E7EB`, 1.5s `linear` pulse.
+- Erişilebilirlik notu: `prefers-reduced-motion` artık CSS geçiş/gölge/transform
+  ve shimmer'ı da kapsıyor.
+
+**index.css**
+- `--elevation-1..4` (+`--backdrop-4`); `.elevation-1..4`, `.card-interactive`,
+  `.shimmer` + `@keyframes shimmer`.
+- `prefers-reduced-motion` bloğu: hover transformunu iptal eder (Level 1'e
+  düşer), shimmer `animation: none` + statik `#F0F4F8`.
+
+**AdminDashboardPage**
+- Özet alanı üç karta dönüştü: "Bu hafta tamamlanan" (Level 1), "Bekleyen
+  gönderim" ve "Rapor arşivi" (Level 1 + `.card-interactive` hover).
+- Sekme içeriği `motion.div` ile yumuşak geçiş (0.18s); `useReducedMotion()`
+  true iken animasyonsuz.
+- Yükleme durumları `<LoadingState />` yerine shimmer iskelet blokları.
+- Eksik rapor + riskli öğrenci tablo satırlarına `hover:bg-bg`.
+
+### Doğrulamalar
+
+**Statik** — typecheck ✅, lint ✅, build ✅.
+**Testler** — frontend **56/56** (10 dosya) değişmeden geçti; davranış testleri
+bozulmadı (framer-motion jsdom'da sorunsuz).
+
+**Canlı (çalışan dev sunucusu + gerçek app.db, admin JWT, headless Chrome/CDP):**
+- Önce/sonra: Level 1 gölgeli üç özet kartı (öncesi düz metin + iki link).
+- Hover (CDP `forcePseudoState`): `transform: matrix(1,0,0,1,0,-1)`,
+  `box-shadow: rgba(10,120,163,0.08) 0 4px 12px`, `transition: 0.15s`.
+- Shimmer: `animation: shimmer / 1.5s`.
+- **`prefers-reduced-motion: reduce` (CDP emülasyon):** `transform: none`,
+  hover gölgesi Level 1'e düşüyor, `transition-duration: 1e-05s`, shimmer
+  `animation: none`.
+
+### Etkilenen dosyalar
+
+```
+CLAUDE.md
+src/index.css
+src/pages/admin/AdminDashboardPage.tsx
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Rapor giriş ekranı — compact + renk token düzeltmeleri ✅
 
 ### Süreç özeti

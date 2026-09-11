@@ -164,10 +164,12 @@ export default function GuardiansPage() {
                           ? `Onay verildi: ${new Date(guardian.consent_at).toLocaleDateString('tr-TR')}`
                           : 'KVKK onayı yok — tıklayarak ver'
                       }
-                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${guardian.consent_at
-                        ? 'bg-[#d1fadf] text-[#067647]'
-                        : 'bg-[#fef3c7] text-[#B45309]'
-                        }`}
+                      className={
+                        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ' +
+                        (guardian.consent_at
+                          ? 'bg-status-sent/10 text-status-sent'
+                          : 'bg-att-late/10 text-att-late')
+                      }
                     >
                       {guardian.consent_at ? '✓ Onaylı' : '✗ Onaysız'}
                     </button>

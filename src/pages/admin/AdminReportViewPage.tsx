@@ -6,30 +6,18 @@
 
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { Attendance, TeacherReportPayload } from '../../types';
-import { DAY_LABELS, ATTENDANCE_LABELS } from '../../types';
+import { FileText } from 'lucide-react';
+import type { TeacherReportPayload } from '../../types';
+import { DAY_LABELS } from '../../types';
 import { teacherApi, ApiClientError } from '../../services/api';
-import { EmptyState, FormError, LoadingState } from '../../components/admin/ui';
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'Taslak',
-  completed: 'Tamamlandı',
-  sent: 'Gönderildi',
-};
-
-const ATT_STYLES: Record<Attendance, string> = {
-  present: 'text-present',
-  late: 'text-att-late',
-  absent: 'text-att-absent',
-  excused: 'text-excused',
-};
-
-const ATT_BG: Record<Attendance, string> = {
-  present: 'bg-present/10',
-  late: 'bg-att-late/10',
-  absent: 'bg-att-absent/10',
-  excused: 'bg-excused/10',
-};
+import {
+  AttendanceBadge,
+  EmptyState,
+  FormError,
+  LoadingState,
+  PageTitle,
+  StatusBadge,
+} from '../../components/admin/ui';
 
 export default function AdminReportViewPage() {
   const { id } = useParams<{ id: string }>();
@@ -65,20 +53,13 @@ export default function AdminReportViewPage() {
   if (!data) return <EmptyState message="Rapor bulunamadı." />;
 
   const { report, entries } = data;
-  const statusBadge =
-    'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-    (report.status === 'sent'
-      ? 'bg-status-sent/10 text-status-sent'
-      : report.status === 'completed'
-        ? 'bg-status-completed/10 text-status-completed'
-        : 'bg-status-draft/10 text-status-draft');
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-text">
+        <PageTitle icon={FileText}>
           {report.class_name} · {report.course_name}
-        </h1>
+        </PageTitle>
         <Link
           to="/admin/reports"
           className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
@@ -109,7 +90,7 @@ export default function AdminReportViewPage() {
           <div className="flex gap-2">
             <dt className="font-medium text-muted">Durum:</dt>
             <dd>
-              <span className={statusBadge}>{STATUS_LABELS[report.status]}</span>
+              <StatusBadge status={report.status} />
             </dd>
           </div>
           {report.topic_covered && (
@@ -155,16 +136,7 @@ export default function AdminReportViewPage() {
               <tr key={entry.student_id} className="border-b border-border last:border-b-0">
                 <td className="px-3 py-2 font-medium text-text">{entry.student_name}</td>
                 <td className="px-3 py-2">
-                  <span
-                    className={
-                      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-                      ATT_BG[entry.attendance] +
-                      ' ' +
-                      ATT_STYLES[entry.attendance]
-                    }
-                  >
-                    {ATTENDANCE_LABELS[entry.attendance]}
-                  </span>
+                  <AttendanceBadge attendance={entry.attendance} />
                 </td>
                 <td className="tabular px-3 py-2 text-[13px] text-text">
                   {entry.homework_score ?? '—'}
