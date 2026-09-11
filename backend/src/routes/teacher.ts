@@ -712,14 +712,14 @@ router.post('/reports/:id/complete', (req, res) => {
       (entry.attendance === 'present' || entry.attendance === 'late') &&
       (entry.homework_score === null || entry.interest_score === null)
     ) {
-      missing[entry.student_id] = 'Ödev ve ilgi puanı girilmeli.';
+      missing[entry.student_id] = 'Ödev ve ders içi performans puanı girilmeli.';
     }
   }
   if (Object.keys(missing).length > 0) {
     throw new AppError(
       'VALIDATION_ERROR',
       400,
-      'Devamsız olmayan her öğrenci için ödev ve ilgi puanı girilmelidir.',
+      'Devamsız olmayan her öğrenci için ödev ve ders içi performans puanı girilmelidir.',
       missing,
     );
   }

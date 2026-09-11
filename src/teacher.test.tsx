@@ -244,10 +244,10 @@ describe('ReportEntryPage', () => {
     fireEvent.change(attendance, { target: { value: 'absent' } });
 
     expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
-    expect(screen.getByLabelText('İlgi puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
   });
 
-  it('toplu puan: ödev ve ilgi ayrı ayrı uygulanır; devamsız satır atlanır', async () => {
+  it('toplu puan: ödev ve ders içi performans ayrı ayrı uygulanır; devamsız satır atlanır', async () => {
     vi.stubGlobal('fetch', mockFetch(200, REPORT));
     renderEntryPage();
 
@@ -257,7 +257,7 @@ describe('ReportEntryPage', () => {
 
     const attendance = screen.getByLabelText('Devamsızlık');
     const homework = screen.getByLabelText('Ödev puanı') as HTMLInputElement;
-    const interest = screen.getByLabelText('İlgi puanı') as HTMLInputElement;
+    const interest = screen.getByLabelText('Ders içi performans puanı') as HTMLInputElement;
     const applyButtons = () => screen.getAllByRole('button', { name: 'Uygula' });
 
     // Devamsız satır toplu doldurmadan etkilenmez.
@@ -274,8 +274,8 @@ describe('ReportEntryPage', () => {
     expect(homework.value).toBe('9');
     expect(interest.value).toBe('');
 
-    // İlgi puanı ayrı alandan uygulanır; ödev puanı korunur.
-    fireEvent.change(screen.getByLabelText('Tümü ilgi puanı'), {
+    // Ders içi performans puanı ayrı alandan uygulanır; ödev puanı korunur.
+    fireEvent.change(screen.getByLabelText('Tümü performans puanı'), {
       target: { value: '6' },
     });
     fireEvent.click(applyButtons()[1]);

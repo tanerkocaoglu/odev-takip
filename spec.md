@@ -7,7 +7,7 @@
 
 ## 1. Amaç ve ölçek
 
-Öğretmenlerin hâlihazırda Excel üzerinde tuttuğu haftalık ödev/derse ilgi
+Öğretmenlerin hâlihazırda Excel üzerinde tuttuğu haftalık ödev/ders içi performans
 raporlarını web tabanlı bir sisteme taşımak; öğrenciye ödevini göstermek ve
 ödev teslimini toplamak; veliye haftada **tek** bir birleştirilmiş rapor
 göndermek. 4 rol: admin, öğretmen, veli, öğrenci.
@@ -566,7 +566,7 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
 
 1. Öğrenci giriş yapar → **"Ödevlerim"**. Ekranda yalnızca şunlar vardır:
    ders adı, öğretmen adı, hafta, ödev açıklaması, son tarih ve teslim durumu
-   (yüklendi / yüklenmedi / geç yüklendi). **Puan, öğretmen notu, derse ilgi
+   (yüklendi / yüklenmedi / geç yüklendi). **Puan, öğretmen notu, ders içi performans
    ve rapor içeriği bu ekranda yoktur.**
 2. Yükleme: çoklu dosya, izin verilen tipler `jpg/jpeg/png/heic/pdf`,
    dosya başına max 10 MB, teslim başına max 10 dosya.
@@ -820,7 +820,7 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
   §5.4 madde 3)
 - **Riskli öğrenci listesi** (panel sekmesi): son 3 hafta, üç kriter — herhangi
   biri tetiklerse riskli (OR); nedenler ayrı rozet ("Düşük ortalama" /
-  "Teslim etmeme" / "Devamsızlık"). Tanım: ortalama(ödev+ilgi) ≤ 4; verilen
+  "Teslim etmeme" / "Devamsızlık"). Tanım: ortalama(ödev+ders içi performans) ≤ 4; verilen
   ödevlerden ≥ 2'si teslim edilmemiş (ardışık şart yok); ARDIŞIK ≥ 2 hafta
   `absent` (`excused` sayılmaz). Eşikler kod içinde sabit (backend `constants.ts`
   — tek dosya; ileride ayarlanabilir yapılacaksa yalnızca o dosya değişir)
@@ -842,7 +842,7 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
   bile geçmiş raporlar listede kalır, hafta bazında kronolojik, hangi sınıftan
   geldiği bilgisiyle birlikte; **hafta** (görece etiket) ve **ders** bazlı filtre
 - Rapor detayı + ödev teslim geçmişi
-- Basit trend grafiği: hafta bazında ödev/ilgi ortalaması
+- Basit trend grafiği: hafta bazında ödev/ders içi performans ortalaması
 
 **Öğrenci**
 - Bu haftanın ödevleri + yükleme
@@ -854,7 +854,7 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
 Projenin benimsenmesi bu ekrana bağlı. Gereksinimler:
 
 - Tek sayfada tablo: satır = öğrenci (~8), sütunlar = devamsızlık, ödev puanı,
-  ilgi puanı, not.
+  ders içi performans puanı, not.
 - Üstte sınıf düzeyi alanları: verilmiş ödev (otomatik dolu, düzenlenebilir),
   işlenen konu, yapılacak ödev, hesaplanmış son tarih.
 - Klavye navigasyonu: `Tab` / `Enter` ile aşağı satır, ok tuşlarıyla hücre.

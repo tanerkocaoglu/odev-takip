@@ -2468,7 +2468,7 @@ router.get('/dashboard/missing', (req, res) => {
 /**
  * GET /admin/dashboard/risk — riskli öğrenci listesi (spec §6, kullanıcı kararı).
  * Son `RISK.lookbackWeeks` hafta; üç kriter, herhangi biri tetiklerse riskli (OR):
- * - `low_score` — ödev+ilgi ortalaması ≤ RISK.avgScoreThreshold (yalnızca
+ * - `low_score` — ödev+ders içi performans ortalaması ≤ RISK.avgScoreThreshold (yalnızca
  *   completed/sent raporlar; devamsız satırlar ortalamaya girmez).
  * - `missing_submission` — son N haftada verilen ödevlerden
  *   ≥ RISK.missingSubmissionMin tanesi teslim edilmemiş (ardışık şart yok).

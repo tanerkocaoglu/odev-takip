@@ -5,7 +5,7 @@
  *
  * Tanımlar (kullanıcı onayı):
  * - Pencere: son `lookbackWeeks` hafta (aktif yılın en yeni hafta kayıtları).
- * - Düşük ortalama: son N haftada ödev+ilgi ortalaması ≤ `avgScoreThreshold`
+ * - Düşük ortalama: son N haftada ödev+ders içi performans ortalaması ≤ `avgScoreThreshold`
  *   (devamsız satırlar ortalamaya girmez; taslak raporlar sayılmaz).
  * - Teslim etmeme: son N haftada öğrenciye verilen (completed/sent) ödevlerden
  *   ≥ `missingSubmissionMin` tanesi teslim edilmemiş (ardışık şart yok).

@@ -127,7 +127,7 @@ export default function AdminReportViewPage() {
               <th className="px-3 py-2">Öğrenci</th>
               <th className="px-3 py-2">Devamsızlık</th>
               <th className="px-3 py-2">Ödev puanı</th>
-              <th className="px-3 py-2">İlgi puanı</th>
+              <th className="px-3 py-2">Ders içi performans puanı</th>
               <th className="px-3 py-2">Not</th>
             </tr>
           </thead>

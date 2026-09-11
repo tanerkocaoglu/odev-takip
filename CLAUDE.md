@@ -8,7 +8,7 @@ geliştireceğimizi, `spec.md` ne geliştireceğimizi anlatır.
 
 ## Proje özeti
 
-Bir dershanede öğretmenlerin haftalık ödev/derse ilgi raporlarını doldurduğu,
+Bir dershanede öğretmenlerin haftalık ödev/ders içi performans raporlarını doldurduğu,
 öğrencilerin ödev yüklediği, velilere haftada bir birleştirilmiş rapor
 gönderilen web uygulaması. 4 rol: admin, öğretmen, veli, öğrenci.
 
@@ -542,7 +542,7 @@ dönüyor, yetki testleri geçiyor.
 - Rapor giriş ekranı:
   - üstte: verilmiş ödev (otomatik dolu, düzenlenebilir), işlenen konu,
     yapılacak ödev, hesaplanmış son tarih
-  - tablo: satır = öğrenci; devamsızlık, ödev puanı (1–10), ilgi puanı (1–10),
+  - tablo: satır = öğrenci; devamsızlık, ödev puanı (1–10), ders içi performans puanı (1–10),
     not
   - klavye navigasyonu, tek tıkla puan girişi, toplu doldurma kısayolu
   - devamsızlık seçilince puan hücreleri disable + null

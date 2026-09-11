@@ -372,9 +372,10 @@ export default function ReportEntryPage() {
         <div className="flex items-center gap-2">
           <label
             htmlFor="bulk-interest"
+            title="Ders içi performans puanı"
             className="whitespace-nowrap text-[13px] text-muted"
           >
-            Tümü ilgi puanı
+            Tümü performans puanı
           </label>
           <input
             id="bulk-interest"
@@ -405,7 +406,9 @@ export default function ReportEntryPage() {
               <th className="w-48">Öğrenci</th>
               <th className="w-32">Devamsızlık</th>
               <th className="w-20">Ödev</th>
-              <th className="w-20">İlgi</th>
+              <th className="w-20" title="Ders içi performans puanı">
+                Performans
+              </th>
               <th>Not</th>
             </tr>
           </thead>
@@ -605,7 +608,7 @@ export default function ReportEntryPage() {
                         className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
                       />
                     </Field>
-                    <Field label="İlgi puanı" htmlFor="m-int">
+                    <Field label="Ders içi performans puanı" htmlFor="m-int">
                       <input
                         id="m-int"
                         type="number"

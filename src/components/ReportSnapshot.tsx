@@ -159,7 +159,7 @@ export default function ReportSnapshot({
                     <tr className="border-b border-border bg-bg text-left text-[13px] font-medium text-muted">
                       <th className="px-3 py-2">Devamsızlık</th>
                       <th className="px-3 py-2">Ödev puanı</th>
-                      <th className="px-3 py-2">İlgi puanı</th>
+                      <th className="px-3 py-2">Ders içi performans puanı</th>
                       <th className="px-3 py-2">Not</th>
                     </tr>
                   </thead>

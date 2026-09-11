@@ -5,6 +5,62 @@
 
 ---
 
+## "İlgi puanı" → "Ders içi performans puanı" metin değişikliği ✅
+
+### Süreç özeti
+
+Kullanıcıya görünen tüm "İlgi" / "ilgi puanı" metinleri **"Ders içi performans
+puanı"** oldu. **Yalnızca görünen Türkçe metin ve prose** değişti; veri modeli
+sabit: `report_entries.interest_score` sütunu, API alan adı, `interest`
+değişkenleri ve testlerdeki JSON alan referansları değişmedi. Şema
+değişikliği/migration yok, API sözleşmesi bozulmadı.
+
+**Kısaltma kararları (compact yoğunluk korunarak):**
+- `ReportEntryPage` toplu doldurma etiketi, dar araç çubuğunda sarma sorununu
+  geri getirmemek için **"Tümü performans puanı"**; tam ifade `title` olarak.
+- Compact tablo sütun başlığı (13px, `w-20`) **"Performans"**; tam ifade `th`
+  `title`'ında. Mobil kart alan etiketi ve comfortable görünümlerde tam ifade
+  **"Ders içi performans puanı"**.
+
+### Yapılanlar
+
+- **Frontend:** `ReportEntryPage` (toplu etiket + sütun başlığı + mobil `Field`),
+  `ReportSnapshot` ve `AdminReportViewPage` tablo başlıkları.
+- **Backend (görünen hata mesajları):** `routes/teacher.ts` tamamlama
+  doğrulaması → "Ödev ve ders içi performans puanı girilmeli." /
+  "… ödev ve ders içi performans puanı girilmelidir."
+- **Prose:** `spec.md` §1, §5.3, §5.5, §6, §6.1; `CLAUDE.md` proje özeti +
+  Aşama 3; `constants.ts` ve `routes/admin.ts` risk yorumları.
+- **Değişmeyenler:** `interest_score` sütun/alan adı, `interest` değişkenleri,
+  API sözleşmesi, JSON alan assertion'ları, migration/şema. CSV dışa aktarmada
+  zaten ilgi sütunu yoktu.
+
+### Doğrulamalar
+
+- `typecheck` (kök + backend) ✅, `lint` ✅.
+- Frontend **81/81** (14 dosya), backend **235/235** (21 dosya) ✅.
+- `teacher.test.tsx` metin assertion'ları yeni ifadeye güncellendi; JSON alan
+  adı (`interest_score`) referansları dokunulmadı.
+
+### Etkilenen dosyalar
+
+```
+src/pages/teacher/ReportEntryPage.tsx
+src/components/ReportSnapshot.tsx
+src/pages/admin/AdminReportViewPage.tsx
+src/teacher.test.tsx
+backend/src/routes/teacher.ts
+backend/src/constants.ts
+backend/src/routes/admin.ts
+spec.md  CLAUDE.md  PROGRESS.md
+```
+
+### Commit
+
+Bu commit — "İlgi puanı" → "Ders içi performans puanı" metin değişikliği + PROGRESS.
+
+---
+
 ## Gönderim öncesi admin düzenleme (DigestSendPage → rapor) ✅
 
 ### Süreç özeti
