@@ -110,6 +110,29 @@ oluşturma anında bir başlangıç şifresi girer.** Şifremi unuttum akışı 
 (e-posta/SMS kanalı yok) — unutulursa admin `reset-password` ile yeni şifre
 belirler; bu işlem `token_version`'ı artırır (eski oturumlar biter).
 
+**İlk girişte zorunlu şifre değiştirme (yalnızca öğrenci/veli):**
+- Admin'in belirlediği başlangıç şifresi **geçicidir**; öğrenci/veli ilk
+  girişte kendi şifresini belirlemek zorundadır. `teacher`/`admin` bu akışın
+  tamamen dışındadır.
+- `users.must_change_password` bayrağı `1` olur: öğrenci/veli oluşturulduğunda
+  (tekli + CSV toplu) ve öğrenci/veli `reset-password` ile sıfırlandığında.
+  Öğretmen oluşturma/reset bu bayrağa hiç dokunmaz (`0` kalır).
+- `POST /auth/login` ve `GET /auth/me` yanıtı `user.must_change_password`
+  taşır.
+- **Kullanıcının kendi seçtiği yeni şifre kuralı:** en az 8 karakter, en az bir
+  büyük harf, bir küçük harf ve bir rakam. (Admin'in girdiği geçici başlangıç
+  şifresi ve CSV ortak şifresi bu katı kurala tabi değildir — eski min 6 kuralı
+  geçerlidir.)
+- `POST /auth/change-password` (korumalı) mevcut şifreyi doğrular, yeni şifreyi
+  politikaya göre denetler; başarıda `password_hash` güncellenir,
+  `must_change_password = 0` yapılır ve `token_version` artırılır. Artan
+  `token_version` eski token'ı öldürür; yanıt **yeni bir token** döner, böylece
+  kullanıcı yeniden giriş yapmadan devam eder.
+- **Backend zorlaması (atlanamaz):** `must_change_password = 1` iken `auth`
+  middleware yalnızca `/auth/me` ve `/auth/change-password` uçlarına izin verir;
+  diğer tüm korumalı uçlar `403 FORBIDDEN` döner. Frontend yönlendirmesi yalnızca
+  UX'tir, asıl güvence budur.
+
 **JWT ömrü (rol bazlı):** admin/öğretmen 7 gün, veli/öğrenci 30 gün.
 **Login brute-force koruması:** girişte 15 dakikada 5 başarısız denemeden
 sonra `429 RATE_LIMITED` döner (IP + hesap bazlı).
@@ -142,6 +165,8 @@ CREATE TABLE users (
   role                 TEXT NOT NULL CHECK (role IN ('admin','teacher','guardian','student')),
   is_active            INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   token_version        INTEGER NOT NULL DEFAULT 1,  -- JWT iptali için
+  must_change_password INTEGER NOT NULL DEFAULT 0
+                         CHECK (must_change_password IN (0,1)),  -- migration #7
   deleted_at           TEXT,            -- ISO 8601; soft delete
   created_at           TEXT NOT NULL
 ) STRICT;

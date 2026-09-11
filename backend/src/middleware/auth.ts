@@ -36,11 +36,18 @@ export const requireAuth: RequestHandler = (
 
   const user = db
     .prepare(
-      `SELECT id, role, token_version, is_active, deleted_at
+      `SELECT id, role, token_version, is_active, deleted_at, must_change_password
        FROM users WHERE id = ?`,
     )
     .get(payload.id) as
-    | { id: string; role: AuthUser['role']; token_version: number; is_active: number; deleted_at: string | null }
+    | {
+      id: string;
+      role: AuthUser['role'];
+      token_version: number;
+      is_active: number;
+      deleted_at: string | null;
+      must_change_password: number;
+    }
     | undefined;
 
   if (
@@ -51,6 +58,19 @@ export const requireAuth: RequestHandler = (
   ) {
     next(new AppError('UNAUTHORIZED', 401, UNAUTHORIZED_MESSAGE));
     return;
+  }
+
+  // Zorunlu şifre değiştirme: bayrak 1 iken yalnızca oturum bilgisi ve şifre
+  // değiştirme uçlarına izin verilir (spec §2.1). Diğer korumalı uçlar 403 —
+  // frontend yönlendirmesi tek başına yeterli değildir.
+  if (user.must_change_password === 1) {
+    const fullPath = req.baseUrl + req.path;
+    const allowed =
+      fullPath.endsWith('/auth/me') || fullPath.endsWith('/auth/change-password');
+    if (!allowed) {
+      next(new AppError('FORBIDDEN', 403, 'Önce şifrenizi değiştirmelisiniz.'));
+      return;
+    }
   }
 
   req.user = {

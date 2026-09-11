@@ -26,6 +26,8 @@ interface AuthContextValue {
   loading: boolean;
   /** Tek giriş: admin/öğretmen e-posta, veli/öğrenci username. */
   login: (identifier: string, password: string) => Promise<void>;
+  /** Kendi şifresini değiştir; dönen yeni token + user uygulanır. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -73,14 +75,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyAuth],
   );
 
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      const res = await authApi.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      applyAuth(res.token, res.user);
+    },
+    [applyAuth],
+  );
+
   const logout = useCallback(() => {
     clearToken();
     setUser(null);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, changePassword, logout }),
+    [user, loading, login, changePassword, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

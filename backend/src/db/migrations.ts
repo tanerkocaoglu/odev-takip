@@ -415,6 +415,20 @@ registerMigration(6, 'schools_grade_view', () => {
   db.exec(`ALTER TABLE weekly_digests ADD COLUMN last_viewed_at TEXT`);
 });
 
+/**
+ * Migration #7 — `must_change_password` (İlk girişte zorunlu şifre değiştirme).
+ *
+ * `users.must_change_password`: 1 ise öğrenci/veli ilk girişte şifresini
+ * değiştirmek zorundadır (spec §2.1). Mevcut satırlar `DEFAULT 0` alır —
+ * geriye dönük olarak kimse zorlanmaz. Öğretmen bu akışın dışındadır.
+ */
+registerMigration(7, 'must_change_password', () => {
+  db.exec(
+    `ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0
+       CHECK (must_change_password IN (0,1))`,
+  );
+});
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

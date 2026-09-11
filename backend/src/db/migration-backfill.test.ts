@@ -69,6 +69,8 @@ beforeAll(() => {
   db.exec(`ALTER TABLE students DROP COLUMN grade_level`);
   db.exec(`ALTER TABLE weekly_digests DROP COLUMN first_viewed_at`);
   db.exec(`ALTER TABLE weekly_digests DROP COLUMN last_viewed_at`);
+  // Migration #7 (must_change_password) geri alınır — #2 çağında kolon YOKTU.
+  db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
   db.exec(`PRAGMA user_version = 2`);
 
   // ---- Eski şemayla (kolonsuz) veri ekle ----
@@ -113,8 +115,8 @@ describe('migration #3 backfill', () => {
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
     // #3 backfill + #4 (submission_files) + #5 (username_login) + #6
-    // (schools_grade_view) de koşar.
-    expect(version.user_version).toBe(6);
+    // (schools_grade_view) + #7 (must_change_password) de koşar.
+    expect(version.user_version).toBe(7);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -127,5 +129,48 @@ describe('migration #3 backfill', () => {
         )
         .run(),
     ).toThrow();
+  });
+});
+
+describe('migration #7 — must_change_password rewind (7↔6)', () => {
+  it('kolon yokken user_version 6; yeniden koşunca default 0 ile ekler', () => {
+    // Şema #7'ye kadar kurulur, tablolar temizlenir.
+    resetDb();
+
+    // #7'yi geri sar: kolon YOK, sürüm 6 (eski migration turlarındaki desen).
+    db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
+    db.exec(`PRAGMA user_version = 6`);
+
+    const before = db
+      .prepare(`SELECT user_version FROM pragma_user_version`)
+      .get() as { user_version: number };
+    expect(before.user_version).toBe(6);
+    const colsBefore = (
+      db.prepare(`SELECT name FROM pragma_table_info('users')`).all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(colsBefore).not.toContain('must_change_password');
+
+    // Eski şemayla (kolonsuz) bir kullanıcı ekle.
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, username, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES ('m7-user', 'Eski Ogrenci', 'eski ogrenci', 'eskiogrenci1', NULL, 'x',
+               'student', 1, 1, NULL, ?)`,
+    ).run(now);
+
+    // #7 yeniden koşar → kolon eklenir, mevcut satır 0 alır.
+    runMigrations();
+
+    const after = db
+      .prepare(`SELECT user_version FROM pragma_user_version`)
+      .get() as { user_version: number };
+    expect(after.user_version).toBe(7);
+
+    const row = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
+      .get() as { must_change_password: number };
+    expect(row.must_change_password).toBe(0);
   });
 });

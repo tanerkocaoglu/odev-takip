@@ -11,10 +11,12 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import request from 'supertest';
 import { Router } from 'express';
 import { createApp } from './app.js';
+import { db } from './db/index.js';
 import { errorHandler } from './errors.js';
 import { requireAuth } from './middleware/auth.js';
 import { adminOnly } from './middleware/adminOnly.js';
 import { signToken } from './utils/token.js';
+import { hashPasswordSync } from './utils/hash.js';
 import { clearRateLimits } from './middleware/rateLimit.js';
 import { resetDb, insertTestUsers, TEST_PASSWORD } from './test/helpers.js';
 
@@ -234,5 +236,139 @@ describe('Yetki matrisi', () => {
       .get('/api/v1/_test/admin-only')
       .set('Authorization', `Bearer ${await tokenFor(USERNAME_USERS.student)}`);
     expect(studentRes.status).toBe(403);
+  });
+});
+
+describe('must_change_password — ilk girişte zorunlu şifre değiştirme', () => {
+  const CP_PASSWORD = 'Baslangic1';
+  const NEW_PASSWORD = 'YeniSifre1';
+
+  beforeAll(() => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, username, email, password_hash, role,
+          is_active, token_version, must_change_password, deleted_at, created_at)
+       VALUES ('cp-student', 'CP Ogrenci', 'cp ogrenci', 'cp-student', NULL, ?, 'student',
+               1, 1, 1, NULL, ?)`,
+    ).run(hashPasswordSync(CP_PASSWORD), now);
+  });
+
+  beforeEach(() => {
+    db.prepare(
+      `UPDATE users SET password_hash = ?, must_change_password = 1, token_version = 1
+       WHERE id = 'cp-student'`,
+    ).run(hashPasswordSync(CP_PASSWORD));
+  });
+
+  async function loginCp(): Promise<string> {
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: 'cp-student', password: CP_PASSWORD });
+    return res.body.token as string;
+  }
+
+  it('login ve me must_change_password=true taşır', async () => {
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: 'cp-student', password: CP_PASSWORD });
+    expect(login.body.user.must_change_password).toBe(true);
+
+    const me = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${login.body.token}`);
+    expect(me.status).toBe(200);
+    expect(me.body.user.must_change_password).toBe(true);
+  });
+
+  it('bayrak 1 iken başka korumalı uç 403; /auth/me serbest', async () => {
+    const token = await loginCp();
+    const blocked = await request(app)
+      .get('/api/v1/_test/authed')
+      .set('Authorization', `Bearer ${token}`);
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe('FORBIDDEN');
+
+    const me = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(me.status).toBe(200);
+  });
+
+  it('şifre değişir: bayrak 0, tv+1, eski token 401, yeni token geçerli', async () => {
+    const oldToken = await loginCp();
+
+    const change = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${oldToken}`)
+      .send({ current_password: CP_PASSWORD, new_password: NEW_PASSWORD });
+    expect(change.status).toBe(200);
+    expect(change.body.user.must_change_password).toBe(false);
+    expect(typeof change.body.token).toBe('string');
+
+    const row = db
+      .prepare(`SELECT must_change_password, token_version FROM users WHERE id = 'cp-student'`)
+      .get() as { must_change_password: number; token_version: number };
+    expect(row.must_change_password).toBe(0);
+    expect(row.token_version).toBe(2);
+
+    // Eski token öldü (tv uyuşmuyor) → 401.
+    const withOld = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${oldToken}`);
+    expect(withOld.status).toBe(401);
+
+    // Yeni token hem me hem başka korumalı uçta çalışır.
+    const withNew = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${change.body.token}`);
+    expect(withNew.status).toBe(200);
+
+    const allowed = await request(app)
+      .get('/api/v1/_test/authed')
+      .set('Authorization', `Bearer ${change.body.token}`);
+    expect(allowed.status).toBe(200);
+  });
+
+  it('yanlış mevcut şifre 400; bayrak değişmez', async () => {
+    const token = await loginCp();
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ current_password: 'YanlisSifre1', new_password: NEW_PASSWORD });
+    expect(res.status).toBe(400);
+    expect(res.body.error.fields.current_password).toBeDefined();
+    const row = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = 'cp-student'`)
+      .get() as { must_change_password: number };
+    expect(row.must_change_password).toBe(1);
+  });
+
+  it('zayıf yeni şifre 400 (katı politika)', async () => {
+    const token = await loginCp();
+    const res = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ current_password: CP_PASSWORD, new_password: 'zayif' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.fields.new_password).toBeDefined();
+  });
+
+  it('öğretmen bu akışın tamamen dışındadır', async () => {
+    const login = await request(app).post('/api/v1/auth/login').send(EMAIL_USERS.teacher);
+    expect(login.status).toBe(200);
+    expect(login.body.user.must_change_password).toBe(false);
+
+    const row = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = 'test-teacher'`)
+      .get() as { must_change_password: number };
+    expect(row.must_change_password).toBe(0);
+
+    // Zayıf/zorunlu yönlendirme yok — normal korumalı uç çalışır.
+    const res = await request(app)
+      .get('/api/v1/_test/authed')
+      .set('Authorization', `Bearer ${login.body.token}`);
+    expect(res.status).toBe(200);
   });
 });

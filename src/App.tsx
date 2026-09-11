@@ -3,6 +3,7 @@ import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/admin/AdminLayout';
 import LoginPage from './pages/LoginPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import TokenReportPage from './pages/TokenReportPage';
 import AcademicYearsPage from './pages/admin/AcademicYearsPage';
@@ -98,6 +99,14 @@ export default function App() {
         <Route index element={<GuardianHomePage />} />
         <Route path="reports/:id" element={<GuardianReportDetailPage />} />
       </Route>
+      <Route
+        path="/sifre-yenile"
+        element={
+          <ProtectedRoute>
+            <ChangePasswordPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/r/:token" element={<TokenReportPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

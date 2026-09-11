@@ -1288,8 +1288,8 @@ router.post(
       db.prepare(
         `INSERT INTO users
            (id, full_name, full_name_normalized, username, email, password_hash, role,
-            is_active, token_version, deleted_at, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'guardian', 1, 1, NULL, ?)`,
+            is_active, token_version, must_change_password, deleted_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'guardian', 1, 1, 1, NULL, ?)`,
       ).run(userId, input.full_name, normalizeTurkish(input.full_name), username, passwordHash, now);
 
       db.prepare(
@@ -1401,7 +1401,7 @@ router.post(
 
     const passwordHash = await hashPassword(password);
     db.prepare(
-      `UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?`,
+      `UPDATE users SET password_hash = ?, must_change_password = 1, token_version = token_version + 1 WHERE id = ?`,
     ).run(passwordHash, current.user_id);
 
     writeAuditLog({
@@ -1587,8 +1587,8 @@ router.post(
       db.prepare(
         `INSERT INTO users
            (id, full_name, full_name_normalized, username, email, password_hash, role,
-            is_active, token_version, deleted_at, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'student', 1, 1, NULL, ?)`,
+            is_active, token_version, must_change_password, deleted_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'student', 1, 1, 1, NULL, ?)`,
       ).run(userId, input.full_name, normalizeTurkish(input.full_name), username, passwordHash, now);
 
       db.prepare(
@@ -1733,7 +1733,7 @@ router.post(
 
     const passwordHash = await hashPassword(password);
     db.prepare(
-      `UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?`,
+      `UPDATE users SET password_hash = ?, must_change_password = 1, token_version = token_version + 1 WHERE id = ?`,
     ).run(passwordHash, id);
 
     writeAuditLog({

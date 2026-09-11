@@ -120,6 +120,13 @@ export const authApi = {
   me(): Promise<{ user: User }> {
     return apiFetch<{ user: User }>('/auth/me');
   },
+  /** Kendi şifresini belirle (zorunlu ilk değişim dahil); yeni token döner. */
+  changePassword(input: { current_password: string; new_password: string }): Promise<AuthResponse> {
+    return apiFetch<AuthResponse>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
 };
 
 // ---------- Admin CRUD (Aşama 2b) ----------

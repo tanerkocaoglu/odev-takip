@@ -130,6 +130,14 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
   yüksek mevcut sayının +1'i; çakışmada artırılarak yeniden denenir
   (`spec.md` §2.1). Yalnızca yeni kayıtları etkiler; mevcut `ogrenci<n>` /
   `veli<n>` adlarına dokunulmaz. SMS/OTP kullanılmaz.
+- **Şifre politikası:** Kullanıcının kendi seçtiği şifre en az 8 karakter,
+  bir büyük + bir küçük harf + bir rakam. Admin'in girdiği geçici başlangıç
+  şifresi ve CSV ortak şifresi min 6'dır (katı kurala tabi değil).
+- **İlk girişte zorunlu şifre değiştirme:** `users.must_change_password`
+  (migration #7) yalnızca öğrenci/veli için; öğrenci/veli create + reset + CSV
+  import'ta `1`, öğretmen hiç etkilenmez. Login/me bayrağı taşır; bayrak `1`
+  iken `auth` middleware yalnızca `/auth/me` + `/auth/change-password` uçlarına
+  izin verir, diğerleri `403` (frontend yönlendirmesi tek başına yeterli değil).
 
 **Girdi doğrulama ve hata formatı**
 - Her gelen request body Zod şemasıyla parse edilir. `any` kullanılmaz.

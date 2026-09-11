@@ -19,6 +19,8 @@ export interface User {
   username: string | null;
   /** Admin/öğretmen giriş anahtarı (veli/öğrenci için null). */
   email: string | null;
+  /** İlk girişte zorunlu şifre değiştirme (yalnızca öğrenci/veli). */
+  must_change_password: boolean;
 }
 
 export interface AuthResponse {

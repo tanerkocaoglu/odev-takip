@@ -5,6 +5,104 @@
 
 ---
 
+## İlk girişte zorunlu şifre değiştirme (öğrenci/veli) ✅
+
+### Süreç özeti
+
+Öğrenci/veli hesapları admin'in belirlediği geçici şifreyle açılıyor; kullanıcı
+ilk girişte **kendi şifresini belirlemek zorunda** (öğretmen/admin akışın
+tamamen dışında). Şema değişikliği: **migration #7** (`users.must_change_password`).
+Bayrak yalnızca öğrenci/veli create + reset + CSV import'ta `1`; öğretmen
+create/reset'te `0` kalır. `POST /auth/change-password` mevcut şifreyi doğrular,
+katı politikayı uygular, `must_change_password = 0` + `token_version + 1` yapar ve
+**yeni token** döner. Bayrak `1` iken `auth` middleware `/auth/me` ve
+`/auth/change-password` dışındaki tüm korumalı uçları `403 FORBIDDEN` ile bloklar.
+
+**Kullanıcı kararları:** (1) admin başlangıç şifresi eski kural (min 6), (2) CSV
+ortak şifresi eski kural (min 6) — katı kural yalnızca kullanıcının kendi
+seçtiği şifrede; (3) değiştirme ekranında mevcut şifre istenir; (4) bayrak `1`
+iken backend de bloklar (403).
+
+### Yapılanlar
+
+**Şema**
+- **Migration #7 (`must_change_password`):** `ALTER TABLE users ADD COLUMN
+  must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (... IN (0,1))`. Mevcut
+  satırlar `0` → geriye dönük kimse zorlanmaz.
+- `migration-backfill.test.ts`: rewind #2'ye #7 geri sarımı eklendi; ayrıca
+  **#7'ye özel 7↔6 rewind testi** (kolon yok + `user_version 6` → yeniden koş →
+  kolon default `0` ile eklenir, sürüm 7).
+
+**Backend**
+- `utils/password.ts` (yeni): `passwordSchema` — min 8 + büyük/küçük/rakam
+  (Unicode `\p{Lu}`/`\p{Ll}`, Türkçe harfler dahil).
+- `routes/auth.ts`: `loadAuthUser`/`publicUser` `must_change_password` taşır;
+  `POST /auth/change-password` (mevcut şifre + politika; `0` + `tv+1`; yeni token).
+- `middleware/auth.ts`: bayrak `1` ise yalnızca `/auth/me` +
+  `/auth/change-password` serbest, diğer korumalı uçlar `403`.
+- `routes/admin.ts`: öğrenci/veli create ve reset'te bayrak `1`; teacher
+  create/reset'e dokunulmaz. `services/studentImport.ts`: commit'te bayrak `1`.
+
+**Frontend**
+- `User.must_change_password`; `authApi.changePassword`; `AuthContext.changePassword`
+  (yeni token + user uygular).
+- `ProtectedRoute`: bayraklı kullanıcı, `/sifre-yenile` dışındaki her sayfadan
+  (URL elle yazılsa bile) zorunlu ekrana atılır.
+- `pages/ChangePasswordPage.tsx` (yeni) + `/sifre-yenile` rotası; `comfortable`,
+  alan altı hatalar, politika ipucu, `new-password` autocomplete.
+
+**Docs** — `spec.md` §2.1 (akış + politika) ve §3.1 (`users` DDL); `CLAUDE.md`
+şifre politikası + zorunlu değiştirme kuralı.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+**Testler** — backend **234/234** (21 dosya; +6 password, +6 auth change-password,
++1 migration; admin/import bayrak kontrolleri), frontend **77/77** (14 dosya;
++5 `change-password.test.tsx`).
+
+**Canlı API (gerçek app.db, migration #7 uygulandı):**
+1. Admin yeni öğrenci oluşturdu → DB bayrak **1**; öğrenci girişi
+   `must_change_password=true`.
+2. **Server tarafı 403 kanıtı:** bayraklı token ile `GET /student/homeworks` →
+   **403 FORBIDDEN** (yalnızca `/auth/me` → 200). Frontend'e bağımlı değil.
+3. **tv eski token'ı öldürüyor:** `POST /auth/change-password` (mevcut+katı yeni)
+   → 200, bayrak DB'de **0**; **eski token ile `/auth/me` → 401**; yeni token ile
+   `/student/homeworks` → 200.
+4. **Öğretmen etkilenmiyor:** `ogretmen1` zayıf şifreyle (`admin123`) giriş →
+   `must_change_password=false`, `GET /teacher/dashboard` → 200; DB bayrak **0**;
+   öğretmen create ve reset sonrası bayrak **0**.
+5. Temizlik: test öğrenci/veli/öğretmen silindi (204).
+
+**Canlı tarayıcı (headless Chrome/CDP, gerçek backend):** bayraklı öğrenci
+token'ı ile `/student`'a gidildi → **`/sifre-yenile`'e yönlendi** (başlık "Yeni
+şifre belirle"); form doldurulup gönderildi → `/student`'a döndü; localStorage
+token yenilendi; eski token API'de **401**.
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts                         (+ #7)
+backend/src/db/migration-backfill.test.ts            (#7 rewind + özel test)
+backend/src/utils/password.ts password.test.ts       (yeni)
+backend/src/routes/auth.ts                           (bayrak + change-password)
+backend/src/middleware/auth.ts                        (403 guard)
+backend/src/routes/admin.ts                           (create/reset bayrak)
+backend/src/services/studentImport.ts                 (import bayrak)
+backend/src/admin.test.ts auth.test.ts student-import.test.ts
+src/types.ts src/services/api.ts src/context/AuthContext.tsx
+src/components/ProtectedRoute.tsx
+src/pages/ChangePasswordPage.tsx  (yeni)  src/App.tsx
+src/change-password.test.tsx  (yeni)
+spec.md  CLAUDE.md  PROGRESS.md
+```
+
+### Commit
+
+Bu commit — ilk girişte zorunlu şifre değiştirme (migration #7) + PROGRESS.
+
+---
+
 ## İsim tabanlı kullanıcı adı + CSV içe aktarma sütun sadeleştirmesi ✅
 
 ### Süreç özeti

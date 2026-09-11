@@ -389,8 +389,8 @@ export function commitImport(
       db.prepare(
         `INSERT INTO users
            (id, full_name, full_name_normalized, username, email, password_hash, role,
-            is_active, token_version, deleted_at, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'guardian', 1, 1, NULL, ?)`,
+            is_active, token_version, must_change_password, deleted_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'guardian', 1, 1, 1, NULL, ?)`,
       ).run(
         userId,
         guardian.fullName,
@@ -420,8 +420,8 @@ export function commitImport(
       db.prepare(
         `INSERT INTO users
            (id, full_name, full_name_normalized, username, email, password_hash, role,
-            is_active, token_version, deleted_at, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'student', 1, 1, NULL, ?)`,
+            is_active, token_version, must_change_password, deleted_at, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'student', 1, 1, 1, NULL, ?)`,
       ).run(
         userId,
         student.fullName,

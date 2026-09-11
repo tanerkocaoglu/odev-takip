@@ -227,6 +227,16 @@ describe('Kaydetme (commit)', () => {
     expect(rows[1].class_id).toBe('c-pisagor');
     expect(rows.map((r) => r.username)).toEqual(['aliyilmaz1', 'aylayilmaz1']);
 
+    // İçe aktarmayla gelen tüm yeni kullanıcılar ilk girişte şifre değiştirir.
+    const flags = db
+      .prepare(
+        `SELECT must_change_password FROM users
+         WHERE full_name IN ('Ali Yılmaz', 'Ayla Yılmaz', 'Örnek Kişi 5')`,
+      )
+      .all() as Array<{ must_change_password: number }>;
+    expect(flags).toHaveLength(3);
+    expect(flags.every((f) => f.must_change_password === 1)).toBe(true);
+
     const audit = db
       .prepare(`SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'student.import'`)
       .get() as { c: number };

@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { createApp } from './app.js';
+import { db } from './db/index.js';
 import { resetDb, insertTestUsers, TEST_PASSWORD } from './test/helpers.js';
 
 const app = createApp();
@@ -399,6 +400,12 @@ describe('Öğretmen', () => {
     });
     expect(created.status).toBe(201);
 
+    // Öğretmen zorunlu şifre değiştirme akışının dışında — bayrak 0 kalır.
+    const teacherFlag = db
+      .prepare(`SELECT must_change_password FROM users WHERE email = 'yeni@test.local'`)
+      .get() as { must_change_password: number };
+    expect(teacherFlag.must_change_password).toBe(0);
+
     const clash = await adminRequest('post', '/api/v1/admin/teachers').send({
       full_name: 'İkinci',
       email: 'yeni@test.local',
@@ -437,6 +444,11 @@ describe('Öğretmen', () => {
       `/api/v1/admin/teachers/${teacher.id}/reset-password`,
     ).send({ password: 'YeniSifre456' });
     expect(reset.status).toBe(200);
+    // Öğretmen reset'i bayrağa dokunmaz.
+    const teacherFlag = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = ?`)
+      .get(teacher.id) as { must_change_password: number };
+    expect(teacherFlag.must_change_password).toBe(0);
 
     const meWithOld = await request(app)
       .get('/api/v1/auth/me')
@@ -473,7 +485,6 @@ describe('Öğretmen', () => {
     const audit = await request(app).get('/api/v1/auth/me');
     void audit;
     // audit_logs'ta kayıt var (doğrudan DB üzerinden doğrulanır)
-    const { db } = await import('./db/index.js');
     const log = db
       .prepare(`SELECT action FROM audit_logs WHERE entity_id = ? ORDER BY created_at DESC LIMIT 1`)
       .get(teacherId) as { action: string };
@@ -491,7 +502,6 @@ describe('Admin ekleme', () => {
     expect(created.status).toBe(201);
     expect(created.body.role ?? 'admin').toBe('admin');
 
-    const { db } = await import('./db/index.js');
     const log = db
       .prepare(
         `SELECT action, diff FROM audit_logs WHERE entity_id = ? ORDER BY created_at DESC LIMIT 1`,
@@ -527,6 +537,11 @@ describe('Veli', () => {
     expect(created.status).toBe(201);
     expect(created.body.whatsapp_phone).toBe('+905330002233');
     expect(created.body.username).toMatch(/^ornekkisi1\d+$/);
+    // Yeni veli → ilk girişte zorunlu şifre değiştirme bayrağı 1.
+    const guardianFlag = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = ?`)
+      .get(created.body.user_id) as { must_change_password: number };
+    expect(guardianFlag.must_change_password).toBe(1);
 
     const missingWhatsapp = await adminRequest('post', '/api/v1/admin/guardians').send({
       full_name: 'WhatsAppsız Veli',
@@ -574,6 +589,15 @@ describe('Veli', () => {
     ).send({ password: 'YeniSifre456' });
     expect(reset.status).toBe(200);
 
+    // Reset → sonraki girişte zorunlu şifre değiştirme.
+    const gFlag = db
+      .prepare(
+        `SELECT must_change_password FROM users u
+         JOIN guardians g ON g.user_id = u.id WHERE g.id = ?`,
+      )
+      .get(guardian.id) as { must_change_password: number };
+    expect(gFlag.must_change_password).toBe(1);
+
     const meWithOld = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${oldToken}`);
@@ -584,7 +608,6 @@ describe('Veli', () => {
       .send({ identifier: guardian.username, password: 'YeniSifre456' });
     expect(newLogin.status).toBe(200);
 
-    const { db } = await import('./db/index.js');
     const log = db
       .prepare(
         `SELECT action FROM audit_logs WHERE entity_type = 'guardian' ORDER BY created_at DESC LIMIT 1`,
@@ -607,7 +630,6 @@ describe('Veli', () => {
     const del = await adminRequest('delete', `/api/v1/admin/guardians/${guardian.id}`);
     expect(del.status).toBe(204);
 
-    const { db } = await import('./db/index.js');
     const log = db
       .prepare(
         `SELECT action FROM audit_logs WHERE entity_id = ? ORDER BY created_at DESC LIMIT 1`,
@@ -677,6 +699,11 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
     expect(created.status).toBe(201);
     expect(created.body.class_name).toBe('SEVA');
     expect(created.body.username).toMatch(/^testogrenciyeni\d+$/);
+    // Yeni öğrenci → ilk girişte zorunlu şifre değiştirme bayrağı 1.
+    const studentFlag = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = ?`)
+      .get(created.body.id) as { must_change_password: number };
+    expect(studentFlag.must_change_password).toBe(1);
   });
 
   it('arama veli adıyla da çalışır; sayfalama total doğru', async () => {
@@ -710,7 +737,6 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
     expect(inB.body.total).toBe(1);
 
     // Audit log
-    const { db } = await import('./db/index.js');
     const log = db
       .prepare(
         `SELECT action, diff FROM audit_logs WHERE entity_type = 'student' ORDER BY created_at DESC LIMIT 1`,
@@ -797,6 +823,11 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
     ).send({ password: 'YeniSifre456' });
     expect(reset.status).toBe(200);
 
+    const sFlag = db
+      .prepare(`SELECT must_change_password FROM users WHERE id = ?`)
+      .get(studentId) as { must_change_password: number };
+    expect(sFlag.must_change_password).toBe(1);
+
     const meWithOld = await request(app)
       .get('/api/v1/auth/me')
       .set('Authorization', `Bearer ${oldToken}`);
@@ -807,7 +838,6 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
       .send({ identifier: username, password: 'YeniSifre456' });
     expect(newLogin.status).toBe(200);
 
-    const { db } = await import('./db/index.js');
     const log = db
       .prepare(
         `SELECT action FROM audit_logs WHERE entity_type = 'student' AND action = 'student.password_reset' ORDER BY created_at DESC LIMIT 1`,
@@ -1010,7 +1040,6 @@ describe('Atama takası (swap) + öğretmen atamalarını devretme', () => {
     expect(items.find((i) => i.id === ccAId)!.teacher_id).toBe(teacher2Id);
     expect(items.find((i) => i.id === ccBId)!.teacher_id).toBe('test-teacher');
 
-    const { db } = await import('./db/index.js');
     const audit = db
       .prepare(
         `SELECT action, diff FROM audit_logs
@@ -1080,7 +1109,6 @@ describe('Atama takası (swap) + öğretmen atamalarını devretme', () => {
     expect(transfer.status).toBe(200);
     expect(transfer.body.reassigned).toBe(2);
 
-    const { db } = await import('./db/index.js');
     const ownerCount = db
       .prepare(
         `SELECT COUNT(*) AS c FROM class_courses

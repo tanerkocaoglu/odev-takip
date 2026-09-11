@@ -27,6 +27,12 @@ export default function ProtectedRoute({ children, roles }: ProtectedRouteProps)
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
+  // İlk girişte zorunlu şifre değiştirme: bayraklı kullanıcı, şifre ekranı
+  // dışındaki hiçbir sayfaya (URL elle yazılsa bile) giremez.
+  if (user.must_change_password && location.pathname !== '/sifre-yenile') {
+    return <Navigate to="/sifre-yenile" replace />;
+  }
+
   if (roles && !roles.includes(user.role)) {
     return <Navigate to="/" replace />;
   }
