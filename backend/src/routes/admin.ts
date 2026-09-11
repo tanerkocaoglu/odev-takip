@@ -28,6 +28,12 @@ import { nextUsername } from '../utils/username.js';
 import { writeAuditLog } from '../services/audit.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
+import { csvUploadSingle } from '../middleware/upload.js';
+import {
+  commitImport,
+  prepareImport,
+  studentImportTemplateCsv,
+} from '../services/studentImport.js';
 import {
   buildSnapshot,
   classIdForStudentAtWeek,
@@ -2705,5 +2711,86 @@ router.post('/backup', (_req, res) => {
     res.download(resolved);
   });
 });
+
+// ===========================================================================
+// CSV ile toplu öğrenci içe aktarma — spec.md §5.6
+// ===========================================================================
+
+/** Boş CSV şablonu (başlık satırı, UTF-8 BOM'lu). */
+router.get('/students/import/template', (_req, res) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader(
+    'Content-Disposition',
+    'attachment; filename="ogrenci-ice-aktarma-sablonu.csv"',
+  );
+  res.send(studentImportTemplateCsv());
+});
+
+/**
+ * POST /admin/students/import?dry_run=true|false
+ * `dry_run=true` → yalnızca doğrular (hiçbir şey yazmaz), özet + hata/uyarı
+ * döner. `dry_run=false` → yeniden doğrular ve tek transaction'da yazar
+ * (hepsi ya da hiçbiri). Satır hatası varsa commit **400 VALIDATION_ERROR**
+ * döner (`error.details.errors` satır listesi) ve hiçbir kayıt oluşmaz.
+ */
+router.post(
+  '/students/import',
+  csvUploadSingle,
+  asyncHandler(async (req, res) => {
+    const dryRun = req.query.dry_run === 'true';
+    const file = req.file;
+    if (!file) {
+      throw new AppError('VALIDATION_ERROR', 400, 'CSV dosyası seçilmedi.');
+    }
+
+    const { preview, plan } = prepareImport(file.buffer.toString('utf8'));
+    const base = {
+      dry_run: dryRun,
+      ok: preview.ok,
+      summary: preview.summary,
+      errors: preview.errors,
+      warnings: preview.warnings,
+    };
+
+    if (dryRun) {
+      res.json({ ...base, committed: false });
+      return;
+    }
+
+    // Hepsi ya da hiçbiri: tek satır hatalıysa hiçbir kayıt yazılmaz.
+    if (!preview.ok) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        400,
+        `CSV dosyasında ${preview.errors.length} hata var; hiçbir kayıt oluşturulmadı.`,
+        undefined,
+        { errors: preview.errors, warnings: preview.warnings, summary: preview.summary },
+      );
+    }
+
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (password.length < 6) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        400,
+        'Başlangıç şifresi en az 6 karakter olmalı.',
+        { password: 'Başlangıç şifresi en az 6 karakter olmalı.' },
+      );
+    }
+
+    const passwordHash = await hashPassword(password);
+    const created = commitImport(plan, passwordHash);
+
+    writeAuditLog({
+      actorId: req.user!.id,
+      action: 'student.import',
+      entityType: 'student_import',
+      entityId: randomUUID(),
+      diff: { ...preview.summary, created },
+    });
+
+    res.status(201).json({ ...base, committed: true, created });
+  }),
+);
 
 export default router;

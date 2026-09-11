@@ -18,6 +18,8 @@ export class AppError extends Error {
     public readonly status: number,
     message: string,
     public readonly fields?: Record<string, string>,
+    /** Yapısal ek ayrıntı (ör. satır bazlı CSV hataları) — opsiyonel. */
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = 'AppError';
@@ -58,16 +60,17 @@ export function errorHandler(
   }
 
   if (err instanceof AppError) {
-    const body: Record<string, unknown> = {
-      error: {
-        code: err.code,
-        message: err.message,
-      },
+    const errorBody: Record<string, unknown> = {
+      code: err.code,
+      message: err.message,
     };
     if (err.fields) {
-      body.error = { ...(body.error as object), fields: err.fields };
+      errorBody.fields = err.fields;
     }
-    res.status(err.status).json(body);
+    if (err.details !== undefined) {
+      errorBody.details = err.details;
+    }
+    res.status(err.status).json({ error: errorBody });
     return;
   }
 
