@@ -35,6 +35,11 @@ import {
   studentImportTemplateCsv,
 } from '../services/studentImport.js';
 import {
+  guardiansExportCsv,
+  reportsExportCsv,
+  studentsExportCsv,
+} from '../services/csvExport.js';
+import {
   buildSnapshot,
   classIdForStudentAtWeek,
   maybeCascadeSent,
@@ -2792,5 +2797,34 @@ router.post(
     res.status(201).json({ ...base, committed: true, created });
   }),
 );
+
+// ===========================================================================
+// Filtreli CSV dışa aktarma — spec.md §5.7
+// ===========================================================================
+
+/** CSV dosyasını ekranın aktif filtresiyle indirtir (UTF-8, BOM'lu). */
+function sendCsv(res: import('express').Response, filename: string, csv: string): void {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+}
+
+router.get('/reports/export', (req, res) => {
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const classId = typeof req.query.class_id === 'string' ? req.query.class_id : undefined;
+  const weekId = typeof req.query.week_id === 'string' ? req.query.week_id : undefined;
+  sendCsv(res, 'raporlar.csv', reportsExportCsv({ status, classId, weekId }));
+});
+
+router.get('/students/export', (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const classId = typeof req.query.classId === 'string' ? req.query.classId : undefined;
+  sendCsv(res, 'ogrenciler.csv', studentsExportCsv({ q, classId }));
+});
+
+router.get('/guardians/export', (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  sendCsv(res, 'veliler.csv', guardiansExportCsv({ q }));
+});
 
 export default router;
