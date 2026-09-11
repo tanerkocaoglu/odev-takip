@@ -5,6 +5,79 @@
 
 ---
 
+## Öğrenci "Ödevlerim" ekranı — admin görsel dili ✅
+
+### Süreç özeti
+
+`HomeworkListPage` (öğrenci "Ödevlerim") admin panelindeki görsel dağarcıkla
+zenginleştirildi: duruma göre sol kenar şeridi, ders ikonu, elevation,
+dropzone focus/hover'da Level 2. **Yalnızca görsel katman değişti** — route,
+API çağrıları, veri modeli, `comfortable` yoğunluk ve mobil öncelik aynen
+korundu. Öğrencinin puan/not/değerlendirme süreci görmeme kuralı dokunulmadı.
+
+### Yapılanlar
+
+**`src/pages/student/HomeworkListPage.tsx`**
+- **Durum türetme (`cardStatus`):** `submitted` (yüklendi) / `late` (geç
+  yüklendi) / `overdue` (süresi geçti, yüklenmedi) / `pending` (süresi var,
+  yüklenmedi). Kartta test edilebilir `data-status` özniteliği.
+- **Sol kenar şeridi (`border-l-4`):** submitted=yeşil (`border-l-sub-uploaded`),
+  late/overdue=amber (`border-l-sub-late`), pending=nötr (`border-l-status-draft`).
+  **`--accent` kullanılmadı** — kart etkileşimli değil, accent kuralı korunur.
+- **Rozetler dolgulu** (zaten öyleydi) ve tek kaynağa normalize edildi:
+  `bg-sub-uploaded/10`, `bg-sub-late/10`, `bg-sub-missing/10`; bekleyen
+  "Yüklenmedi" **nötr** (`status-draft`), süresi geçmiş "Yüklenmedi" amber.
+  İkonlar korundu (`CheckCircle2`/`Clock3`/`XCircle`).
+- **Ders ikonu:** `BookOpen` (16px, `aria-hidden`, `text-muted`) ders adının
+  yanında; metin düğümü bölünmedi (mevcut test sorgusu bozulmadı).
+- **Elevation:** kartlar `elevation-1`; sayfa başlığı paylaşılan `PageTitle`.
+- **Dropzone:** `card-interactive` + seçilen dosya satırları `bg-bg` zeminli,
+  temiz liste. Basit "Dosya seç" akışı korundu (drag-drop eklenmedi — karar).
+
+**`src/index.css`**
+- `.card-interactive:focus-within` eklendi (accent kenarlık + Level 2 gölge) —
+  dropzone içindeki kontrole odaklanınca "şu an önde". `prefers-reduced-motion`
+  davranışı global kuralca korunur.
+
+**Tek liste kararı:** Geçmiş ödevler için ayrı/katlanır bölüm **eklenmedi**
+(mevcut `ORDER BY w.start_date DESC` listesi korunur; test/akış riski yok).
+
+### Doğrulamalar
+
+- typecheck ✅, lint ✅, build ✅.
+- Frontend **63/63** (12 dosya) ✅ — `student.test.tsx` +1 test
+  (dört `data-status` türetimi) ve gizlilik assertion'ı
+  `/inceleme|değerlendir|sırada/i` ile güçlendirildi.
+- Backend: **191/198** — 7 hata **benim değişikliğimden bağımsız, önceden
+  mevcut** (`db/schema.test.ts` seed hacimleri). Neden: `c714072` ("seed
+  sıfırlaması" — 3 sınıflı demo) `seed.ts`'i küçültmüş ama `schema.test.ts`
+  (847f33f) eski 88 kullanıcı/42 öğrenci beklentilerinde kalmış. Bu görev
+  frontend-only; karar bekleniyor (bkz. not).
+- **Canlı (headless Chrome/CDP + gerçek app.db, `ogrenci1`):**
+  - Mobil (390px) + masaüstü (1280px): dört durum birlikte — nötr "bekleyen",
+    yeşil "Yüklendi", amber "Geç yüklendi", amber "Yüklenmedi".
+  - Dropzone odak ölçümü: `box-shadow: rgba(10,120,163,0.08) 0px 4px 12px`,
+    `transition: 0.15s` (`focus-within` gerçekten uygulanıyor).
+- **Gizlilik teyidi:** Render'da puan/not/inceleme/değerlendirme/sırada yok;
+  `student/homeworks` yanıtı yalnızca `id, description, due_date, course_name,
+  teacher_name, week, submission` döner (puan alanı yok). "Not (isteğe bağlı)"
+  alanı öğrencinin *kendi* teslim notudur, öğretmen notu değildir.
+
+### Etkilenen dosyalar
+
+```
+src/pages/student/HomeworkListPage.tsx
+src/index.css
+src/student.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Marka görseli — "Ödev Takip" ✅
 
 ### Süreç özeti

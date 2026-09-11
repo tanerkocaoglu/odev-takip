@@ -146,6 +146,11 @@ td :focus-visible {
   transform: translateY(-1px);
   box-shadow: var(--elevation-2);
 }
+/* İçindeki kontrol odaklandığında da "şu an önde" (dropzone dilek/yükleme alanı) */
+.card-interactive:focus-within {
+  border-color: rgb(var(--accent));
+  box-shadow: var(--elevation-2);
+}
 
 /* Admin veri satırları: hover'da hafif zemin + solda ince accent şeridi */
 .admin-content tbody tr {

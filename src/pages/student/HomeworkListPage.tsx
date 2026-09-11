@@ -7,10 +7,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Clock3, FileText, UploadCloud, XCircle } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock3, FileText, UploadCloud, XCircle } from 'lucide-react';
 import type { StudentHomework } from '../../types';
 import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
-import { LoadingState, EmptyState, FormError } from '../../components/admin/ui';
+import { LoadingState, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_FILES = 10;
@@ -32,23 +32,59 @@ function fmtBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function SubmissionBadge({ item }: { item: StudentHomework }) {
+/**
+ * Kart/rozet durumu — teslim durumundan türetilir. Öğrenci yalnızca kendi
+ * teslim durumunu görür (puan/not/değerlendirme süreci asla).
+ */
+type CardStatus = 'submitted' | 'late' | 'overdue' | 'pending';
+
+/** Sol kenar şeridi renkleri — mevcut teslim/nötr token'ları, yeni renk yok. */
+const CARD_STRIPES: Record<CardStatus, string> = {
+  submitted: 'border-l-sub-uploaded',
+  late: 'border-l-sub-late',
+  overdue: 'border-l-sub-late',
+  pending: 'border-l-status-draft',
+};
+
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`;
+}
+
+function cardStatus(item: StudentHomework): CardStatus {
   const sub = item.submission;
-  if (sub) {
+  if (sub) return sub.is_late ? 'late' : 'submitted';
+  return item.due_date < todayIso() ? 'overdue' : 'pending';
+}
+
+function SubmissionBadge({ status }: { status: CardStatus }) {
+  const base = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ';
+  if (status === 'submitted') {
     return (
-      <span
-        className={
-          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ' +
-          (sub.is_late ? 'bg-amber/10 text-sub-late' : 'bg-green/10 text-sub-uploaded')
-        }
-      >
-        {sub.is_late ? <Clock3 className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-        {sub.is_late ? 'Geç yüklendi' : 'Yüklendi'}
+      <span className={base + 'bg-sub-uploaded/10 text-sub-uploaded'}>
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Yüklendi
       </span>
     );
   }
+  if (status === 'late') {
+    return (
+      <span className={base + 'bg-sub-late/10 text-sub-late'}>
+        <Clock3 className="h-3.5 w-3.5" />
+        Geç yüklendi
+      </span>
+    );
+  }
+  const overdue = status === 'overdue';
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-red/10 px-2 py-0.5 text-xs font-medium text-sub-missing">
+    <span
+      className={
+        base +
+        (overdue ? 'bg-sub-late/10 text-sub-late' : 'bg-status-draft/10 text-status-draft')
+      }
+    >
       <XCircle className="h-3.5 w-3.5" />
       Yüklenmedi
     </span>
@@ -85,7 +121,7 @@ export default function HomeworkListPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-text">Ödevlerim</h1>
+      <PageTitle icon={BookOpen}>Ödevlerim</PageTitle>
 
       <FormError message={error} />
       {error && (
@@ -200,19 +236,29 @@ function HomeworkCard({
   };
 
   const hasSelected = pending.files.length > 0;
+  const status = cardStatus(item);
 
   return (
-    <div className="rounded-md border border-border bg-surface p-5">
+    <div
+      data-status={status}
+      className={
+        'elevation-1 rounded-md border border-border border-l-4 bg-surface p-5 ' +
+        CARD_STRIPES[status]
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-base font-medium text-text">
-            {item.course_name} · {item.teacher_name}
+          <p className="flex items-center gap-2 text-base font-medium text-text">
+            <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
+            <span className="truncate">
+              {item.course_name} · {item.teacher_name}
+            </span>
           </p>
           <p className="tabular mt-0.5 text-xs text-muted">
             Hafta {item.week.week_no} · {item.week.label}
           </p>
         </div>
-        <SubmissionBadge item={item} />
+        <SubmissionBadge status={status} />
       </div>
 
       <p className="mt-3 whitespace-pre-wrap text-sm text-text">{item.description}</p>
@@ -257,7 +303,7 @@ function HomeworkCard({
       )}
 
       {/* Yükleme alanı — her zaman yeniden/güncelleme imkânı */}
-      <div className="mt-4 rounded-md border border-dashed border-border p-4">
+      <div className="card-interactive mt-4 rounded-md border border-dashed border-border p-4">
         <input
           ref={fileInputRef}
           type="file"
@@ -285,7 +331,10 @@ function HomeworkCard({
           <div>
             <ul className="space-y-1">
               {pending.files.map((f, i) => (
-                <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 text-sm">
+                <li
+                  key={`${f.name}-${i}`}
+                  className="flex items-center justify-between gap-2 rounded-md bg-bg px-2 py-1.5 text-sm"
+                >
                   <span className="flex min-w-0 items-center gap-1.5">
                     <FileText className="h-4 w-4 shrink-0 text-muted" />
                     <span className="truncate">{f.name}</span>

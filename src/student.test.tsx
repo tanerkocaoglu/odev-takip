@@ -119,8 +119,9 @@ describe('HomeworkListPage', () => {
       screen.getByRole('button', { name: /rapor\.jpg/ }),
     ).toBeInTheDocument();
 
-    // Öğrenci ekranında puan/not asla görünmez.
+    // Öğrenci ekranında puan/değerlendirme süreci asla görünmez.
     expect(screen.queryByText(/puan/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/inceleme|değerlendir|sırada/i)).not.toBeInTheDocument();
   });
 
   it('dosya butonuna basınca openProtectedFile doğru anahtarla çağrılır', async () => {
@@ -178,6 +179,53 @@ describe('HomeworkListPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Geç yüklendi')).toBeInTheDocument();
     });
+  });
+
+  it('teslim durumuna göre kart durumu (data-status) doğru türetilir', async () => {
+    const base = HOMEWORKS.items[0];
+    const data = {
+      items: [
+        { ...base, id: 'p1', due_date: '2999-01-01', submission: null },
+        { ...base, id: 'p2', due_date: '2000-01-01', submission: null },
+        {
+          ...base,
+          id: 'p3',
+          due_date: '2000-01-01',
+          submission: {
+            id: 's3',
+            submitted_at: '2000-01-02T10:00:00.000Z',
+            is_late: false,
+            status: 'submitted',
+            files: [],
+          },
+        },
+        {
+          ...base,
+          id: 'p4',
+          due_date: '2000-01-01',
+          submission: {
+            id: 's4',
+            submitted_at: '2000-01-03T10:00:00.000Z',
+            is_late: true,
+            status: 'submitted',
+            files: [],
+          },
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', mockFetch(200, data));
+    const { container } = render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-status]')).toHaveLength(4);
+    });
+    const statuses = Array.from(container.querySelectorAll('[data-status]')).map((el) =>
+      el.getAttribute('data-status'),
+    );
+    expect(statuses).toEqual(['pending', 'overdue', 'submitted', 'late']);
   });
 
   it('dosya seçip Gönder\'e basınca submit atılır ve liste yenilenir', async () => {
