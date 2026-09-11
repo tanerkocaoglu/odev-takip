@@ -673,6 +673,85 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
   (üst alanlar + devamsızlık/puan/not tablosu; hiçbir düzenleme UI'ı yok).
   Bu görünüm canlı rapor verisini gösterir — digest `snapshot`'ı değil.
 
+### 5.6 Admin — CSV ile toplu öğrenci içe aktarma
+
+Süreç hâlâ Excel/CSV tablosunda yürüdüğü için, admin öğrenci listesini tek tek
+formla değil **tek bir CSV dosyasıyla** kurabilir. Biçim **CSV'dir** (gerçek
+`.xlsx` değil — ek kütüphane gerekmez, Excel'de sorunsuz açılır/düzenlenir).
+
+**Şablon:** `GET /admin/students/import/template` doğru sütun başlıklarıyla boş
+bir örnek CSV döner (`text/csv; charset=utf-8`, UTF-8 BOM'lu). Admin panelde
+"Şablon indir" butonu bulunur.
+
+**Sütunlar** (mevcut öğrenci/veli oluşturma formundan türetilir):
+
+| Sütun | Karşılık | Zorunlu |
+|---|---|---|
+| `ogrenci_adi` | `users.full_name` (öğrenci) | ✓ |
+| `dershane_sinifi` | aktif eğitim yılındaki `classes.name` (`enrollments`) | ✓ |
+| `veli_adi` | `users.full_name` (veli) | ✓ |
+| `veli_whatsapp` | `guardians.whatsapp_phone` (eşleştirme anahtarı) | ✓ |
+| `okul_adi` | `schools.name` (isimle eşleşir, yoksa oluşturulur) | – |
+| `sinif_seviyesi` | `students.grade_level` (CHECK kümesi) | – |
+| `veli_telefon_2` | `guardians.phone_secondary` | – |
+| `ogrenci_kullanici_adi` | `users.username` (boşsa otomatik `ogrenci<n>`) | – |
+| `veli_kullanici_adi` | `users.username` (boşsa otomatik `veli<n>`) | – |
+
+**Şifre:** tek bir **ortak başlangıç şifresi** admin tarafından import ekranında
+girilir ve o işlemde oluşturulan **tüm** yeni öğrenci + velilere uygulanır; CSV'de
+şifre sütunu yoktur. Hash bir kez hesaplanır (spec §2.1 otomatik `username` +
+admin'in girdiği başlangıç şifresi kuralının toplu hali).
+
+**Uçlar:**
+- `POST /admin/students/import?dry_run=true` — dosyayı doğrular, **hiçbir şey
+  yazmaz**; özet + hata/uyarı listesi döner.
+- `POST /admin/students/import?dry_run=false` — dosyayı yeniden doğrular ve
+  **tek transaction'da** yazar (`BEGIN/COMMIT`, hata → `ROLLBACK`). Satır hatası
+  varsa **400 `VALIDATION_ERROR`** döner (`error.details.errors` satır listesi)
+  ve hiçbir kayıt oluşmaz.
+- Dosya `multipart/form-data` (`multer` memory, `text/csv` / `.csv`; max ~2 MB,
+  max 500 satır). Ortak şifre body'de `password` alanındadır.
+
+**Eşleştirme kuralları:**
+- **Dershane sınıfı:** aktif eğitim yılındaki `classes.name_normalized` ile
+  eşleşir. Bulunamazsa **satır hatası** — sınıf otomatik oluşturulmaz (okuldan
+  farklı olarak; sınıflar admin tarafından önceden kurulur).
+- **Okul:** `schools.name_normalized` ile eşleşir; büyük/küçük harf ve Türkçe
+  karakter farkı aynı okulu ikiye bölmez. Eşleşme yoksa yeni okul oluşturulur.
+- **Veli:** normalize edilmiş `whatsapp_phone` ile eşleştirilir. (a) mevcut aktif
+  veli, (b) dosya içinde önceki satır varsa **aynı veli** (kardeş senaryosu) —
+  her satırda yeni veli açılmaz. Eşleşme yoksa yeni veli oluşturulur. Telefon
+  eşleşip ad farklıysa mevcut ad korunur ve satır **uyarı** olarak işaretlenir
+  (hata değil).
+- **Soft delete:** yalnızca `deleted_at IS NULL` kayıtlarla eşleşir; silinmiş
+  kayıt geri getirilmez, yeni kayıt açılır. Açıkça belirtilen `username`
+  silinmiş bir kayda denk geliyorsa çakışma sayılır; otomatik üretim yeni numara
+  verir.
+- **`username`:** dosyada belirtilen adlar (dosya içi + DB geneli, aktif)
+  benzersiz olmalı; boşsa `nextUsername()` devrededir (spec §2.1).
+
+**Hepsi ya da hiçbiri:** tek satır bile hatalıysa **hiçbir kayıt oluşturulmaz**;
+admin dosyayı düzeltip yeniden yükler. Kısmi kabul bu sürümde yoktur. Başarılı
+içe aktarma `audit_logs`'a `student.import` olarak yazılır (özet sayaçlar).
+
+### 5.7 Admin — filtreli CSV dışa aktarma
+
+Admin'in "Tüm raporlar", "Öğrenciler" ve "Veliler" ekranlarındaki **mevcut
+filtre/arama sonucu**, ekranda görünen sütunlarla CSV olarak indirilebilir.
+Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır).
+
+- `GET /admin/reports/export` — `status`, `class_id`, `week_id` filtreleri
+  (`GET /teacher/reports` ile aynı WHERE mantığı), sayfalama uygulanmaz: tüm
+  eşleşen satırlar iner.
+- `GET /admin/students/export` — `q` (ad/veli normalize arama) + `classId`.
+- `GET /admin/guardians/export` — `q`.
+- Yanıt `text/csv; charset=utf-8` + `Content-Disposition: attachment`.
+- Sütunlar ekranla birebir:
+  - **Raporlar:** hafta (no + etiket), sınıf, ders, ders günü/saat, öğrenci
+    sayısı, durum, tamamlanma tarihi.
+  - **Öğrenciler:** ad, veli, sınıf, okul, sınıf seviyesi, kullanıcı adı.
+  - **Veliler:** ad, kullanıcı adı, WhatsApp, çocuk sayısı, KVKK onayı.
+
 ---
 
 ## 6. Ekranlar
@@ -690,7 +769,11 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
   öğretmene toplu devir, tek transaction + audit; devir tamamlanınca öğretmen
   silinebilir (409 → 204)
 - Öğrenci ve veli yönetimi, sınıf atama (enrollment) — 200 kayıt olduğu için
-  arama (`full_name_normalized`) ve sayfalama zorunlu
+  arama (`full_name_normalized`) ve sayfalama zorunlu; öğrenci listesinde
+  **"CSV ile toplu ekle"** (şablon + önizleme + hepsi-ya-da-hiçbiri) ve
+  **"CSV indir"**; veli listesinde **"CSV indir"** (§5.6/§5.7)
+- Raporlar / öğrenciler / veliler listelerinde filtreli **"CSV indir"**
+  (ekranda görünen sütunlar + aktif filtre, §5.7)
 - **Okul yönetimi** (CRUD; öğrenci formunda **"Okul"** seçici + hızlı ekle ve
   **"Sınıf seviyesi"** dropdown — `classes` ile karışmaz)
 - Haftalık gönderim ekranı (sınıf filtreli; digest görüntülenme bilgisi)
