@@ -48,11 +48,13 @@ korundu. Öğrencinin puan/not/değerlendirme süreci görmeme kuralı dokunulma
 - Frontend **63/63** (12 dosya) ✅ — `student.test.tsx` +1 test
   (dört `data-status` türetimi) ve gizlilik assertion'ı
   `/inceleme|değerlendir|sırada/i` ile güçlendirildi.
-- Backend: **191/198** — 7 hata **benim değişikliğimden bağımsız, önceden
-  mevcut** (`db/schema.test.ts` seed hacimleri). Neden: `c714072` ("seed
-  sıfırlaması" — 3 sınıflı demo) `seed.ts`'i küçültmüş ama `schema.test.ts`
-  (847f33f) eski 88 kullanıcı/42 öğrenci beklentilerinde kalmış. Bu görev
-  frontend-only; karar bekleniyor (bkz. not).
+- Backend: **198/198** ✅. **Önemli not — bu bir regresyon DEĞİLDİR:** Bu
+  turdan önce backend paketi kırıktı. `db/schema.test.ts`'teki 7 test,
+  `c714072` ("seed sıfırlaması" — 3 sınıflı demo) `seed.ts`'i küçültürken
+  testlerin eski 88 kullanıcı / 42 öğrenci / 8 sınıf / risk senaryosu
+  beklentilerinde kalmasından dolayı başarısız oluyordu. Bu, görsel
+  değişiklikten **tamamen bağımsız, önceden var olan** bir uyumsuzluktu; aynı
+  turda ayrı bir commit ile giderildi (bkz. alttaki "Backend test bakımı").
 - **Canlı (headless Chrome/CDP + gerçek app.db, `ogrenci1`):**
   - Mobil (390px) + masaüstü (1280px): dört durum birlikte — nötr "bekleyen",
     yeşil "Yüklendi", amber "Geç yüklendi", amber "Yüklenmedi".
@@ -74,7 +76,49 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`370c221` — öğrenci "Ödevlerim" görsel zenginleştirme (durum şeridi, ikon,
+elevation, dropzone odak dili).
+
+---
+
+## Backend test bakımı — `schema.test.ts` güncel seed'e göre ✅
+
+### Süreç özeti
+
+`db/schema.test.ts`'teki **7 test**, `c714072` ("seed sıfırlaması" — 3 sınıflı
+demo) `seed.ts`'i küçültürken testlerin güncellenmemesinden dolayı başarısız
+oluyordu. Test beklentileri **güncel seed verisine** göre yeniden yazıldı.
+**Uygulama kodu, şema ve seed değişmedi** — yalnızca testler düzeltildi.
+Görsel turla karışmasın diye **ayrı commit** olarak atıldı.
+
+> **Not:** Bu 7 hata yeni bir regresyon **değildir**; öğrenci "Ödevlerim"
+> görsel turundan bağımsız, önceden var olan bir seed/test uyumsuzluğudur.
+
+### Yapılanlar
+
+- Hacim testi: users 29, students/guardians 12, classes 3, courses 4,
+  class_courses/enrollments 12, reports/homeworks 36, report_entries 144,
+  schools 4, submissions 0, weekly_digests 4.
+- Rapor durumu: geçmiş haftalar 17/18/19 → her biri 12 `completed` (eski
+  19/20 risk penceresi beklentisi kaldırıldı).
+- Okul/seviye: 12 öğrencinin tamamı atanmış (öğrenci 001 → `seed-school-001`,
+  seviye `6`); teslim yok; tüm satırlar `present` + puanlı.
+- Yapı: 4 öğretmen tek dersi 3 sınıfta verir; ders → gün sabit
+  (Matematik=Pzt … İngilizce=Perşembe); ders id'leri
+  `seed-course-matematik/fizik/turkce/ingilizce`.
+- Kaldırılan eski senaryolar (yeni seed'de yok): kardeş (2 veli × 2 çocuk),
+  sınıf değiştiren öğrenci, risk senaryoları. Yerine: her velinin tek çocuğu,
+  her öğrencinin tek aktif enrollment'ı, öğrenci 3'ün tüm haftalarda aynı
+  sınıfta olması.
+
+### Doğrulamalar
+
+- Taze `test.db` ile backend **198/198** (17 dosya) ✅; backend `typecheck` ✅;
+  kök `lint` ✅. (Düzeltme öncesi: 191/198.)
+
+### Commit
+
+Ayrı commit: `test: schema.test seed beklentileri güncel 3 sınıflı demo seed'e göre`.
 
 ---
 
