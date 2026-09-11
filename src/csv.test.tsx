@@ -184,6 +184,35 @@ describe('StudentsPage — CSV ile toplu ekle', () => {
   });
 });
 
+describe('Arama inputlarında autocomplete', () => {
+  it('SearchBox ve veli arama kutuları autocomplete=off ve boş', async () => {
+    vi.stubGlobal('fetch', studentsFetch());
+
+    render(
+      <MemoryRouter>
+        <StudentsPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText('Ali Yılmaz')).toBeInTheDocument());
+
+    const search = screen.getByPlaceholderText('Öğrenci veya veli ara…');
+    expect(search).toHaveAttribute('autocomplete', 'off');
+    expect((search as HTMLInputElement).value).toBe('');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yeni öğrenci' }));
+    const guardianSearch = screen.getByLabelText('Veli (arayın ve seçin)');
+    expect(guardianSearch).toHaveAttribute('autocomplete', 'off');
+    expect((guardianSearch as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'İptal' }));
+
+    // Parola alanı autofill'i tetiklemesin → new-password (standart değer).
+    fireEvent.click(screen.getByRole('button', { name: 'CSV ile toplu ekle' }));
+    const importPass = screen.getByLabelText(/ortak başlangıç şifresi/i);
+    expect(importPass).toHaveAttribute('autocomplete', 'new-password');
+    expect((importPass as HTMLInputElement).value).toBe('');
+  });
+});
+
 describe('Dışa aktarma butonları', () => {
   it('StudentsPage aktif arama ile /admin/students/export çağırır', async () => {
     const fetchMock = studentsFetch();

@@ -5,6 +5,56 @@
 
 ---
 
+## Arama kutularında otomatik doldurma (autofill) düzeltmesi ✅
+
+### Süreç özeti
+
+Admin, öğrenci/veli ekranlarında modal açınca arkadaki **arama kutusuna kendi
+giriş e-postasının** otomatik dolduğunu bildirdi. Kök neden: arama kutusu değil,
+modal içindeki `type="password"` alanıydı — Chrome'un kayıtlı parola yöneticisi
+parolayı doldururken eşleştirdiği kullanıcı adını (admin e-postası) en yakın
+metin alanına (arama kutusu) yazıyordu. `autocomplete="off"` tek başına
+yetmiyordu. Backend'e dokunulmadı.
+
+### Yapılanlar
+
+- **`src/components/admin/ui.tsx`** — ortak `SearchBox` input'una
+  `autoComplete="off"` (Sınıflar/Dersler/Okullar/Öğretmenler/Veliler/Öğrenciler/
+  Atamalar).
+- **`src/pages/admin/StudentsPage.tsx`** — iki satır içi veli arama kutusuna
+  (`st-guardian-search`, `ed-guardian-search`) `off`; üç parola alanına
+  (`st-password`, `st-reset`, `imp-pass`) `autoComplete="new-password"`.
+- **`src/pages/admin/GuardiansPage.tsx`** (`g-password`, `g-reset`) ve
+  **`src/pages/admin/TeachersPage.tsx`** (`t-password`, `t-reset`) — parola
+  alanlarına `new-password`.
+- **`src/csv.test.tsx`** — arama (`off`, boş) + parola (`new-password`, boş)
+  sözleşmesi. Giriş ekranının `username`/`current-password` değerleri bilinçli
+  korundu.
+
+### Doğrulamalar
+
+**Statik** — `typecheck` ✅, `lint` ✅. **Testler** — frontend **72/72**.
+**Canlı (headless Chrome/CDP, admin girişli):** arama `autocomplete=off`,
+`value=""`; CSV ve yeni-öğrenci modalı parola alanları
+`autocomplete=new-password`, `value=""`; modal aç/kapat sonrası arama boş
+kaldı ✅. (Not: headless'ta kayıtlı parola olmadığından gerçek autofill birebir
+tetiklenemez; öznitelik + boş değer kanıtı alındı.)
+
+### Etkilenen dosyalar
+
+```
+src/components/admin/ui.tsx
+src/pages/admin/StudentsPage.tsx GuardiansPage.tsx TeachersPage.tsx
+src/csv.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — arama/parola autofill düzeltmesi (+ PROGRESS).
+
+---
+
 ## CSV toplu öğrenci içe aktarma + filtreli CSV dışa aktarma ✅
 
 ### Süreç özeti
@@ -116,9 +166,14 @@ spec.md (§5.6, §5.7, §6)
 PROGRESS.md
 ```
 
-### Commit
+### Commit'ler
 
-Henüz commit edilmedi.
+- `849274e` — spec: §5.6/§5.7 + §6
+- `629cb2b` — CSV parse/üret util + testler
+- `1be0956` — CSV toplu öğrenci içe aktarma (template/önizleme/commit) + testler
+- `533b70e` — filtreli CSV dışa aktarma + testler
+- `d10d299` — frontend (import modalı + CSV indir butonları) + testler
+- `385aee2` — PROGRESS + rollback kanıtı
 
 ---
 

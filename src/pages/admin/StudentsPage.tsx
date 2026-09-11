@@ -453,6 +453,7 @@ export default function StudentsPage() {
               onChange={(e) => setGuardianQuery(e.target.value)}
               className={inputClass}
               placeholder="Veli adı yazın…"
+              autoComplete="off"
             />
           </Field>
           <div className="max-h-40 overflow-y-auto rounded-md border border-border">
@@ -556,6 +557,7 @@ export default function StudentsPage() {
             <input
               id="st-password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -596,6 +598,7 @@ export default function StudentsPage() {
               onChange={(e) => setEditGuardianQuery(e.target.value)}
               className={inputClass}
               placeholder="Yeni veli adı yazın…"
+              autoComplete="off"
             />
           </Field>
           {editGuardianResults.length > 0 && (
@@ -735,6 +738,7 @@ export default function StudentsPage() {
             <input
               id="st-reset"
               type="password"
+              autoComplete="new-password"
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
               required
@@ -785,6 +789,7 @@ export default function StudentsPage() {
             <input
               id="imp-pass"
               type="password"
+              autoComplete="new-password"
               value={importPassword}
               onChange={(e) => setImportPassword(e.target.value)}
               minLength={6}

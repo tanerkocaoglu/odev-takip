@@ -214,6 +214,7 @@ export default function TeachersPage() {
             <input
               id="t-password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -287,6 +288,7 @@ export default function TeachersPage() {
             <input
               id="t-reset"
               type="password"
+              autoComplete="new-password"
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
               required

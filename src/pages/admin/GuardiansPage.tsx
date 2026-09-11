@@ -253,6 +253,7 @@ export default function GuardiansPage() {
               <input
                 id="g-password"
                 type="password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -301,6 +302,7 @@ export default function GuardiansPage() {
             <input
               id="g-reset"
               type="password"
+              autoComplete="new-password"
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
               required

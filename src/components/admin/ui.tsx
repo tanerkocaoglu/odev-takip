@@ -157,6 +157,7 @@ export function SearchBox({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        autoComplete="off"
         className={inputClass + ' pl-9'}
       />
     </div>
