@@ -29,6 +29,7 @@ import type {
   Student,
   StudentHomework,
   StudentHomeworkList,
+  StudentImportResponse,
   Teacher,
   TeacherDashboard,
   TeacherHomeworkWithSubmissions,
@@ -328,6 +329,28 @@ export const adminApi = {
       }),
     remove: (id: string) =>
       apiFetch<void>(`/admin/students/${id}`, { method: 'DELETE' }),
+    /** Boş CSV şablonunu indirir (spec §5.6). */
+    downloadImportTemplate: () =>
+      downloadCsv('/admin/students/import/template', 'ogrenci-ice-aktarma-sablonu.csv'),
+    /** CSV'yi doğrular, hiçbir şey yazmaz; özet + hata/uyarı döner. */
+    importPreview: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return apiFetch<StudentImportResponse>('/admin/students/import?dry_run=true', {
+        method: 'POST',
+        body: form,
+      });
+    },
+    /** CSV'yi yeniden doğrulayıp tek transaction'da kaydeder (hepsi ya da hiçbiri). */
+    importCommit: (file: File, password: string) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('password', password);
+      return apiFetch<StudentImportResponse>('/admin/students/import?dry_run=false', {
+        method: 'POST',
+        body: form,
+      });
+    },
   },
   schools: {
     list: (q?: string) =>
@@ -350,6 +373,15 @@ export const adminApi = {
     apiFetch<AdminDashboard>(`/admin/dashboard${query({ week_id: weekId })}`),
   /** Riskli öğrenci listesi — son 3 hafta, üç kriter OR (spec §6). */
   risk: () => apiFetch<RiskList>('/admin/dashboard/risk'),
+  /** Filtreli CSV dışa aktarma — ekranda görünen sütunlar + aktif filtre (spec §5.7). */
+  exports: {
+    reports: (params: { status?: string; class_id?: string; week_id?: string } = {}) =>
+      downloadCsv(`/admin/reports/export${query(params)}`, 'raporlar.csv'),
+    students: (params: { q?: string; classId?: string } = {}) =>
+      downloadCsv(`/admin/students/export${query(params)}`, 'ogrenciler.csv'),
+    guardians: (params: { q?: string } = {}) =>
+      downloadCsv(`/admin/guardians/export${query(params)}`, 'veliler.csv'),
+  },
   digests: {
     /** Haftalık gönderim listesi (pending + ready + sent). */
     list: (params: { week_id?: string; class_id?: string; status?: string } = {}) =>
@@ -495,6 +527,49 @@ export const guardianApi = {
   report: (id: string) =>
     apiFetch<GuardianReportDetail>(`/guardian/reports/${encodeURIComponent(id)}`),
 };
+
+/**
+ * Bearer token ile bir CSV/dosya ucunu indirir (spec §5.7). `<a href>` token
+ * gönderemediği için fetch + blob + `a[download]` kullanılır. Dosya adı
+ * `Content-Disposition`'dan okunur.
+ */
+export async function downloadCsv(
+  path: string,
+  fallbackFilename: string,
+): Promise<string> {
+  const token = getToken();
+  if (!token) {
+    clearToken();
+    throw new ApiClientError(401, 'UNAUTHORIZED', 'Giriş yapmanız gerekiyor.');
+  }
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let body: ApiError | null = null;
+    try {
+      body = (await res.json()) as ApiError;
+    } catch {
+      // JSON dışı yanıt — genel hata
+    }
+    const message = body?.error.message ?? 'Dosya indirilemedi.';
+    if (res.status === 401) clearToken();
+    throw new ApiClientError(res.status, body?.error.code ?? 'INTERNAL', message);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const cd = res.headers.get('content-disposition') ?? '';
+  const match = /filename="?([^";]+)"?/.exec(cd);
+  const filename = match?.[1] ?? fallbackFilename;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return filename;
+}
 
 /**
  * Admin yedek indir — `POST /admin/backup` CLI'ı spawn edip .zip'i döndürür.

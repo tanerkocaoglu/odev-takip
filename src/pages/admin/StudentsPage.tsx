@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { ClassItem, Guardian, School, Student, Week } from '../../types';
+import type { ClassItem, Guardian, School, Student, StudentImportResponse, Week } from '../../types';
 import { GRADE_LEVELS, GRADE_LEVEL_LABELS } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import { useList } from '../../hooks/useList';
@@ -70,6 +70,17 @@ export default function StudentsPage() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+
+  // ---------- CSV ile toplu ekleme ----------
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPassword, setImportPassword] = useState('');
+  const [importResult, setImportResult] = useState<StudentImportResponse | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importSubmitting, setImportSubmitting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     adminApi.academicYears.list().then(async (yearData) => {
@@ -243,6 +254,74 @@ export default function StudentsPage() {
     }
   }
 
+  // ---------- CSV ile toplu ekleme ----------
+  function openImport() {
+    setImportFile(null);
+    setImportPassword('');
+    setImportResult(null);
+    setImportError(null);
+    setImportSuccess(null);
+    setImportOpen(true);
+  }
+
+  async function handleTemplateDownload() {
+    setImportError(null);
+    try {
+      await adminApi.students.downloadImportTemplate();
+    } catch (err) {
+      setImportError(err instanceof ApiClientError ? err.message : 'Şablon indirilemedi.');
+    }
+  }
+
+  async function handlePreview() {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportError(null);
+    setImportResult(null);
+    setImportSuccess(null);
+    try {
+      setImportResult(await adminApi.students.importPreview(importFile));
+    } catch (err) {
+      setImportError(err instanceof ApiClientError ? err.message : 'Dosya doğrulanamadı.');
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleImportCommit() {
+    if (!importFile) return;
+    setImportSubmitting(true);
+    setImportError(null);
+    try {
+      const res = await adminApi.students.importCommit(importFile, importPassword);
+      setImportResult(res);
+      if (res.committed) {
+        setImportSuccess(
+          `${res.created?.created_students ?? 0} öğrenci oluşturuldu.`,
+        );
+        await reload();
+      } else {
+        setImportError('CSV dosyasında hatalar var, hiçbir kayıt oluşturulmadı.');
+      }
+    } catch (err) {
+      setImportError(err instanceof ApiClientError ? err.message : 'Kaydedilemedi.');
+    } finally {
+      setImportSubmitting(false);
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    setError(null);
+    try {
+      await adminApi.exports.students({ q, classId: classFilter || undefined });
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function handleDelete(student: Student) {
     if (!window.confirm(`${student.full_name} silinsin mi?`)) return;
     try {
@@ -274,9 +353,17 @@ export default function StudentsPage() {
             </select>
           </Field>
         </div>
-        <PrimaryButton onClick={openCreate} disabled={!classes.length}>
-          Yeni öğrenci
-        </PrimaryButton>
+        <div className="flex flex-wrap items-center gap-2">
+          <SecondaryButton onClick={handleExport} disabled={exporting}>
+            {exporting ? 'İndiriliyor…' : 'CSV indir'}
+          </SecondaryButton>
+          <SecondaryButton onClick={openImport} disabled={!classes.length}>
+            CSV ile toplu ekle
+          </SecondaryButton>
+          <PrimaryButton onClick={openCreate} disabled={!classes.length}>
+            Yeni öğrenci
+          </PrimaryButton>
+        </div>
       </div>
 
       {error && <FormError message={error} />}
@@ -663,6 +750,115 @@ export default function StudentsPage() {
             </PrimaryButton>
           </div>
         </form>
+      </Modal>
+
+      {/* ---- CSV ile toplu ekleme ---- */}
+      <Modal
+        open={importOpen}
+        title="CSV ile toplu öğrenci ekle"
+        onClose={() => setImportOpen(false)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Şablonu indirin, doldurun ve yükleyin. Önizlemede hata yoksa kaydedin;
+            tek satır bile hatalıysa hiçbir kayıt oluşturulmaz.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <SecondaryButton onClick={handleTemplateDownload}>Şablon indir</SecondaryButton>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              aria-label="CSV dosyası"
+              onChange={(e) => {
+                setImportFile(e.target.files?.[0] ?? null);
+                setImportResult(null);
+                setImportSuccess(null);
+                setImportError(null);
+              }}
+              className="text-sm text-text"
+            />
+          </div>
+          <Field
+            label="Yeni öğrenci/veliler için ortak başlangıç şifresi"
+            htmlFor="imp-pass"
+          >
+            <input
+              id="imp-pass"
+              type="password"
+              value={importPassword}
+              onChange={(e) => setImportPassword(e.target.value)}
+              minLength={6}
+              className={inputClass}
+              placeholder="En az 6 karakter"
+            />
+          </Field>
+          <FormError message={importError} />
+          {importSuccess && (
+            <p role="status" className="text-sm font-medium text-status-sent">
+              {importSuccess}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={handlePreview} disabled={!importFile || importLoading}>
+              {importLoading ? 'Doğrulanıyor…' : 'Önizle'}
+            </SecondaryButton>
+            <PrimaryButton
+              onClick={handleImportCommit}
+              disabled={
+                !importFile ||
+                !importResult?.ok ||
+                importSubmitting ||
+                importSuccess !== null
+              }
+            >
+              {importSubmitting
+                ? 'Kaydediliyor…'
+                : `${importResult?.summary.new_students ?? 0} kaydı oluştur`}
+            </PrimaryButton>
+          </div>
+
+          {importResult && (
+            <div className="space-y-3 rounded-md border border-border bg-bg p-3">
+              <p className="text-sm text-text">
+                <strong className="tabular">{importResult.summary.new_students}</strong> yeni öğrenci ·{' '}
+                <strong className="tabular">{importResult.summary.new_guardians}</strong> yeni veli ·{' '}
+                <strong className="tabular">{importResult.summary.new_schools}</strong> yeni okul
+                {importResult.summary.matched_guardians > 0 &&
+                  ` · ${importResult.summary.matched_guardians} mevcut veli eşleşti`}
+                {importResult.summary.matched_schools > 0 &&
+                  ` · ${importResult.summary.matched_schools} mevcut okul eşleşti`}
+              </p>
+              {importResult.errors.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-medium text-danger">
+                    Hatalar ({importResult.errors.length})
+                  </p>
+                  <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-text">
+                    {importResult.errors.map((e, i) => (
+                      <li key={i}>
+                        Satır <span className="tabular">{e.row}</span> · {e.field}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {importResult.warnings.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-medium text-att-late">
+                    Uyarılar ({importResult.warnings.length})
+                  </p>
+                  <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted">
+                    {importResult.warnings.map((w, i) => (
+                      <li key={i}>
+                        Satır <span className="tabular">{w.row}</span> · {w.field}: {w.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

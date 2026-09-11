@@ -190,16 +190,19 @@ export function SecondaryButton({
   children,
   onClick,
   type = 'button',
+  disabled,
 }: {
   children: ReactNode;
   onClick?: () => void;
   type?: 'button' | 'submit';
+  disabled?: boolean;
 }) {
   return (
     <button
       type={type}
       onClick={onClick}
-      className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-bg"
+      disabled={disabled}
+      className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
     >
       {children}
     </button>

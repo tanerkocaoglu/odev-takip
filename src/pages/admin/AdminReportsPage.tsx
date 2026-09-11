@@ -33,6 +33,7 @@ export default function AdminReportsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +66,23 @@ export default function AdminReportsPage() {
       setter(value);
       setPage(1);
     };
+  }
+
+  /** Aktif filtre sonucunu CSV indirir (spec §5.7). */
+  async function handleExport() {
+    setExporting(true);
+    setError(null);
+    try {
+      await adminApi.exports.reports({
+        status: status || undefined,
+        class_id: classId || undefined,
+        week_id: weekId || undefined,
+      });
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
+    } finally {
+      setExporting(false);
+    }
   }
 
   useEffect(() => {
@@ -143,6 +161,14 @@ export default function AdminReportsPage() {
           className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
         >
           Yenile
+        </button>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={exporting}
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {exporting ? 'İndiriliyor…' : 'CSV indir'}
         </button>
       </div>
 

@@ -524,3 +524,35 @@ export interface GuardianReportDetail {
     } | null;
   }>;
 }
+
+// ---------- CSV toplu öğrenci içe aktarma (spec §5.6) ----------
+
+export interface StudentImportIssue {
+  /** CSV'deki satır numarası (başlık = 1, ilk veri satırı = 2). */
+  row: number;
+  field: string;
+  message: string;
+}
+
+export interface StudentImportSummary {
+  new_students: number;
+  new_guardians: number;
+  new_schools: number;
+  matched_guardians: number;
+  matched_schools: number;
+}
+
+export interface StudentImportResponse {
+  dry_run: boolean;
+  ok: boolean;
+  committed: boolean;
+  summary: StudentImportSummary;
+  errors: StudentImportIssue[];
+  warnings: StudentImportIssue[];
+  created?: {
+    created_students: number;
+    created_guardians: number;
+    created_schools: number;
+  };
+}
+

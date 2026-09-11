@@ -33,6 +33,7 @@ export default function GuardiansPage() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   function openCreate() {
     setEditId(null);
@@ -121,11 +122,29 @@ export default function GuardiansPage() {
     }
   }
 
+  /** Ekrandaki aktif arama sonucunu CSV indirir (spec §5.7). */
+  async function handleExport() {
+    setExporting(true);
+    setError(null);
+    try {
+      await adminApi.exports.guardians({ q });
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <SearchBox value={q} onChange={(v) => setQ(v)} placeholder="Veli ara…" />
-        <PrimaryButton onClick={openCreate}>Yeni veli</PrimaryButton>
+        <div className="flex items-center gap-2">
+          <SecondaryButton onClick={handleExport} disabled={exporting}>
+            {exporting ? 'İndiriliyor…' : 'CSV indir'}
+          </SecondaryButton>
+          <PrimaryButton onClick={openCreate}>Yeni veli</PrimaryButton>
+        </div>
       </div>
 
       {error && <FormError message={error} />}
