@@ -287,7 +287,7 @@ export async function seedDatabase(
     const studentName = STUDENT_NAMES[s - 1] ?? `Öğrenci ${s}`;
     const guardianName = GUARDIAN_NAMES[s - 1] ?? `Veli ${s}`;
 
-    const studentUsername = nextUsername('student');
+    const studentUsername = nextUsername(studentName);
     insert('users', {
       id: studentUserId,
       full_name: studentName,
@@ -304,7 +304,7 @@ export async function seedDatabase(
     fillUsername(studentUserId, studentUsername);
     fillPasswordHash(studentUserId, userHash);
 
-    const guardianUsername = nextUsername('guardian');
+    const guardianUsername = nextUsername(guardianName);
     insert('users', {
       id: guardianUserId,
       full_name: guardianName,

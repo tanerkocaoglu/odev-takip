@@ -5,6 +5,64 @@
 
 ---
 
+## İsim tabanlı kullanıcı adı + CSV içe aktarma sütun sadeleştirmesi ✅
+
+### Süreç özeti
+
+Kullanıcı adı üretimi `ogrenci<n>` / `veli<n>` yerine **isim tabanlı** oldu:
+`normalizeTurkish(full_name)` ile ASCII'ye indirgenmiş, boşluk/noktalama
+temizlenmiş ad + sıralı sayaç ("Örnek Kişi 8" → `ornekkisi81`, ikincisi →
+`ornekkisi82`). CSV içe aktarmadan üç sütun kaldırıldı: `ogrenci_kullanici_adi`,
+`veli_kullanici_adi` (artık her zaman otomatik) ve `veli_telefon_2`
+(`guardians.phone_secondary` yalnızca Veliler ekranından elle). **Geriye dönük
+etki yok** — mevcut `ogrenci<n>`/`veli<n>` adlarına dokunulmadı; yalnızca yeni
+üretim değişti. Şema değişikliği/migration yok.
+
+### Yapılanlar
+
+- **`backend/src/utils/username.ts`** — `nextUsername(fullName)` yeniden yazıldı;
+  `usernamePrefix(fullName)` ihraç edildi. Sayaç: aynı önekle başlayan mevcut
+  adlardaki en yüksek sayının +1'i; çakışmada artırılarak yeniden denenir
+  (`UNIQUE` son güvence).
+- **Çağıranlar:** `admin.ts` öğrenci/veli create ve `db/seed.ts` artık
+  `nextUsername(full_name)` kullanır.
+- **`backend/src/services/studentImport.ts`** — `STUDENT_IMPORT_HEADERS` 6'ya
+  indi; açık kullanıcı adı doğrulaması, `phoneSecondary` ve ilgili plan alanları
+  kaldırıldı; `commitImport` kullanıcı adını isimden üretir.
+- **Frontend** değişmedi (modal sütun listesi tutmuyor); şablon backend'den gelir.
+- **Docs:** `spec.md` §2.1 (üretim kuralı) + §5.6 (sütun tablosu, eşleştirme
+  notu) ve `CLAUDE.md` username kuralı güncellendi.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+**Testler** — backend **221/221**, frontend **72/72**. Güncellenen: `admin.test`
+(`ornekkisi1\d+`, `testogrenciyeni\d+`), `schema.test` (seed adları isim önekine
+uyumlu), `student-import.test` (6 sütun; `aliyilmaz1`/`aylayilmaz1`; aynı adlı
+iki öğrenci → `ornekkisi81`/`ornekkisi82`). Kaldırılan: açık `username` sütun
+testi.
+**Canlı (gerçek app.db, admin):** Şablon başlıkları artık
+`ogrenci_adi,dershane_sinifi,veli_adi,veli_whatsapp,okul_adi,sinif_seviyesi`.
+İki aynı adlı öğrencili CSV `dry_run=false` → 201; üretilen adlar
+`ornekogrenci1`, `ornekogrenci2`, veli `ornekveli1` ✅. Test kayıtları API ile
+soft-delete edildi (aktif kalan 0) ve `Örnek Okul 8` silindi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/username.ts
+backend/src/services/studentImport.ts
+backend/src/routes/admin.ts  backend/src/db/seed.ts
+backend/src/admin.test.ts  backend/src/db/schema.test.ts  backend/src/student-import.test.ts
+spec.md  CLAUDE.md  PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Arama kutularında otomatik doldurma (autofill) düzeltmesi ✅
 
 ### Süreç özeti

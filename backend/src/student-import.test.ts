@@ -14,7 +14,7 @@ const app = createApp();
 let adminToken: string;
 
 const HEADER =
-  'ogrenci_adi,dershane_sinifi,veli_adi,veli_whatsapp,okul_adi,sinif_seviyesi,veli_telefon_2,ogrenci_kullanici_adi,veli_kullanici_adi';
+  'ogrenci_adi,dershane_sinifi,veli_adi,veli_whatsapp,okul_adi,sinif_seviyesi';
 
 function csv(...rows: string[]): string {
   return [HEADER, ...rows].join('\r\n') + '\r\n';
@@ -97,8 +97,8 @@ describe('Önizleme (dry_run)', () => {
     const before = countUsers();
     const res = await importReq(
       csv(
-        'Ali Yılmaz,ÖKLİD,Örnek Kişi 5,+90 555 111 22 33,Örnek Okul 1,6,,,',
-        'Ayla Yılmaz,PİSAGOR,Örnek Kişi 5,+90 555 111 22 33,,, ,,',
+        'Ali Yılmaz,ÖKLİD,Örnek Kişi 5,+90 555 111 22 33,Örnek Okul 1,6',
+        'Ayla Yılmaz,PİSAGOR,Örnek Kişi 5,+90 555 111 22 33,,',
       ),
       true,
     );
@@ -116,7 +116,7 @@ describe('Önizleme (dry_run)', () => {
 
   it('okul adı normalize eşleşir, yeni okul açmaz', async () => {
     const res = await importReq(
-      csv('Deniz,ÖKLİD,Veli,+90 555 222 33 44,ATATÜRK ORTAOKULU,7,,,'),
+      csv('Deniz,ÖKLİD,Veli,+90 555 222 33 44,ATATÜRK ORTAOKULU,7'),
       true,
     );
     expect(res.body.summary.new_schools).toBe(0);
@@ -127,8 +127,8 @@ describe('Önizleme (dry_run)', () => {
     const before = countUsers();
     const res = await importReq(
       csv(
-        'Ege,ÖKLİD,Veli,+90 555 333 44 55,,,, ,',
-        'Sude,OLMAYAN SINIF,Veli,+90 555 444 55 66,,,, ,',
+        'Ege,ÖKLİD,Veli,+90 555 333 44 55,,',
+        'Sude,OLMAYAN SINIF,Veli,+90 555 444 55 66,,',
       ),
       true,
     );
@@ -148,8 +148,8 @@ describe('Önizleme (dry_run)', () => {
     };
     const res = await importReq(
       csv(
-        'Ege,ÖKLİD,Geçerli Veli,+90 555 333 44 55,Yeni Okul,6,,,',
-        'Sude,OLMAYAN SINIF,İkinci Veli,+90 555 444 55 66,,, ,',
+        'Ege,ÖKLİD,Geçerli Veli,+90 555 333 44 55,Yeni Okul,6',
+        'Sude,OLMAYAN SINIF,İkinci Veli,+90 555 444 55 66,,',
       ),
       false,
     );
@@ -171,7 +171,7 @@ describe('Önizleme (dry_run)', () => {
 
   it('mevcut veli adı farklıysa uyarı üretir', async () => {
     const res = await importReq(
-      csv('Kerem,ÖKLİD,Bambaşka Ad,+90 555 000 11 11,,,,'),
+      csv('Kerem,ÖKLİD,Bambaşka Ad,+90 555 000 11 11,,'),
       true,
     );
     expect(res.body.warnings.length).toBeGreaterThan(0);
@@ -184,32 +184,14 @@ describe('Önizleme (dry_run)', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(res.body.error.message).toContain('başlıkları eksik');
   });
-
-  it('soft-deleted kullanıcı adı çakışma sayılır', async () => {
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO users
-         (id, full_name, full_name_normalized, username, email, password_hash, role,
-          is_active, token_version, deleted_at, created_at)
-       VALUES ('ghost', 'Ghost', 'ghost', 'silinmis9', NULL, 'x', 'student', 0, 1, ?, ?)`,
-    ).run(now, now);
-    const res = await importReq(
-      csv('Ada,ÖKLİD,Veli,+90 555 555 66 77,,,,silinmis9,'),
-      true,
-    );
-    expect(res.body.ok).toBe(false);
-    expect(res.body.errors.some((e: { field: string }) => e.field === 'ogrenci_kullanici_adi')).toBe(
-      true,
-    );
-  });
 });
 
 describe('Kaydetme (commit)', () => {
   it('kardeşleri tek velide birleştirip hepsini tek transaction yazar', async () => {
     const res = await importReq(
       csv(
-        'Ali Yılmaz,ÖKLİD,Örnek Kişi 5,+90 555 111 22 33,Örnek Okul 1,6,,,',
-        'Ayla Yılmaz,PİSAGOR,Örnek Kişi 5,+90 555 111 22 33,,, ,,',
+        'Ali Yılmaz,ÖKLİD,Örnek Kişi 5,+90 555 111 22 33,Örnek Okul 1,6',
+        'Ayla Yılmaz,PİSAGOR,Örnek Kişi 5,+90 555 111 22 33,,',
       ),
       false,
     );
@@ -243,7 +225,7 @@ describe('Kaydetme (commit)', () => {
     expect(rows[0].role).toBe('student');
     expect(rows[0].class_id).toBe('c-oklid');
     expect(rows[1].class_id).toBe('c-pisagor');
-    expect(rows.every((r) => /^ogrenci\d+$/.test(r.username))).toBe(true);
+    expect(rows.map((r) => r.username)).toEqual(['aliyilmaz1', 'aylayilmaz1']);
 
     const audit = db
       .prepare(`SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'student.import'`)
@@ -251,10 +233,29 @@ describe('Kaydetme (commit)', () => {
     expect(audit.c).toBe(1);
   });
 
+  it('aynı adlı iki öğrenciye artan sayaçlı kullanıcı adı üretir', async () => {
+    const res = await importReq(
+      csv(
+        'Örnek Kişi 8,ÖKLİD,Nurten Yılmaz,+90 555 123 45 67,',
+        'Örnek Kişi 8,PİSAGOR,Nurten Yılmaz,+90 555 123 45 67,',
+      ),
+      false,
+    );
+    expect(res.status).toBe(201);
+
+    const rows = db
+      .prepare(
+        `SELECT u.username FROM users u
+         WHERE u.full_name = 'Örnek Kişi 8' ORDER BY u.username`,
+      )
+      .all() as Array<{ username: string }>;
+    expect(rows.map((r) => r.username)).toEqual(['ornekkisi81', 'ornekkisi82']);
+  });
+
   it('başlangıç şifresi kısa ise 400 ve yazma yok', async () => {
     const before = countUsers();
     const res = await importReq(
-      csv('Poyraz,ÖKLİD,Veli,+90 555 777 88 99,,,,'),
+      csv('Poyraz,ÖKLİD,Veli,+90 555 777 88 99,,'),
       false,
       'kisa',
     );

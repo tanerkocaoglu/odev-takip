@@ -92,12 +92,17 @@ numarası bağımlılığı yaratıyordu (bkz. §9 KVKK).
 - **Admin / öğretmen:** `email` + şifre (değişmedi).
 - **Veli / öğrenci:** `username` + şifre.
 
-**`username` üretimi — otomatik, admin elle girmez:**
-- Öğrenci: `ogrenci<n>` — `n`, mevcut öğrenci kullanıcı adları arasındaki en
-  yüksek sıra numarasının +1'i.
-- Veli: `veli<n>` — aynı mantık, veli kapsamında.
-- Üretilen ad zaten doluysa (örn. eşzamanlı iki kayıt) `n` bir artırılarak
+**`username` üretimi — otomatik, isim tabanlı, admin elle girmez:**
+- `normalizeTurkish(full_name)` ile ASCII'ye indirgenmiş, boşluk/noktalama
+  temizlenmiş isim + sıralı sayaç. Örnek: "Örnek Kişi 8" → `ornekkisi81`,
+  ikinci "Örnek Kişi 8" → `ornekkisi82`.
+- Sayaç: bu önekle başlayan (`prefix%`) mevcut kullanıcı adlarındaki en yüksek
+  sayının +1'i; önek rol ayrımı taşımaz (öğrenci/veli aynı öneki paylaşırsa
+  çakışma sayaca yansır).
+- Üretilen ad zaten doluysa (örn. eşzamanlı iki kayıt) sayaç artırılarak
   yeniden denenir; `username` `UNIQUE` kısıtı bunu garanti eder.
+- **Geriye dönük:** yalnızca yeni üretilen adları etkiler; sistemdeki mevcut
+  `ogrenci1` / `veli3` gibi kullanıcı adlarına dokunulmaz.
 - Admin, kayıt sonrası `username`'i isterse değiştirebilir (yine unique).
 
 **Şifre:** Öğretmen kaydında olduğu gibi, öğrenci/veli için de **admin
@@ -693,9 +698,11 @@ bir örnek CSV döner (`text/csv; charset=utf-8`, UTF-8 BOM'lu). Admin panelde
 | `veli_whatsapp` | `guardians.whatsapp_phone` (eşleştirme anahtarı) | ✓ |
 | `okul_adi` | `schools.name` (isimle eşleşir, yoksa oluşturulur) | – |
 | `sinif_seviyesi` | `students.grade_level` (CHECK kümesi) | – |
-| `veli_telefon_2` | `guardians.phone_secondary` | – |
-| `ogrenci_kullanici_adi` | `users.username` (boşsa otomatik `ogrenci<n>`) | – |
-| `veli_kullanici_adi` | `users.username` (boşsa otomatik `veli<n>`) | – |
+
+> **Kullanıcı adı CSV'de yer almaz.** Öğrenci ve veli `username`'i her zaman
+> isim tabanlı otomatik üretilir (`normalizeTurkish(full_name)` + sayaç — §2.1);
+> admin elle giremez. `guardians.phone_secondary` de toplu akışın parçası
+> değildir; admin isterse Veliler ekranından elle girer.
 
 **Şifre:** tek bir **ortak başlangıç şifresi** admin tarafından import ekranında
 girilir ve o işlemde oluşturulan **tüm** yeni öğrenci + velilere uygulanır; CSV'de
@@ -724,11 +731,9 @@ admin'in girdiği başlangıç şifresi kuralının toplu hali).
   eşleşip ad farklıysa mevcut ad korunur ve satır **uyarı** olarak işaretlenir
   (hata değil).
 - **Soft delete:** yalnızca `deleted_at IS NULL` kayıtlarla eşleşir; silinmiş
-  kayıt geri getirilmez, yeni kayıt açılır. Açıkça belirtilen `username`
-  silinmiş bir kayda denk geliyorsa çakışma sayılır; otomatik üretim yeni numara
-  verir.
-- **`username`:** dosyada belirtilen adlar (dosya içi + DB geneli, aktif)
-  benzersiz olmalı; boşsa `nextUsername()` devrededir (spec §2.1).
+  kayıt geri getirilmez, yeni kayıt açılır.
+- **`username`:** her zaman isim tabanlı otomatik üretilir (`nextUsername`,
+  §2.1); dosyada bu sütun yoktur.
 
 **Hepsi ya da hiçbiri:** tek satır bile hatalıysa **hiçbir kayıt oluşturulmaz**;
 admin dosyayı düzeltip yeniden yükler. Kısmi kabul bu sürümde yoktur. Başarılı

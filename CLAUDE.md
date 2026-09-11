@@ -124,9 +124,12 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
 - Tüm birincil anahtarlar: `crypto.randomUUID()` — harici paket yok.
 - **`weekly_digests.token` UUID DEĞİLDİR.** Kimlik doğrulamasız bir sayfayı
   açtığı için fiilen paroladır: `crypto.randomBytes(32).toString('base64url')`.
-- **`username` üretimi:** `ogrenci<n>` / `veli<n>` — `n`, o roldeki en yüksek
-  mevcut sıra numarasının +1'i; çakışmada `n` artırılarak yeniden denenir
-  (`spec.md` §2.1). SMS/OTP kullanılmaz.
+- **`username` üretimi:** isim tabanlı — `normalizeTurkish(full_name)` ile
+  ASCII'ye indirgenmiş, boşluksuz ad+soyad + sıralı sayaç (örn. "Örnek Kişi 8"
+  → `ornekkisi81`, ikincisi → `ornekkisi82`). Sayaç, o önekle başlayan en
+  yüksek mevcut sayının +1'i; çakışmada artırılarak yeniden denenir
+  (`spec.md` §2.1). Yalnızca yeni kayıtları etkiler; mevcut `ogrenci<n>` /
+  `veli<n>` adlarına dokunulmaz. SMS/OTP kullanılmaz.
 
 **Girdi doğrulama ve hata formatı**
 - Her gelen request body Zod şemasıyla parse edilir. `any` kullanılmaz.

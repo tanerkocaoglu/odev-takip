@@ -1279,7 +1279,7 @@ router.post(
 
     const userId = randomUUID();
     const guardianId = randomUUID();
-    const username = nextUsername('guardian');
+    const username = nextUsername(input.full_name);
     const passwordHash = await hashPassword(input.password);
     const now = new Date().toISOString();
 
@@ -1577,7 +1577,7 @@ router.post(
     const userId = randomUUID();
     const studentId = randomUUID();
     const enrollmentId = randomUUID();
-    const username = nextUsername('student');
+    const username = nextUsername(input.full_name);
     const passwordHash = await hashPassword(input.password);
     const now = new Date().toISOString();
     const today = now.slice(0, 10);

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { db } from './index.js';
 import { runMigrations } from './migrations.js';
 import { seedDatabase } from './seed.js';
+import { usernamePrefix } from '../utils/username.js';
 
 /**
  * Şema + seed testleri.
@@ -298,16 +299,18 @@ describe('seed', () => {
       .get() as { c: number };
     expect(missing.c).toBe(0);
 
-    const pattern = db
+    // İsim tabanlı üretim: username = normalizeTurkish(full_name) temizlenmiş
+    // önek + sayaç (spec §2.1).
+    const rows = db
       .prepare(
-        `SELECT username FROM users
-         WHERE role = 'student' AND username NOT LIKE 'ogrenci%'
-         UNION ALL
-         SELECT username FROM users
-         WHERE role = 'guardian' AND username NOT LIKE 'veli%'`,
+        `SELECT u.username, u.full_name FROM users u
+         WHERE u.role IN ('student','guardian')`,
       )
-      .all();
-    expect(pattern).toHaveLength(0);
+      .all() as Array<{ username: string; full_name: string }>;
+    const bad = rows.filter(
+      (r) => !new RegExp(`^${usernamePrefix(r.full_name)}\\d+$`).test(r.username),
+    );
+    expect(bad).toHaveLength(0);
   });
 
   it('her velinin tek çocuğu vardır (küçük ölçekli seed)', () => {

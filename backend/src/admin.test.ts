@@ -526,7 +526,7 @@ describe('Veli', () => {
     });
     expect(created.status).toBe(201);
     expect(created.body.whatsapp_phone).toBe('+905330002233');
-    expect(created.body.username).toMatch(/^veli\d+$/);
+    expect(created.body.username).toMatch(/^ornekkisi1\d+$/);
 
     const missingWhatsapp = await adminRequest('post', '/api/v1/admin/guardians').send({
       full_name: 'WhatsAppsız Veli',
@@ -676,7 +676,7 @@ describe('Öğrenci + sınıf değişikliği (hafta sınırında)', () => {
     });
     expect(created.status).toBe(201);
     expect(created.body.class_name).toBe('SEVA');
-    expect(created.body.username).toMatch(/^ogrenci\d+$/);
+    expect(created.body.username).toMatch(/^testogrenciyeni\d+$/);
   });
 
   it('arama veli adıyla da çalışır; sayfalama total doğru', async () => {

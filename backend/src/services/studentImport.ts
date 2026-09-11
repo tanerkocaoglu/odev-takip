@@ -12,9 +12,9 @@
  * - Şifre tektir (ortak başlangıç şifresi); hash dışarıda bir kez hesaplanır.
  * - Dershane sınıfı önceden var olmalı (yoksa satır hatası); okul isimle
  *   eşleşir, yoksa oluşturulur; veli normalize telefonla eşleşir (kardeş).
- * - Soft delete'li kayıtlar eşleştirmeye girmez; açıkça belirtilen bir
- *   `username` silinmiş bir kayda denk gelirse çakışma sayılır.
- * - `username` ve normalize telefon sunucuda üretilir; istemci değerine
+ * - Soft delete'li kayıtlar eşleştirmeye girmez.
+ * - `username` her zaman sunucuda isim tabanlı otomatik üretilir
+ *   (`nextUsername`); normalize telefon da sunucuda üretilir, istemci değerine
  *   güvenilmez.
  */
 
@@ -33,9 +33,6 @@ export const STUDENT_IMPORT_HEADERS = [
   'veli_whatsapp',
   'okul_adi',
   'sinif_seviyesi',
-  'veli_telefon_2',
-  'ogrenci_kullanici_adi',
-  'veli_kullanici_adi',
 ] as const;
 
 const REQUIRED_HEADERS = [
@@ -83,8 +80,6 @@ interface SchoolPlan {
 interface GuardianPlan {
   phone: string;
   fullName: string;
-  phoneSecondary: string | null;
-  username: string | null;
   id: string | null;
   row: number;
 }
@@ -94,7 +89,6 @@ interface StudentPlan {
   fullName: string;
   classId: string;
   gradeLevel: string | null;
-  username: string | null;
   guardian: GuardianPlan;
   school: SchoolPlan | null;
 }
@@ -200,30 +194,8 @@ export function prepareImport(text: string): {
 
   const guardiansByPhone = new Map<string, GuardianPlan>();
   const schoolsByKey = new Map<string, SchoolPlan>();
-  const seenUsernames = new Set<string>();
   const matchedGuardianIds = new Set<string>();
   const matchedSchoolIds = new Set<string>();
-
-  const isUsernameTaken = (username: string): boolean =>
-    Boolean(db.prepare(`SELECT id FROM users WHERE username = ?`).get(username));
-
-  const validateExplicitUsername = (
-    value: string,
-    row: number,
-    field: string,
-  ): string | null => {
-    if (!value) return null;
-    if (seenUsernames.has(value) || isUsernameTaken(value)) {
-      errors.push({
-        row,
-        field,
-        message: `Kullanıcı adı zaten kullanılıyor: '${value}'.`,
-      });
-      return null;
-    }
-    seenUsernames.add(value);
-    return value;
-  };
 
   records.forEach((rec, index) => {
     const row = index + 2; // başlık 1. satır
@@ -233,9 +205,6 @@ export function prepareImport(text: string): {
     const whatsappRaw = rec['veli_whatsapp'] ?? '';
     const schoolName = rec['okul_adi'] ?? '';
     const gradeLevel = rec['sinif_seviyesi'] ?? '';
-    const secondaryRaw = rec['veli_telefon_2'] ?? '';
-    const explicitStudentUsername = rec['ogrenci_kullanici_adi'] ?? '';
-    const explicitGuardianUsername = rec['veli_kullanici_adi'] ?? '';
 
     let rowHasError = false;
     const addError = (field: string, message: string) => {
@@ -320,8 +289,6 @@ export function prepareImport(text: string): {
             guardian = {
               phone,
               fullName: existing.full_name,
-              phoneSecondary: null,
-              username: null,
               id: existing.id,
               row,
             };
@@ -336,12 +303,6 @@ export function prepareImport(text: string): {
             guardian = {
               phone,
               fullName: guardianName,
-              phoneSecondary: secondaryRaw ? normalizePhone(secondaryRaw) : null,
-              username: validateExplicitUsername(
-                explicitGuardianUsername,
-                row,
-                'veli_kullanici_adi',
-              ),
               id: null,
               row,
             };
@@ -370,20 +331,12 @@ export function prepareImport(text: string): {
       }
     }
 
-    // --- Açık öğrenci kullanıcı adı ---
-    const studentUsername = validateExplicitUsername(
-      explicitStudentUsername,
-      row,
-      'ogrenci_kullanici_adi',
-    );
-
     if (!rowHasError && guardian && classId) {
       plan.students.push({
         row,
         fullName: studentName,
         classId,
         gradeLevel: parsedGrade,
-        username: studentUsername,
         guardian,
         school,
       });
@@ -432,7 +385,7 @@ export function commitImport(
     for (const guardian of plan.newGuardians) {
       const userId = randomUUID();
       const guardianId = randomUUID();
-      const username = guardian.username ?? nextUsername('guardian');
+      const username = nextUsername(guardian.fullName);
       db.prepare(
         `INSERT INTO users
            (id, full_name, full_name_normalized, username, email, password_hash, role,
@@ -448,8 +401,8 @@ export function commitImport(
       );
       db.prepare(
         `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
-         VALUES (?, ?, ?, ?, NULL, NULL)`,
-      ).run(guardianId, userId, guardian.phone, guardian.phoneSecondary);
+         VALUES (?, ?, ?, NULL, NULL, NULL)`,
+      ).run(guardianId, userId, guardian.phone);
       guardian.id = guardianId;
     }
 
@@ -461,7 +414,7 @@ export function commitImport(
       const userId = randomUUID();
       const studentId = randomUUID();
       const enrollmentId = randomUUID();
-      const username = student.username ?? nextUsername('student');
+      const username = nextUsername(student.fullName);
       const schoolId = student.school?.id ?? null;
 
       db.prepare(
