@@ -434,6 +434,9 @@ BASE_URL=http://localhost:5173   # /r/{token} linkleri bununla üretilir
 JWT_SECRET=<rastgele-gizli-anahtar>
 ADMIN_PASSWORD=<admin-şifresi>
 SEED_USER_PASSWORD=<seed öğrenci/veli şifresi>   # yalnızca seed/demo verisi
+LOGIN_RATE_LIMIT_MAX=5        # demo ortamında 10'a kadar gevşetilebilir;
+                              # üretimde 5'in altına inilmemeli, asla 100
+                              # gibi yüksek bir değer kullanılmamalı
 STORAGE_DRIVER="local"        # local | r2
 # üretimde:
 # R2_ENDPOINT= R2_BUCKET= R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY=
@@ -611,9 +614,6 @@ görüyor.
   öğrenciye `wa.me` linki gönderilir; sistem cron'u + `X-Cron-Secret` ile
   korunan `POST /api/internal/reminders` endpoint'i tetikler
 - R2 storage implementasyonu ve üretime geçiş
-- **Öğretmen atamalarını toplu devretme** — atamalı öğretmen soft-delete
-  edilemediği için (Aşama 2b) ayrılan öğretmen akışı; aksi halde admin
-  öğretmeni sistemden çıkaramaz
 - Saklama temizliği: 1 yıllık teslim dosyalarının silinmesi
 - KVKK: aydınlatma metni, `consent_at` akışı
 - Yıl sonu PDF özeti
