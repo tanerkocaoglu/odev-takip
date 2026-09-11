@@ -323,7 +323,7 @@ export default function DigestSendPage() {
                           <button
                             type="button"
                             onClick={() => void handleRevoke(item)}
-                            className="ml-2 rounded-md border border-att-absent/30 px-3 py-1.5 text-sm font-medium text-att-absent transition-colors hover:bg-att-absent/5"
+                            className="ml-2 rounded-md border border-danger/30 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger/5"
                           >
                             İptal
                           </button>

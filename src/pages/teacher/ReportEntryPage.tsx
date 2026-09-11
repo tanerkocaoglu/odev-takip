@@ -47,7 +47,8 @@ export default function ReportEntryPage() {
   const [completeMsg, setCompleteMsg] = useState<string | null>(null);
   const [completeErrors, setCompleteErrors] = useState<Record<string, string>>({});
 
-  const [bulkScore, setBulkScore] = useState('');
+  const [bulkHomework, setBulkHomework] = useState('');
+  const [bulkInterest, setBulkInterest] = useState('');
   const [mobileIndex, setMobileIndex] = useState(0);
   const [fileOpenError, setFileOpenError] = useState<string | null>(null);
 
@@ -195,14 +196,14 @@ export default function ReportEntryPage() {
     setEntries((prev) => prev.map((e) => ({ ...e, attendance: 'present' as Attendance })));
   }
 
-  function bulkApplyScore() {
-    const score = parseScore(bulkScore);
+  function bulkApplyScore(field: 'homework_score' | 'interest_score') {
+    const score = parseScore(field === 'homework_score' ? bulkHomework : bulkInterest);
     if (score === null) return;
     setEntries((prev) =>
       prev.map((e) =>
         e.attendance === 'absent' || e.attendance === 'excused'
           ? e
-          : { ...e, homework_score: score, interest_score: score },
+          : { ...e, [field]: score },
       ),
     );
   }
@@ -238,7 +239,7 @@ export default function ReportEntryPage() {
     ) : null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-text">
@@ -274,11 +275,11 @@ export default function ReportEntryPage() {
       <FormError message={completeMsg} />
 
       {/* Sınıf düzeyi alanlar */}
-      <section className="grid gap-3 rounded-md border border-border bg-surface p-4 md:grid-cols-2">
+      <section className="grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-2">
         <Field label="Verilmiş olan ödev" htmlFor="prev-homework">
           <input
             id="prev-homework"
-            className={inputClass + ' h-9 text-sm'}
+            className={inputClass}
             value={prevText}
             onChange={(e) => setPrevText(e.target.value)}
             placeholder="Geçen haftanın ödevi…"
@@ -287,7 +288,7 @@ export default function ReportEntryPage() {
         <Field label="İşlenen konu" htmlFor="topic">
           <input
             id="topic"
-            className={inputClass + ' h-9 text-sm'}
+            className={inputClass}
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="Bu hafta işlenen konu…"
@@ -296,7 +297,7 @@ export default function ReportEntryPage() {
         <Field label="Yapılacak ödev" htmlFor="next-homework">
           <input
             id="next-homework"
-            className={inputClass + ' h-9 text-sm'}
+            className={inputClass}
             value={hwDesc}
             onChange={(e) => setHwDesc(e.target.value)}
             placeholder="Önümüzdeki haftanın ödevi…"
@@ -310,7 +311,7 @@ export default function ReportEntryPage() {
           <input
             id="due-date"
             type="date"
-            className={inputClass + ' tabular h-9 text-sm'}
+            className={inputClass + ' tabular'}
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
             onBlur={() => {
@@ -321,32 +322,62 @@ export default function ReportEntryPage() {
       </section>
 
       {/* Toplu doldurma kısayolu */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <button
           type="button"
           onClick={bulkMakePresent}
-          className="rounded-md border border-border px-3 py-1.5 text-sm text-text hover:bg-bg"
+          className="min-h-[44px] rounded-md border border-border px-3 text-[13px] text-text hover:bg-bg md:h-8 md:min-h-0"
         >
           Tümünü geldi yap
         </button>
-        <label className="flex items-center gap-2 text-sm text-muted">
-          Tümü için puan
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="bulk-homework"
+            className="whitespace-nowrap text-[13px] text-muted"
+          >
+            Tümü ödev puanı
+          </label>
           <input
+            id="bulk-homework"
             type="number"
             min={1}
             max={10}
-            value={bulkScore}
-            onChange={(e) => setBulkScore(e.target.value)}
-            className={inputClass + ' tabular w-16'}
+            value={bulkHomework}
+            onChange={(e) => setBulkHomework(e.target.value)}
+            className={inputClass + ' tabular w-14'}
           />
           <button
             type="button"
-            onClick={bulkApplyScore}
-            className="rounded-md border border-border px-3 py-1.5 text-sm text-text hover:bg-bg"
+            onClick={() => bulkApplyScore('homework_score')}
+            className="min-h-[44px] rounded-md border border-border px-3 text-[13px] text-text hover:bg-bg md:h-8 md:min-h-0"
           >
             Uygula
           </button>
-        </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="bulk-interest"
+            className="whitespace-nowrap text-[13px] text-muted"
+          >
+            Tümü ilgi puanı
+          </label>
+          <input
+            id="bulk-interest"
+            type="number"
+            min={1}
+            max={10}
+            value={bulkInterest}
+            onChange={(e) => setBulkInterest(e.target.value)}
+            className={inputClass + ' tabular w-14'}
+          />
+          <button
+            type="button"
+            onClick={() => bulkApplyScore('interest_score')}
+            className="min-h-[44px] rounded-md border border-border px-3 text-[13px] text-text hover:bg-bg md:h-8 md:min-h-0"
+          >
+            Uygula
+          </button>
+        </div>
       </div>
 
       <FormError message={fileOpenError} />
@@ -370,37 +401,39 @@ export default function ReportEntryPage() {
               return (
                 <tr key={entry.student_id} className="border-b border-border last:border-b-0">
                   <td className="text-[13px] text-text">
-                    <span>{entry.student_name}</span>
-                    {entry.submission && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFileOpenError(null);
-                          const key = entry.submission!.files[0]?.key;
-                          if (!key) return;
-                          openProtectedFile(key).catch((err) =>
-                            setFileOpenError(
-                              err instanceof ApiClientError
-                                ? err.message
-                                : 'Dosya açılırken bir hata oluştu.',
-                            ),
-                          );
-                        }}
-                        className={
-                          'mt-0.5 flex w-fit items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ' +
-                          (entry.submission.is_late
-                            ? 'bg-amber/10 text-sub-late'
-                            : 'bg-green/10 text-sub-uploaded')
-                        }
-                      >
-                        {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
-                      </button>
-                    )}
-                    {!entry.submission && (
-                      <span className="mt-0.5 flex w-fit items-center rounded-full bg-red/10 px-1.5 py-0.5 text-[11px] font-medium text-sub-missing">
-                        Yüklenmedi
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="whitespace-nowrap">{entry.student_name}</span>
+                      {entry.submission && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFileOpenError(null);
+                            const key = entry.submission!.files[0]?.key;
+                            if (!key) return;
+                            openProtectedFile(key).catch((err) =>
+                              setFileOpenError(
+                                err instanceof ApiClientError
+                                  ? err.message
+                                  : 'Dosya açılırken bir hata oluştu.',
+                              ),
+                            );
+                          }}
+                          className={
+                            'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ' +
+                            (entry.submission.is_late
+                              ? 'bg-amber/10 text-sub-late'
+                              : 'bg-green/10 text-sub-uploaded')
+                          }
+                        >
+                          {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
+                        </button>
+                      )}
+                      {!entry.submission && (
+                        <span className="inline-flex shrink-0 items-center rounded-full bg-red/10 px-1.5 py-0.5 text-[11px] font-medium text-sub-missing">
+                          Yüklenmedi
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <select

@@ -176,7 +176,7 @@ export default function AdminDashboardPage() {
               type="checkbox"
               checked={groupByTeacher}
               onChange={(e) => setGroupByTeacher(e.target.checked)}
-              className="h-4 w-4 accent-[var(--accent)]"
+              className="h-4 w-4 accent-accent"
             />
             Öğretmene göre grupla (Kim geride kalmış?)
           </label>

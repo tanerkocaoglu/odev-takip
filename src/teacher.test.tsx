@@ -247,6 +247,42 @@ describe('ReportEntryPage', () => {
     expect(screen.getByLabelText('İlgi puanı')).toBeDisabled();
   });
 
+  it('toplu puan: ödev ve ilgi ayrı ayrı uygulanır; devamsız satır atlanır', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, REPORT));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    const attendance = screen.getByLabelText('Devamsızlık');
+    const homework = screen.getByLabelText('Ödev puanı') as HTMLInputElement;
+    const interest = screen.getByLabelText('İlgi puanı') as HTMLInputElement;
+    const applyButtons = () => screen.getAllByRole('button', { name: 'Uygula' });
+
+    // Devamsız satır toplu doldurmadan etkilenmez.
+    fireEvent.change(attendance, { target: { value: 'absent' } });
+    fireEvent.change(screen.getByLabelText('Tümü ödev puanı'), {
+      target: { value: '9' },
+    });
+    fireEvent.click(applyButtons()[0]);
+    expect(homework.value).toBe('');
+
+    // Geldi yapılınca ödev puanı yalnızca ödev alanına yazılır.
+    fireEvent.change(attendance, { target: { value: 'present' } });
+    fireEvent.click(applyButtons()[0]);
+    expect(homework.value).toBe('9');
+    expect(interest.value).toBe('');
+
+    // İlgi puanı ayrı alandan uygulanır; ödev puanı korunur.
+    fireEvent.change(screen.getByLabelText('Tümü ilgi puanı'), {
+      target: { value: '6' },
+    });
+    fireEvent.click(applyButtons()[1]);
+    expect(homework.value).toBe('9');
+    expect(interest.value).toBe('6');
+  });
+
   it('son hafta (homework yok) uyarısı gösterilir', async () => {
     const lastWeekReport = {
       ...REPORT,

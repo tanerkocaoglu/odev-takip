@@ -252,7 +252,7 @@ export default function GuardiansPage() {
               type="checkbox"
               checked={consentAt}
               onChange={(e) => setConsentAt(e.target.checked)}
-              className="h-4 w-4 accent-[var(--accent)]"
+              className="h-4 w-4 accent-accent"
             />
             <span>
               KVKK açık rızası alındı{' '}

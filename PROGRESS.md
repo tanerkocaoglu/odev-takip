@@ -5,6 +5,84 @@
 
 ---
 
+## Rapor giriş ekranı — compact + renk token düzeltmeleri ✅
+
+### Süreç özeti
+
+Öğretmen rapor giriş ekranında (projenin kalbi) dört UX/tasarım sorunu
+giderildi: compact yoğunluğun gerçekten uygulanması, odak halkasının
+doğrulanması, toplu puan davranışının netleştirilmesi ve renk token'larının
+düzeltilmesi. Şema/backend değişikliği yok; tamamı frontend.
+
+### Bulgular ve yapılanlar
+
+**1. Compact yoğunluk gerçekten uygulandı**
+- `index.css` `.compact` hücre dikey boşluğu `4px → 2px`; böylece h-8 (32px)
+  input ile satır tam 36px. `.compact :is(input, select, textarea)` kuralına
+  `vertical-align: middle` eklendi (inline-block kontrollerin baseline boşluğu
+  satırı 41.5px'e şişiriyordu).
+- `ReportEntryPage`: teslim rozeti alt satırdan tek satıra alındı (satırı
+  şişiriyordu); üst alanlar `h-9/14px → h-8/13px`; section `p-4 gap-3 →
+  p-3 gap-2`; sayfa `space-y-4 → space-y-2`; toplu doldurma çubuğu compact.
+- Headless Chrome ölçümü (üretim CSS'i): satır **37.0px** (36px içerik + 1px
+  collapsed border), tablo fontu **13px**, input **32px** — öncesi 51px.
+- `CLAUDE.md` compact token bloğu güncellendi (2px dikey boşluk +
+  vertical-align notu).
+
+**2. Odak halkası doğrulandı**
+- `:focus-visible` kuralı zaten doğru. Headless ölçüm: odaklanan input/select →
+  `outline: 2px solid rgb(13,107,98)`, `outline-offset: -2px`,
+  `:focus-visible` eşleşiyor. `outline-none`/`focus:ring` yok. Kod değişikliği
+  gerekmedi; ekran görüntüsüyle görünürlük kanıtlandı.
+
+**3. Toplu puan: iki ayrı alan**
+- Tek kutu (ikisine aynı değeri yazıyordu) → **"Tümü ödev puanı"** ve
+  **"Tümü ilgi puanı"** olmak üzere iki kutu + ayrı "Uygula"; devamsız/izinli
+  satırlar atlanır. Etiket taşması `whitespace-nowrap` + blok düzen ile
+  giderildi; mobil dokunma hedefleri 44px (`min-h-[44px] md:h-8`).
+- `teacher.test.tsx`'e ayrım + devamsız-atlama testi eklendi.
+
+**4. Renk token'ları**
+- **Kök neden:** token renkleri `var(--x)` düz string olduğu için Tailwind
+  `/5`, `/10`, `/30` opaklık sınıflarını üretmiyordu; tüm durum/devamsızlık
+  rozetlerinin zemin tonu ve danger border'ı sessizce şeffaftı. Renkler kanal
+  üçlüsüne (`--x: R G B`) çevrildi; `tailwind.config.js`
+  `rgb(var(--x) / <alpha-value>)` desenine alındı. Doğrudan `var(--accent)`
+  kullanan 3 sınıf `accent-accent` oldu.
+- **`--danger` #B42318** (= attendance.absent) eklendi. `DangerButton` ve
+  digest revoke butonu buna geçirildi; sistemde tek kırmızı tonu.
+- Durum rozetlerinde `--accent` **ihlali yok** (kontrol edildi; "Rapor hazır"
+  `status-completed` mavi kullanır). `attendance.present` **zaten** #5A6672
+  nötr gri; değişiklik gerekmedi.
+- `CLAUDE.md` renk bölümüne `--danger` eklendi.
+
+### Doğrulamalar
+
+**Statik** — root typecheck ✅, lint ✅, build ✅.
+**Testler** — frontend **56/56** (10 dosya; +1 toplu puan testi).
+**Headless Chrome (gerçek üretim CSS'i + tablo markup'ı):** satır 37.0px,
+font 13px, üst input 32px/13px, odak halkası 2px #0D6B62; ekran görüntüsünde
+rozet zeminleri, nötr gri "Geldi" ve kırmızı "Sil" danger butonu görünür.
+
+### Etkilenen dosyalar
+
+```
+src/index.css                    (kanal üçlüsü token'lar + --danger, compact 2px + vertical-align)
+tailwind.config.js               (rgb(var / <alpha-value>), danger)
+src/components/admin/ui.tsx      (DangerButton → danger)
+src/pages/teacher/ReportEntryPage.tsx  (compact, tek satır rozet, iki toplu puan)
+src/pages/admin/DigestSendPage.tsx     (revoke → danger)
+src/pages/admin/AdminDashboardPage.tsx ClassCoursesPage.tsx GuardiansPage.tsx (accent-accent)
+src/teacher.test.tsx             (+1 toplu puan testi)
+CLAUDE.md                        (compact token + --danger)
+```
+
+### Commit
+
+Tek commit: rapor girişi compact yoğunluk ve renk token düzeltmeleri.
+
+---
+
 ## Demo Öncesi Optimizasyonlar ✅
 
 ### Süreç özeti

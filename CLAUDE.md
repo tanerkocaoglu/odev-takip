@@ -212,11 +212,16 @@ dışında hiçbir yerde renk kullanılmaz.
 --text-muted  #5A6672   ikincil metin, etiketler
 --accent      #0D6B62   birincil buton, odak halkası, aktif sekme
 --accent-fg   #FFFFFF   accent üzerindeki metin
+--danger      #B42318   yıkıcı eylem (sil, iptal et) — devamsızlık
+                        kırmızısıyla aynı ton
 ```
 > **`--accent` yalnızca etkileşimli öğelere aittir** — buton, odak halkası,
 > aktif sekme, link. Durum rozetlerinde, etiketlerde veya dekoratif hiçbir
 > yerde kullanılmaz. Böylece kullanıcı bu rengi gördüğünde "buraya
 > tıklanabilir" bilgisini güvenle çıkarır.
+>
+> **Yıkıcı eylemler `--danger` kullanır** (sil, iptal). Sistemde tek kırmızı
+> tonu dolaşır; buton ayrı bir kırmızı tanımlamaz.
 
 **Devamsızlık** (`report_entries.attendance`)
 ```
@@ -258,10 +263,12 @@ geç yüklendi   #B45309
 ```
 tablo satır yüksekliği   36px
 input                    h-8 (32px)
-hücre iç boşluk          px-2 py-1
+hücre iç boşluk          px-2 + 2px dikey (h-8 ile satır tam 36px)
 tablo metni              13px
 bileşenler arası boşluk  8px
 ```
+> Satır içi kontroller `vertical-align: middle` ile hizalanır; aksi halde
+> baseline boşluğu satır yüksekliğini şişirir.
 
 **`comfortable` yoğunluk** — shadcn varsayılanları korunur; bölümler arası
 boşluk 24px, kart iç boşluğu 16–20px.

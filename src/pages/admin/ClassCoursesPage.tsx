@@ -235,7 +235,7 @@ export default function ClassCoursesPage() {
                         aria-label={`${item.class_name} · ${item.course_name} seç`}
                         checked={isSelected}
                         onChange={() => toggleSelect(item.id)}
-                        className="h-4 w-4 accent-[var(--accent)]"
+                        className="h-4 w-4 accent-accent"
                       />
                     </td>
                     <td className="px-3 py-2 font-medium text-text">{item.class_name}</td>
