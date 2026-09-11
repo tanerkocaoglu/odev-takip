@@ -22,6 +22,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import { ensurePendingDigests, maybeReadyDigests } from '../services/digests.js';
 import { parsePagination, paged } from '../utils/pagination.js';
+import { normalizeTurkish } from '../utils/text.js';
 import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -767,6 +768,9 @@ router.get('/reports', (req, res) => {
       : null;
   const classId = typeof req.query.class_id === 'string' ? req.query.class_id : null;
   const weekId = typeof req.query.week_id === 'string' ? req.query.week_id : null;
+  // Arama: sınıf adı VEYA ders adı (normalize). Türkçe LIKE ASCII'de harf
+  // duyarsız olmadığından sorgu sunucuda normalizeTurkish ile indirgenir.
+  const q = typeof req.query.q === 'string' ? normalizeTurkish(req.query.q.trim()) : '';
 
   const extraWhere: string[] = [];
   const extraValues: string[] = [];
@@ -781,6 +785,10 @@ router.get('/reports', (req, res) => {
   if (weekId) {
     extraWhere.push('r.week_id = ?');
     extraValues.push(weekId);
+  }
+  if (q) {
+    extraWhere.push('(c.name_normalized LIKE ? OR co.name_normalized LIKE ?)');
+    extraValues.push(`%${q}%`, `%${q}%`);
   }
 
   // Kapsam: öğretmen yalnızca kendi atamaları (CLAUDE.md — "önce hepsini çek
@@ -837,6 +845,58 @@ router.get('/reports', (req, res) => {
   }>;
 
   res.json(paged(rows, total, pagination));
+});
+
+/**
+ * GET /teacher/reports/filters — geçmiş rapor filtresi için sınıf + hafta
+ * seçenekleri. Kapsam role göre **handler'ın ilk satırında** belirlenir:
+ * öğretmen yalnızca kendi (silinmemiş) `class_courses` atamalarındaki
+ * raporlardan türetir; admin tümü. Seçenekler raporda fiilen geçen
+ * sınıf/haftalardan gelir (aktif eğitim yılına bağlı değildir).
+ *
+ * DİKKAT: `/reports/:id`'den ÖNCE kayıtlı olmalıdır; aksi halde `:id` "filters"
+ * değerini yakalar.
+ */
+router.get('/reports/filters', (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'teacher' && user.role !== 'admin') {
+    throw new AppError('FORBIDDEN', 403, 'Bu rapora erişim yetkiniz yok.');
+  }
+
+  const scopeWhere =
+    user.role === 'teacher'
+      ? 'cc.teacher_id = ? AND cc.deleted_at IS NULL'
+      : 'cc.deleted_at IS NULL';
+  const scopeValues = user.role === 'teacher' ? [user.id] : [];
+
+  const classes = db
+    .prepare(
+      `SELECT DISTINCT c.id, c.name
+       FROM reports r
+       JOIN class_courses cc ON cc.id = r.class_course_id
+       JOIN classes c ON c.id = cc.class_id
+       WHERE ${scopeWhere}
+       ORDER BY c.name`,
+    )
+    .all(...scopeValues) as Array<{ id: string; name: string }>;
+
+  const weeks = db
+    .prepare(
+      `SELECT DISTINCT w.id, w.week_no, w.label, w.start_date
+       FROM reports r
+       JOIN class_courses cc ON cc.id = r.class_course_id
+       JOIN weeks w ON w.id = r.week_id
+       WHERE ${scopeWhere}
+       ORDER BY w.start_date DESC`,
+    )
+    .all(...scopeValues) as Array<{
+    id: string;
+    week_no: number;
+    label: string;
+    start_date: string;
+  }>;
+
+  res.json({ classes, weeks });
 });
 
 /**

@@ -5,6 +5,94 @@
 
 ---
 
+## Öğretmen geçmiş raporlarına filtreleme (sınıf/hafta/durum/arama) ✅
+
+### Süreç özeti
+
+Öğretmenin "Geçmiş raporlarım" ekranı (`ReportHistoryPage`) artık admin "Tüm
+raporlar" ekranıyla **aynı filtre barını** kullanıyor: Durum + Sınıf + Hafta
+dropdown'ları + sınıf/ders adı arama kutusu (debounce ~300ms). Filtreler
+sunucu taraflıdır; sayfalama doğru kalır. Şema değişikliği/migration yok.
+
+**Teyit:** `GET /teacher/reports` zaten `status`/`class_id`/`week_id` +
+sayfalama destekliyordu (öğretmen ve admin ortak). **Eksik olan arama (`q`) +
+seçenek kaynağıydı:** öğretmen `/admin/classes`+`/admin/weeks`'e erişemez
+(`adminOnly`), bu yüzden role-duyarlı `GET /teacher/reports/filters` eklendi.
+
+**Kararlar (kullanıcı):** arama sınıf VEYA ders adı üzerinde
+(`name_normalized`, Türkçe normalize); filtre öğretmen+admin ortak; admin de
+aynı `/filters` ucunu kullanır (tek kaynak — seçenekler raporda fiilen geçen
+sınıf/haftalar); ortak bileşen **yalnızca görsel** (veli panelinin client-side
+filtreleme mantığı değişmedi).
+
+### Yapılanlar
+
+**Backend**
+- `GET /teacher/reports` + `q`: `normalizeTurkish(q)` →
+  `(c.name_normalized LIKE ? OR co.name_normalized LIKE ?)`; diğer filtrelerle AND.
+- `GET /teacher/reports/filters` (yeni, `/reports/:id`'den **ÖNCE**): handler
+  ilk satırında role göre kapsam — öğretmen kendi `class_courses`'u, admin tümü;
+  distinct sınıf + hafta döner.
+- `reportsExportCsv` + `GET /admin/reports/export` `q` destekler.
+- Testler: `report-filters.test.ts` (yeni, 7) — q normalize, çapraz-öğretmen
+  sızıntısı yok, `/filters` kapsamı, 403; `csv-export.test.ts` +1 (Türkçe q).
+
+**Frontend**
+- `teacherApi.history` + `q`; yeni `teacherApi.reportFilters()`; `types.ts`
+  `ReportFilterOptions`.
+- `components/admin/ui.tsx`: görsel `FilterSelect` (label + select).
+- `ReportHistoryPage`: filtre barı + debounce; arama gerçekten değişmedikçe
+  `page` sıfırlanmaz (mount'ta 1. sayfaya dönme hatası düzeltildi);
+  `StatusBadge` + filtreli boş durum.
+- `AdminReportsPage`: arama + `q` ile export; seçenek kaynağı `/filters`'a
+  taşındı (eski `academicYears/classes/weeks` çağrıları yalnızca filtre için
+  kullanılıyordu, kaldırıldı).
+- Testler: `teacher-history.test.tsx` (yeni, 3), `admin-reports.test.tsx` +1,
+  mevcut mock'lar `/filters`'ı tanır.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅.
+**Testler** — backend **243/243** (22 dosya; +7 report-filters, +1 csv-export),
+frontend **85/85** (15 dosya; +3 teacher-history, +1 admin-reports).
+
+**Canlı API (gerçek app.db + çalışan sunucu):**
+1. Öğretmen `/teacher/reports/filters` = kendi raporlarındaki sınıflar
+   (A/B/C Şubesi) + 5 hafta.
+2. `q="A ŞUBESİ"` (büyük Türkçe Ş) → api=5 = db=5 (normalize doğru).
+3. `q="Matematik"` (ders adı) → api=12 = db=12.
+4. Kombinasyon (durum+sınıf+hafta+q) → api=1 = db=1.
+5. Sonuçsuz arama → total=0, items=[].
+6. **Kapsam farkı:** aynı q için admin=14, öğretmen=5 → role scoping fiilen
+   kanıtlı.
+
+**Canlı tarayıcı (headless Chrome/CDP, gerçek backend):**
+- `/teacher/reports/history` → filtre barı render (Durum/Sınıf/Hafta + arama);
+  sınıf seçenekleri A/B/C Şubesi, haftalar 17–21.
+- Sınıf=`seed-class-001` → istekte `class_id=seed-class-001`.
+- Arama kutusuna "a" → istekte `q=...`; tablo satırları korunuyor.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts
+backend/src/services/csvExport.ts
+backend/src/routes/admin.ts
+backend/src/report-filters.test.ts (yeni)  backend/src/csv-export.test.ts
+src/types.ts  src/services/api.ts
+src/components/admin/ui.tsx
+src/pages/teacher/ReportHistoryPage.tsx
+src/pages/admin/AdminReportsPage.tsx
+src/teacher-history.test.tsx (yeni)  src/admin-reports.test.tsx  src/csv.test.tsx
+spec.md  PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## "İlgi puanı" → "Ders içi performans puanı" metin değişikliği ✅
 
 ### Süreç özeti

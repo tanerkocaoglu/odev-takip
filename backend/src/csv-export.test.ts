@@ -121,4 +121,23 @@ describe('Dışa aktarma — içerik ve filtre', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(lines(filtered.text)).toHaveLength(1);
   });
+
+  it('raporlar: q sınıf/ders adında Türkçe normalize ile eşleşir', async () => {
+    // "ÖKLİD" → normalizeTurkish = "oklid" = classes.name_normalized.
+    const byClass = await request(app)
+      .get('/api/v1/admin/reports/export?q=%C3%96KL%C4%B0D')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(lines(byClass.text)).toHaveLength(2);
+
+    // Ders adı da aranır ("Matematik").
+    const byCourse = await request(app)
+      .get('/api/v1/admin/reports/export?q=matematik')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(lines(byCourse.text)).toHaveLength(2);
+
+    const none = await request(app)
+      .get('/api/v1/admin/reports/export?q=olmayan')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(lines(none.text)).toHaveLength(1);
+  });
 });

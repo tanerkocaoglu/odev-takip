@@ -1,17 +1,31 @@
 /**
  * Admin — Tüm raporlar (spec.md §5.5 "Tüm raporlar" görünümü).
  * Admin'in "tüm raporları görme" hakkının karşılığı: durum/sınıf/hafta
- * filtresiyle raporlar listelenir, satıra tıklayınca salt-okunur açılır.
- * Kaynak: GET /teacher/reports (admin için tümü) + GET /teacher/reports/:id.
+ * filtresi + arama ile raporlar listelenir, satıra tıklayınca salt-okunur
+ * açılır. Kaynak: GET /teacher/reports (admin için tümü) + `:id`.
+ *
+ * Filtre seçenekleri öğretmenle aynı uçtan gelir (`/teacher/reports/filters`)
+ * — tek kaynak; admin kapsamı uçta role göre belirlenir.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { AcademicYear, ClassItem, TeacherReportHistoryItem, Week } from '../../types';
+import type {
+  ReportClassFilterOption,
+  ReportWeekFilterOption,
+  TeacherReportHistoryItem,
+} from '../../types';
 import { DAY_LABELS } from '../../types';
 import { adminApi, teacherApi, ApiClientError } from '../../services/api';
 import Pagination from '../../components/admin/Pagination';
-import { EmptyState, FormError, LoadingState, StatusBadge } from '../../components/admin/ui';
+import {
+  EmptyState,
+  FormError,
+  LoadingState,
+  SearchBox,
+  FilterSelect,
+  StatusBadge,
+} from '../../components/admin/ui';
 
 const PAGE_SIZE = 20;
 
@@ -22,18 +36,35 @@ const STATUS_OPTIONS = [
   { value: 'sent', label: 'Gönderildi' },
 ] as const;
 
+type StatusFilter = '' | 'draft' | 'completed' | 'sent';
+
 export default function AdminReportsPage() {
-  const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [weeks, setWeeks] = useState<Week[]>([]);
+  const [classes, setClasses] = useState<ReportClassFilterOption[]>([]);
+  const [weeks, setWeeks] = useState<ReportWeekFilterOption[]>([]);
   const [classId, setClassId] = useState('');
   const [weekId, setWeekId] = useState('');
-  const [status, setStatus] = useState<'draft' | 'completed' | 'sent' | ''>('');
+  const [status, setStatus] = useState<StatusFilter>('');
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
   const [items, setItems] = useState<TeacherReportHistoryItem[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Arama debounce (~300ms); yalnızca arama gerçekten değişince 1. sayfaya dön.
+  const appliedQ = useRef(q);
+  useEffect(() => {
+    const next = qInput.trim();
+    if (next === appliedQ.current) return;
+    const timer = window.setTimeout(() => {
+      appliedQ.current = next;
+      setQ(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [qInput]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +74,7 @@ export default function AdminReportsPage() {
         status: status || undefined,
         class_id: classId || undefined,
         week_id: weekId || undefined,
+        q: q || undefined,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -54,14 +86,14 @@ export default function AdminReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, classId, weekId, page]);
+  }, [status, classId, weekId, q, page]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   /** Filtre değişince ilk sayfaya dön. */
-  function changeFilter(setter: (v: string) => void) {
+  function applyFilter(setter: (value: string) => void) {
     return (value: string) => {
       setter(value);
       setPage(1);
@@ -77,6 +109,7 @@ export default function AdminReportsPage() {
         status: status || undefined,
         class_id: classId || undefined,
         week_id: weekId || undefined,
+        q: q || undefined,
       });
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
@@ -85,75 +118,56 @@ export default function AdminReportsPage() {
     }
   }
 
+  // Seçenekler öğretmenle aynı uçtan; hata olursa sayfa filtresiz çalışır.
   useEffect(() => {
-    adminApi.academicYears
-      .list()
+    teacherApi
+      .reportFilters()
       .then((res) => {
-        const active = (res.items as AcademicYear[]).find((y) => y.is_active === 1);
-        if (!active) return;
-        return Promise.all([
-          adminApi.classes.list({ academicYearId: active.id }),
-          adminApi.weeks.list(active.id),
-        ]);
-      })
-      .then((data) => {
-        if (!data) return;
-        setClasses(data[0].items);
-        setWeeks(data[1].items);
+        setClasses(res.classes);
+        setWeeks(res.weeks);
       })
       .catch(() => {
-        // Filtre listeleri yüklenemezse sayfa yine çalışır (filtresiz).
+        // Sessiz.
       });
   }, []);
-
-  const selectClass = 'h-9 rounded-md border border-border bg-surface px-3 text-sm text-text';
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
+        <FilterSelect
+          label="Durum"
+          value={status}
+          onChange={applyFilter((v) => setStatus(v as StatusFilter))}
+        >
+          {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Sınıf" value={classId} onChange={applyFilter(setClassId)}>
+          <option value="">Tümü</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Hafta" value={weekId} onChange={applyFilter(setWeekId)}>
+          <option value="">Tümü</option>
+          {weeks.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.week_no}. hafta · {w.label}
+            </option>
+          ))}
+        </FilterSelect>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-muted">Durum</span>
-          <select
-            value={status}
-            onChange={(e) => changeFilter((v) => setStatus(v as typeof status))(e.target.value)}
-            className={selectClass}
-          >
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-muted">Sınıf</span>
-          <select
-            value={classId}
-            onChange={(e) => changeFilter(setClassId)(e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Tümü</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-muted">Hafta</span>
-          <select
-            value={weekId}
-            onChange={(e) => changeFilter(setWeekId)(e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Tümü</option>
-            {weeks.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.week_no}. hafta · {w.label}
-              </option>
-            ))}
-          </select>
+          <span className="mb-1 block text-sm font-medium text-muted">Ara</span>
+          <SearchBox
+            value={qInput}
+            onChange={setQInput}
+            placeholder="Sınıf veya ders ara"
+          />
         </label>
         <button
           type="button"

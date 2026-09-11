@@ -285,6 +285,24 @@ export interface TeacherReportHistory {
   items: TeacherReportHistoryItem[];
 }
 
+/** Geçmiş rapor filtresi seçenekleri — GET /teacher/reports/filters. */
+export interface ReportClassFilterOption {
+  id: string;
+  name: string;
+}
+
+export interface ReportWeekFilterOption {
+  id: string;
+  week_no: number;
+  label: string;
+  start_date: string;
+}
+
+export interface ReportFilterOptions {
+  classes: ReportClassFilterOption[];
+  weeks: ReportWeekFilterOption[];
+}
+
 // ---------- Ödev ve teslim (Aşama 4) ----------
 
 export interface SubmissionFile {

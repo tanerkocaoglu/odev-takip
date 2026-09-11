@@ -164,6 +164,36 @@ export function SearchBox({
   );
 }
 
+/**
+ * Etiketli filtre seçicisi — görsel ortaklık için (tasarım token'ları).
+ * Veri akışı çağıran sayfaya aittir; bu bileşen yalnızca görünümü paylaşır.
+ * `<option>`'lar children olarak verilir (hafta etiketi gibi özel metinler için).
+ */
+export function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-medium text-muted">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 rounded-md border border-border bg-surface px-3 text-sm text-text focus:border-accent"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
 export function PrimaryButton({
   children,
   onClick,

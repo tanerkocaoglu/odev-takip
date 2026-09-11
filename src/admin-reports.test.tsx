@@ -35,7 +35,7 @@ function report(id: string, status: string) {
 function makeFetch() {
   return vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes('/admin/academic-years')) return ok({ items: [] });
+    if (url.includes('/teacher/reports/filters')) return ok({ classes: [], weeks: [] });
     if (url.includes('/teacher/reports')) {
       const query = new URL(url, 'http://x').searchParams;
       const p = Number(query.get('page') ?? '1');
@@ -78,16 +78,49 @@ describe('AdminReportsPage — sayfalama', () => {
 
     // İlk yükleme page=1 parametresiyle.
     const firstCall = fetchMock.mock.calls.find(
-      ([u]) => String(u).includes('/teacher/reports'),
+      ([u]) =>
+        String(u).includes('/teacher/reports') && !String(u).includes('/filters'),
     )!;
     expect(String(firstCall[0])).toContain('page=1');
     expect(String(firstCall[0])).toContain('pageSize=20');
   });
 
+  it('filtreler ve arama sorgu parametrelerine yansır', async () => {
+    const fetchMock = makeFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter>
+        <AdminReportsPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getAllByText('EURİST · Matematik').length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(screen.getByLabelText('Durum'), {
+      target: { value: 'completed' },
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes('status=completed')),
+      ).toBe(true);
+    });
+
+    fireEvent.change(screen.getByLabelText('Ara'), {
+      target: { value: 'cebir' },
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes('q=cebir')),
+      ).toBe(true);
+    });
+  });
+
   it('20 kaydı aşan listede sayfalama çubuğu çıkar ve Sonraki çalışır', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes('/admin/academic-years')) return ok({ items: [] });
+      if (url.includes('/teacher/reports/filters')) return ok({ classes: [], weeks: [] });
       if (url.includes('/teacher/reports')) {
         const query = new URL(url, 'http://x').searchParams;
         const p = Number(query.get('page') ?? '1');

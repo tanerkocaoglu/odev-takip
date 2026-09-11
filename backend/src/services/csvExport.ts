@@ -135,6 +135,7 @@ export function reportsExportCsv(params: {
   status?: string;
   classId?: string;
   weekId?: string;
+  q?: string;
 }): string {
   const where = ['cc.deleted_at IS NULL'];
   const values: Array<string | number> = [];
@@ -149,6 +150,12 @@ export function reportsExportCsv(params: {
   if (params.weekId) {
     where.push('r.week_id = ?');
     values.push(params.weekId);
+  }
+  // Arama: sınıf veya ders adı (normalize) — /teacher/reports ile aynı mantık.
+  const q = params.q ? normalizeTurkish(params.q.trim()) : '';
+  if (q) {
+    where.push('(c.name_normalized LIKE ? OR co.name_normalized LIKE ?)');
+    values.push(`%${q}%`, `%${q}%`);
   }
 
   const rows = db

@@ -23,6 +23,7 @@ import type {
   LoginRequest,
   Paged,
   PublicDigestResponse,
+  ReportFilterOptions,
   ReportSaveInput,
   RiskList,
   School,
@@ -382,7 +383,7 @@ export const adminApi = {
   risk: () => apiFetch<RiskList>('/admin/dashboard/risk'),
   /** Filtreli CSV dışa aktarma — ekranda görünen sütunlar + aktif filtre (spec §5.7). */
   exports: {
-    reports: (params: { status?: string; class_id?: string; week_id?: string } = {}) =>
+    reports: (params: { status?: string; class_id?: string; week_id?: string; q?: string } = {}) =>
       downloadCsv(`/admin/reports/export${query(params)}`, 'raporlar.csv'),
     students: (params: { q?: string; classId?: string } = {}) =>
       downloadCsv(`/admin/students/export${query(params)}`, 'ogrenciler.csv'),
@@ -408,14 +409,18 @@ export const adminApi = {
 
 export const teacherApi = {
   dashboard: () => apiFetch<TeacherDashboard>('/teacher/dashboard'),
-  /** Geçmiş raporlarım / admin "Tüm raporlar" — durum + sınıf + hafta filtresi, sayfalama. */
+  /** Geçmiş raporlarım / admin "Tüm raporlar" — durum + sınıf + hafta + arama, sayfalama. */
   history: (params: {
     status?: 'draft' | 'completed' | 'sent';
     class_id?: string;
     week_id?: string;
+    q?: string;
     page?: number;
     pageSize?: number;
   } = {}) => apiFetch<Paged<TeacherReportHistoryItem>>(`/teacher/reports${query(params)}`),
+  /** Geçmiş rapor filtresi için kapsam-duyarlı sınıf + hafta seçenekleri. */
+  reportFilters: () =>
+    apiFetch<ReportFilterOptions>('/teacher/reports/filters'),
   /** Salt-okunur tek rapor — admin "Tüm raporlar" görünümü. */
   getReport: (reportId: string) =>
     apiFetch<TeacherReportPayload>(`/teacher/reports/${encodeURIComponent(reportId)}`),

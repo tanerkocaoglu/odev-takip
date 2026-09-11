@@ -707,10 +707,17 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
   kaydırmalı olarak bulunur.
 - **"Tüm raporlar" görünümü (admin'in "tüm raporları görme" hakkının
   karşılığı):** eksik listesinin yanında aynı sayfada ikincil bir sekme.
-  Durum filtresi (`draft` / `completed` / `sent`) ve sınıf/hafta filtresiyle
-  raporlar listelenir; satıra tıklandığında rapor **salt-okunur** açılır
-  (üst alanlar + devamsızlık/puan/not tablosu; hiçbir düzenleme UI'ı yok).
-  Bu görünüm canlı rapor verisini gösterir — digest `snapshot`'ı değil.
+  Durum filtresi (`draft` / `completed` / `sent`), sınıf/hafta filtresi ve
+  sınıf/ders adı aramasıyla raporlar listelenir; satıra tıklandığında rapor
+  **salt-okunur** açılır (üst alanlar + devamsızlık/puan/not tablosu; hiçbir
+  düzenleme UI'ı yok). Bu görünüm canlı rapor verisini gösterir — digest
+  `snapshot`'ı değil.
+  > **Filtre seçenekleri role göre kapsamlanır** (`GET /teacher/reports/filters`):
+  > öğretmen yalnızca kendi `class_courses` atamalarındaki raporlarda geçen
+  > sınıf/haftaları görür; admin tümünü. Öğretmen başka bir öğretmenin sınıf
+  > adını filtre listesinde görmez (spec §2 "öğretmen yalnızca kendi atadığı
+  > `class_course`'u görür"). Seçenekler aktif eğitim yılına değil, raporda
+  > fiilen geçen kayıtlara dayanır.
 
 ### 5.6 Admin — CSV ile toplu öğrenci içe aktarma
 
@@ -779,9 +786,9 @@ Admin'in "Tüm raporlar", "Öğrenciler" ve "Veliler" ekranlarındaki **mevcut
 filtre/arama sonucu**, ekranda görünen sütunlarla CSV olarak indirilebilir.
 Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır).
 
-- `GET /admin/reports/export` — `status`, `class_id`, `week_id` filtreleri
-  (`GET /teacher/reports` ile aynı WHERE mantığı), sayfalama uygulanmaz: tüm
-  eşleşen satırlar iner.
+- `GET /admin/reports/export` — `status`, `class_id`, `week_id`, `q`
+  (sınıf/ders adı arama) filtreleri (`GET /teacher/reports` ile aynı WHERE
+  mantığı), sayfalama uygulanmaz: tüm eşleşen satırlar iner.
 - `GET /admin/students/export` — `q` (ad/veli normalize arama) + `classId`.
 - `GET /admin/guardians/export` — `q`.
 - Yanıt `text/csv; charset=utf-8` + `Content-Disposition: attachment`.
@@ -797,8 +804,8 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
 
 **Admin**
 - Dashboard (panel): haftalık özet + eksik rapor listesi (sayfalı), bekleyen
-  gönderimler, **tüm raporlar görünümü** (durum/sınıf/hafta filtresi + satıra
-  tıklayınca salt-okunur içerik — §5.5)
+  gönderimler, **tüm raporlar görünümü** (durum/sınıf/hafta filtresi + arama
+  + satıra tıklayınca salt-okunur içerik — §5.5)
 - Eğitim yılı / hafta yönetimi
 - Sınıf, ders, öğretmen ataması (`class_courses`, ders günü dahil) — **tüm
   atamalar tek listede (sınıf filtresiz)**, isim araması ile; **iki atama
@@ -834,7 +841,8 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
   gerekmez, mevcut `is_overdue` verisinden türetilir)
 - **Toplu rapor giriş ekranı** (§6.1)
 - Ödev teslim kontrol ekranı (bir ödevin tüm teslimlerini sırayla gezme)
-- Geçmiş raporlarım
+- Geçmiş raporlarım (durum/sınıf/hafta filtresi + sınıf/ders adı araması;
+  seçenekler yalnızca kendi atamalarındaki raporlardan — §5.5)
 
 **Veli**
 - Öğrenci seçimi (birden fazla çocuk varsa)

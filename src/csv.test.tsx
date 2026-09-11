@@ -284,6 +284,7 @@ describe('Dışa aktarma butonları', () => {
       if (url.includes('/admin/academic-years')) return json({ items: [{ id: 'y', name: '2026-2027', is_active: 1 }] });
       if (url.includes('/admin/classes')) return json({ items: [] });
       if (url.includes('/admin/weeks')) return json({ items: [] });
+      if (url.includes('/teacher/reports/filters')) return json({ classes: [], weeks: [] });
       if (url.includes('/teacher/reports')) return json({ items: [], total: 0, page: 1, pageSize: 20 });
       throw new Error(`beklenmeyen istek: ${url}`);
     });
