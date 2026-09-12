@@ -24,6 +24,12 @@ import type { AuthUser } from '../types.js';
 
 const router = Router();
 
+// Bulgu #9: dosya yanıtlarında tarayıcının MIME sniffing'ini engelle.
+router.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 router.use(requireAuth);
 
 interface FileRow {

@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import convert from 'heic-convert';
 import { AppError } from '../errors.js';
+import { detectFileFormat, declaredFormat } from '../utils/fileSignature.js';
 
 /** Multer'ın verdiği ham dosya. */
 export interface UploadedFile {
@@ -62,11 +63,37 @@ function generateKey(ext: string): string {
 }
 
 /**
+ * Bulgu #9: beyan edilen uzantı/mime ile dosyanın GERÇEK içeriğini karşılaştırır.
+ * Diske yazmadan önce çağrılır; uyumsuzlukta Türkçe 400 fırlatır.
+ */
+function assertContentMatches(file: UploadedFile): void {
+  const actual = detectFileFormat(file.buffer);
+  if (actual === 'unknown') {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Dosya içeriği tanınamadı; yalnızca geçerli JPEG, PNG, HEIC veya PDF yükleyebilirsiniz.',
+    );
+  }
+  const declared = declaredFormat(file.originalname, file.mimetype);
+  if (declared !== null && declared !== actual) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Dosyanın içeriği uzantısıyla uyuşmuyor. Lütfen dosyayı kontrol edip yeniden yükleyin.',
+    );
+  }
+}
+
+/**
  * Yüklenen dosyayı işler ve saklar (CLAUDE.md: ham dosya saklanmaz).
  * Görsel: uzun kenar max 2000px, JPEG q80. PDF: aynen.
  * HEIC dönüşümü başarısız olursa Türkçe hata fırlatılır (spec.md §5.3).
  */
 export async function saveUpload(file: UploadedFile): Promise<StoredFile> {
+  // Bulgu #9: diske YAZMADAN önce beyan ↔ gerçek içerik tutarlılığı.
+  assertContentMatches(file);
+
   const mime = resolveMime(file);
 
   if (IMAGE_MIMES.has(mime)) {
@@ -85,11 +112,21 @@ export async function saveUpload(file: UploadedFile): Promise<StoredFile> {
       source = file.buffer;
     }
 
-    const processed = await sharp(source)
-      .rotate() // EXIF yönü dikkate alınır
-      .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
+    let processed: Buffer;
+    try {
+      processed = await sharp(source)
+        .rotate() // EXIF yönü dikkate alınır
+        .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+    } catch {
+      // İmza doğru ama derin decode başarısız (bozuk/kesik görsel) → 500 yerine 400.
+      throw new AppError(
+        'VALIDATION_ERROR',
+        400,
+        'Görsel dosyası okunamadı veya bozuk. Lütfen geçerli bir görsel yükleyin.',
+      );
+    }
 
     const key = generateKey('jpg');
     // Grid için kare thumbnail (2000px orijinali indirmemek adına).

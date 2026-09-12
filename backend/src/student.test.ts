@@ -288,6 +288,18 @@ describe('POST /api/v1/student/homeworks/:id/submit', () => {
     }
   });
 
+  it('içerik/uzantı uyuşmazlığı: .jpg adıyla görsel olmayan içerik → 400', async () => {
+    const res = await request(app)
+      .post('/api/v1/student/homeworks/s-hw-w1/submit')
+      .set(auth(studentToken))
+      .attach('files', Buffer.from('<html><body>x</body></html>'), {
+        filename: 'sahte.jpg',
+        contentType: 'image/jpeg',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('görsel yükler, küçültülerek saklanır, submission oluşur', async () => {
     const res = await request(app)
       .post('/api/v1/student/homeworks/s-hw-w1/submit')
@@ -423,6 +435,7 @@ describe('GET /api/v1/files/:key — yetki matrisi', () => {
     const res = await request(app).get(`/api/v1/files/${key}`).set(auth(studentToken));
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('image/jpeg');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('öğretmen (kendi ödevinin teslimi) dosyayı açar', async () => {
@@ -474,6 +487,7 @@ describe('GET /api/v1/files/:key — yetki matrisi', () => {
     const res = await request(app).get(`/api/v1/files/${key}/thumb`).set(auth(studentToken));
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('image/jpeg');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('başka öğrenci thumbnail için 403', async () => {

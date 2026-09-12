@@ -316,3 +316,21 @@ describe('rol kapısı multer’dan önce (Bulgu #8)', () => {
     expect(res.body.error.code).toBe('FORBIDDEN');
   });
 });
+
+describe('CSV içerik doğrulaması (Bulgu #9)', () => {
+  it('ikili (binary) içerik CSV diye yüklenirse 400 ve yazma yok', async () => {
+    const before = countUsers();
+    const res = await request(app)
+      .post('/api/v1/admin/students/import?dry_run=false')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .field('password', TEST_PASSWORD)
+      .attach('file', Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff, 0xfe]), {
+        filename: 'bozuk.csv',
+        contentType: 'text/csv',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toContain('metin');
+    expect(countUsers()).toBe(before);
+  });
+});

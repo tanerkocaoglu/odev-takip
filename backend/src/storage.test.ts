@@ -6,11 +6,19 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 import sharp from 'sharp';
 import { saveUpload, localPathFor, type StoredFile } from './services/storage.js';
 import { AppError } from './errors.js';
 
 const PDF_BUFFER = Buffer.from('%PDF-1.4 test icerik');
+
+const FIXTURES = path.join(import.meta.dirname, 'test', 'fixtures');
+const fixture = (name: string): Buffer => fs.readFileSync(path.join(FIXTURES, name));
+
+function countUploads(): number {
+  return fs.readdirSync(process.env.UPLOADS_DIR!).length;
+}
 
 const createdKeys: string[] = [];
 
@@ -76,7 +84,14 @@ describe('saveUpload', () => {
   });
 
   it('HEIC dönüşümü başarısızsa Türkçe hata fırlatır', async () => {
-    const fakeHeic = Buffer.from('not a real heic file');
+    // İmza (ftyp/heic) geçerli, ama gerçek HEIC olmayan baytlar → heic-convert patlar.
+    const fakeHeic = Buffer.concat([
+      Buffer.from([0x00, 0x00, 0x00, 0x18]),
+      Buffer.from('ftypheic', 'latin1'),
+      Buffer.from([0x00, 0x00, 0x00, 0x00]),
+      Buffer.from('mif1heic', 'latin1'),
+      Buffer.from('bu gecerli bir heic degil'),
+    ]);
     await expect(
       saveUpload({ originalname: 'foto.heic', mimetype: 'image/heic', size: fakeHeic.length, buffer: fakeHeic }),
     ).rejects.toMatchObject({
@@ -91,6 +106,53 @@ describe('saveUpload', () => {
       await saveUpload({ originalname: 'belge.pdf', mimetype: 'application/octet-stream', size: PDF_BUFFER.length, buffer: PDF_BUFFER }),
     );
     expect(stored.ext).toBe('pdf');
+  });
+
+  // --- Bulgu #9: beyan ↔ gerçek içerik tutarlılığı ---
+
+  it('uyumsuz içerik: .jpg adıyla HTML içerik → 400 ve diske yazılmaz', async () => {
+    const html = Buffer.from('<html><body>merhaba</body></html>');
+    const before = countUploads();
+    await expect(
+      saveUpload({ originalname: 'foo.jpg', mimetype: 'image/jpeg', size: html.length, buffer: html }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+    expect(countUploads()).toBe(before);
+  });
+
+  it('uyumsuz içerik: .pdf adıyla görsel → 400', async () => {
+    const jpg = fixture('sample.jpg');
+    await expect(
+      saveUpload({ originalname: 'rapor.pdf', mimetype: 'application/pdf', size: jpg.length, buffer: jpg }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+  });
+
+  it('uyumsuz içerik: .png adıyla JPEG → 400 (tür uyuşmazlığı)', async () => {
+    const jpg = fixture('sample.jpg');
+    await expect(
+      saveUpload({ originalname: 'sahte.png', mimetype: 'image/png', size: jpg.length, buffer: jpg }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', status: 400 });
+  });
+
+  it('gerçek JPEG/PNG/PDF/HEIC dosyaları sorunsuz kabul edilir', async () => {
+    const jpgBuf = fixture('sample.jpg');
+    const jpg = track(await saveUpload({ originalname: 'foto.jpg', mimetype: 'image/jpeg', size: jpgBuf.length, buffer: jpgBuf }));
+    expect(jpg.ext).toBe('jpg');
+    expect(jpg.thumbKey).toBeTruthy();
+
+    const pngBuf = fixture('sample.png');
+    const png = track(await saveUpload({ originalname: 'foto.png', mimetype: 'image/png', size: pngBuf.length, buffer: pngBuf }));
+    expect(png.ext).toBe('jpg');
+    expect(png.thumbKey).toBeTruthy();
+
+    const pdfBuf = fixture('sample.pdf');
+    const pdf = track(await saveUpload({ originalname: 'odev.pdf', mimetype: 'application/pdf', size: pdfBuf.length, buffer: pdfBuf }));
+    expect(pdf.ext).toBe('pdf');
+    expect(pdf.thumbKey).toBeNull();
+
+    const heicBuf = fixture('sample.heic');
+    const heic = track(await saveUpload({ originalname: 'foto.heic', mimetype: 'image/heic', size: heicBuf.length, buffer: heicBuf }));
+    expect(heic.ext).toBe('jpg');
+    expect(heic.thumbKey).toBeTruthy();
   });
 });
 

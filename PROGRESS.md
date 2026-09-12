@@ -5,6 +5,82 @@
 
 ---
 
+## Bulgu #9 düzeltildi — içerik (magic-byte) doğrulaması + `nosniff` ✅
+
+### Süreç özeti
+
+**Hedef 1 — içerik/uzantı tutarlılığı:** İstemcinin bildirdiği mime/uzantıya
+güvenmek yerine dosyanın gerçek baytları doğrulanır. Yeni bağımlılıksız
+`utils/fileSignature.ts`:
+- `detectFileFormat`: JPEG (`FF D8 FF`), PNG (8 bayt imza), PDF (`%PDF-`, **ilk
+  1024 baytta**), HEIC/HEIF (`ftyp` + geniş marka kümesi) — değilse `unknown`.
+- `declaredFormat`: uzantı öncelikli, sonra mime → beklenen format.
+- `looksLikeUtf8Text`: NUL baytı/bozuk UTF-8 varsa metin değil (CSV).
+
+`services/storage.ts` `saveUpload` en başında (diske **yazmadan önce**)
+`actual !== declared` / `unknown` → **400** Türkçe; sharpen decode hatası da
+500 yerine **400**'e çevrildi (ikinci doğrulama katmanı). CSV import yolunda
+(`admin.ts`) `looksLikeUtf8Text` kontrolü eklendi.
+
+**Hedef 2 — nosniff:** `routes/files.ts`'e router seviyesi middleware eklendi;
+`GET /:key` ve `/:key/thumb` (ve gelecekteki dosya rotaları) yanıtlarına
+`X-Content-Type-Options: nosniff` eklenir.
+
+**Kararlar:** D1 yazmadan önce; D2 CSV dahil; D3 esnek imzalar + gerçek fixture
+dosyaları (`backend/src/test/fixtures/`); D4 dosya router middleware'i; PDF
+imzası ilk 1024 baytta.
+
+### Yapılanlar
+
+- `backend/src/utils/fileSignature.ts` (yeni) + `fileSignature.test.ts` (yeni).
+- `backend/src/services/storage.ts`: `assertContentMatches` + sharp decode 400.
+- `backend/src/routes/admin.ts`: CSV `looksLikeUtf8Text` kontrolü.
+- `backend/src/routes/files.ts`: `nosniff` middleware.
+- `backend/src/test/fixtures/`: gerçek `sample.jpg`, `sample.png`, `sample.pdf`,
+  `sample.heic` (gerçek HEIC, 718 KB).
+- Testler: `storage.test.ts` (+4: HTML `.jpg`/`.pdf`+görsel/`.png`+JPEG reddi ve
+  gerçek dört formatın kabulü; sahte-HEIC testi `ftyp` başlığıyla güncellendi),
+  `student.test.ts` (HTML `.jpg` → 400; `/files/:key` + `/thumb` nosniff),
+  `student-import.test.ts` (ikili CSV → 400).
+
+### Doğrulamalar
+
+**Statik/Tests** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅;
+backend **285/285** (24 dosya), frontend **111/111** ✅.
+
+**Canlı (gerçek sunucu + gerçek dosyalar):**
+- `.jpg` adıyla HTML içerik → **400** "Dosya içeriği tanınamadı…"; DB'de oluşan
+  submission **0** (diske hiç yazılmadı).
+- Gerçek `sample.jpg` / `sample.png` / `sample.pdf` / `sample.heic` →
+  hepsi **200**, doğru saklandı (jpg→jpeg, pdf→pdf).
+- `GET /files/:key` → `X-Content-Type-Options: nosniff`; `GET /files/:key/thumb`
+  → `nosniff`.
+- İkili CSV (`dry_run=false`) → **400** "CSV dosyası geçerli bir metin dosyası
+  değil."; kullanıcı sayısı değişmedi.
+- Test artefaktları silindi; `uploads` 0 dosya.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/fileSignature.ts        (yeni)
+backend/src/utils/fileSignature.test.ts   (yeni)
+backend/src/services/storage.ts
+backend/src/routes/admin.ts
+backend/src/routes/files.ts
+backend/src/storage.test.ts
+backend/src/student.test.ts
+backend/src/student-import.test.ts
+backend/src/test/fixtures/{sample.jpg,sample.png,sample.pdf,sample.heic}  (yeni)
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — Bulgu #9: magic-byte içerik doğrulaması + CSV metin kontrolü +
+dosya yanıtlarında `nosniff`.
+
+---
+
 ## Bulgu #8 düzeltildi — rol kapısı multer'dan önce ✅
 
 ### Süreç özeti

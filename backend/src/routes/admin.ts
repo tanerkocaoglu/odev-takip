@@ -22,6 +22,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { adminOnly } from '../middleware/adminOnly.js';
 import { rateLimit, envPositiveInt } from '../middleware/rateLimit.js';
 import { normalizeTurkish } from '../utils/text.js';
+import { looksLikeUtf8Text } from '../utils/fileSignature.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { hashPassword } from '../utils/hash.js';
 import { normalizePhone } from '../utils/phone.js';
@@ -2769,6 +2770,15 @@ router.post(
     const file = req.file;
     if (!file) {
       throw new AppError('VALIDATION_ERROR', 400, 'CSV dosyası seçilmedi.');
+    }
+
+    // Bulgu #9: ikili (binary) içeriğin CSV diye işlenmesini engelle.
+    if (!looksLikeUtf8Text(file.buffer)) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        400,
+        'CSV dosyası geçerli bir metin dosyası değil.',
+      );
     }
 
     const { preview, plan } = prepareImport(file.buffer.toString('utf8'));
