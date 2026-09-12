@@ -5,6 +5,101 @@
 
 ---
 
+## Bağımlılık ayrımı — kök yalnızca frontend, backend kendi kendine yeterli ✅
+
+### Süreç özeti
+
+**Sorun:** Kök `package.json`, backend'e özel paketleri (`express`,
+`heic-convert`, `jsonwebtoken`, `multer`, `sharp`, `zod`) ve araçları (`tsx`,
+`supertest`, `@types/express|jsonwebtoken|multer|supertest`) de taşıyordu.
+Backend bunların bir kısmını **hiç kendi package.json'unda tanımlamadan** kökten
+ödünç alıyordu (`backend/node_modules`'ta `express`/`zod`/`typescript`/`vitest`/
+`supertest` yoktu; node çözümlemesi köke çıkıyordu). Sonuç: çift kurulum, çift
+bakım, katman sızıntısı.
+
+**Çözüm — kök/app ayrımı netleştirildi:**
+
+| | Kök (`package.json`) | Backend (`backend/package.json`) |
+|---|---|---|
+| runtime | `framer-motion, lucide-react, react, react-dom, react-router-dom` | `adm-zip, express, heic-convert, jsonwebtoken, multer, sharp, zod` |
+| araçlar | `vite, typescript, vitest, eslint*, tailwind, postcss, jsdom, @testing-library/*, @types/{node,react,react-dom}, @vitejs/plugin-react` | `tsx, typescript, vitest, supertest, @types/{adm-zip,express,jsonwebtoken,multer,node,supertest}` |
+
+- **`zod`** kökten kaldırıldı, backend'e taşındı (frontend'de 0 kullanım — grep
+  teyitli). Kökte yalnızca `eslint-plugin-react-hooks → zod-validation-error`
+  üzerinden **transitif dev** olarak kalır (kaçınılmaz).
+- **`tsx`** kökten kaldırıldı (yalnızca backend `start`/`db:*` script'leri).
+- `@types/node` her iki tarafta bırakıldı (kök: `vite.config`/test; backend:
+  `tsconfig` `"types": ["node"]`).
+- **`render.yaml`'a dokunulmadı** (karar): build sırası
+  `npm install → npm install --prefix backend → npm run build → npm run build --prefix backend`
+  backend kendi bağımlılıklarını kurduğunda aynen çalışır.
+
+### Temiz kurulum simülasyonları (gerçekten çalıştırıldı)
+
+Her iki simülasyon da `node_modules` + `backend/node_modules` silinerek yapıldı.
+
+**Sim A — normal (dev) mod:**
+- `npm ci` (kök) → **exit 0**
+- `npm ci --prefix backend` → **exit 0**
+- `npm run build` (kök) → **exit 0**
+- `npm run build --prefix backend` (`tsc --noEmit`) → **exit 0**
+- > İlk denemede kök `npm ci`, geçici bir Windows dosya kilidi (EPERM) nedeniyle
+  > düştü; `node_modules` elle silinip yeniden çalıştırıldığında dört adım da
+  > temiz geçti (kod/bağımlılık sorunu değil, ortam).
+
+**Sim B — `NODE_ENV=production` ile (Render buildCommand'ının birebir
+`npm install` varyantı):**
+- `npm install` (kök) → **exit 0** ama **devDependencies kurulmadı**
+  (`node_modules/{vite,typescript,vitest}` yok).
+- `npm install --prefix backend` → **exit 0**, aynı şekilde devDeps yok
+  (`backend/node_modules/{typescript,vitest}` yok; `express`/`zod` **var**).
+- `npm run build` (kök) → **exit 1** (`'tsc' is not recognized`).
+- `npm run build --prefix backend` → **exit 1** (`'tsc' is not recognized`).
+- **Değerlendirme:** Bu kırılma **bu değişiklikten bağımsız, önceden beri var**;
+  build her iki tarafta da dev-only araçlara (`vite`, `typescript`) ihtiyaç
+  duyar. `NODE_ENV=production`, npm'in devDeps'i atlamasına yol açar ve
+  değişiklik öncesi de kök build aynı şekilde düşerdi. Dolayısıyla gerçek Render
+  build'i bu env ile çalışmıyor olmalı (aksi halde mevcut deploy da kırılırdı).
+  `render.yaml` bu yüzden değiştirilmedi.
+
+### Doğrulamalar
+
+- Temiz `npm ci` sonrası: kök + backend `typecheck` ✅, kök `lint` ✅, kök
+  `build` ✅, backend `build` ✅.
+- **Testler:** backend **293/293** (26 dosya), frontend **111/111** (18 dosya)
+  — bu turda kod değişmedi, mevcut paket aynen geçti.
+- **Kök bağımlılık ağacı:** `npm ls --depth=0` yalnızca frontend paketlerini
+  gösteriyor; `node_modules/{express,sharp,multer,jsonwebtoken,heic-convert,
+  adm-zip,tsx,supertest,@types/express}` **yok** (yalnızca transitif `zod` var).
+- **Backend kendi kendine yeterli:** `backend/node_modules` içinde `express`,
+  `zod`, `typescript`, `vitest`, `supertest`, `@types/{express,node,supertest}`
+  ve `tsx` mevcut.
+- **Audit:**
+  - Kök → **3 (2 moderate, 1 high)**; hepsi frontend **dev**: `@vitest/mocker`/
+    `vitest` + `nanoid`. Kökte artık hiçbir backend paketi raporlanmıyor
+    (öncesiyle sayı aynı; backend paketleri zaten bulgu üretmiyordu).
+  - Backend → **2 moderate** (`vitest`/`@vitest/mocker`), çünkü `vitest` artık
+    backend'in kendi devDependency'si. Runtime bağımlılıklarında bulgu yok.
+  - Not: `zod` backend'de `^4.4.3` aralığında **4.6.2**'ye çözüldü (önceki kök
+    çözümü 4.4.3 idi); testler dahil tüm kontroller yeşil.
+
+### Etkilenen dosyalar
+
+```
+package.json                 (backend paketleri çıkarıldı)
+package-lock.json            (kök ağaç sadeleşti)
+backend/package.json         (express, zod + dev araçları eklendi)
+backend/package-lock.json    (backend bağımsız ağaç)
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — kök/backend bağımlılık ayrımı: kök yalnızca frontend, backend
+kendi kendine yeterli (render.yaml değişmedi).
+
+---
+
 ## Mekanik bakım — kod tekrarı birleştirme + ölü kod + login limit sertleştirme ✅
 
 ### Süreç özeti
