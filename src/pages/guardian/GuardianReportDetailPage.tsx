@@ -10,6 +10,7 @@ import { BookOpen, FileText } from 'lucide-react';
 import type { GuardianReportDetail } from '../../types';
 import { guardianApi, openProtectedFile, ApiClientError } from '../../services/api';
 import ReportSnapshot from '../../components/ReportSnapshot';
+import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 import {
   LoadingState,
   EmptyState,
@@ -125,17 +126,13 @@ export default function GuardianReportDetailPage() {
                   <span className="tabular"> · son tarih: {sub.due_date}</span>
                 </p>
                 {sub.submission && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {sub.submission.files.map((file) => (
-                      <button
-                        key={file.key}
-                        type="button"
-                        onClick={() => void openFile(file.key)}
-                        className="rounded-md border border-border px-3 py-1.5 text-[13px] font-medium text-accent transition-colors hover:bg-bg"
-                      >
-                        {file.filename}
-                      </button>
-                    ))}
+                  <div className="mt-3">
+                    <SubmissionFileGrid
+                      variant="server"
+                      files={sub.submission.files}
+                      collapsible
+                      onOpenPdf={(key) => void openFile(key)}
+                    />
                   </div>
                 )}
               </div>

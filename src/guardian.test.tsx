@@ -16,6 +16,8 @@ function mockFetch(status: number, body: unknown) {
     ok: status >= 200 && status < 300,
     status,
     json: async () => body,
+    // Korumalı dosya istekleri (thumbnail/lightbox) blob okur.
+    blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
   });
 }
 
@@ -303,8 +305,38 @@ const DETAIL = {
 };
 
 describe('GuardianReportDetailPage', () => {
-  it('snapshot + ödev teslim geçmişi + dosya butonu gösterilir', async () => {
-    vi.stubGlobal('fetch', mockFetch(200, DETAIL));
+  it('görsel thumbnail lightbox açar, PDF yeni sekmede açılır, kaldır butonu yok', async () => {
+    const detail = {
+      ...DETAIL,
+      submissions: [
+        {
+          ...DETAIL.submissions[0],
+          submission: {
+            ...DETAIL.submissions[0].submission,
+            files: [
+              {
+                key: '1234567890-0123456789abcdef.jpg',
+                filename: 'odev.jpg',
+                size: 1024,
+                mime: 'image/jpeg',
+                ext: 'jpg',
+              },
+              {
+                key: '2234567890-0123456789abcdef.pdf',
+                filename: 'cozum.pdf',
+                size: 2048,
+                mime: 'application/pdf',
+                ext: 'pdf',
+              },
+            ],
+          },
+        },
+      ],
+    };
+    localStorage.setItem('ds_token', 'test-token');
+    vi.stubGlobal('fetch', mockFetch(200, detail));
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+
     const { container } = render(
       <MemoryRouter initialEntries={['/guardian/reports/d1']}>
         <Routes>
@@ -323,8 +355,24 @@ describe('GuardianReportDetailPage', () => {
     expect(screen.getByText('8')).toBeInTheDocument();
     expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('Yüklendi')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /odev\.jpg/ })).toBeInTheDocument();
     // Teslim kartı durum şeridi: zamanında yüklendi.
     expect(container.querySelector('[data-status="uploaded"]')).not.toBeNull();
+
+    // Görsel: thumbnail grid üzerinden lightbox açılır (mevcut desen).
+    fireEvent.click(
+      await screen.findByRole('button', { name: /odev\.jpg görselini aç/ }),
+    );
+    expect(await screen.findByAltText('odev.jpg')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByAltText('odev.jpg')).not.toBeInTheDocument());
+
+    // PDF: ikon + ad, yeni sekmede açılır.
+    fireEvent.click(screen.getByRole('button', { name: /cozum\.pdf PDF dosyasını aç/ }));
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith(expect.any(String), '_blank', 'noreferrer'),
+    );
+
+    // Veli salt-okunur: kaldırma butonu hiçbir yerde olmamalı.
+    expect(screen.queryByRole('button', { name: /dosyasını kaldır/ })).not.toBeInTheDocument();
   });
 });
