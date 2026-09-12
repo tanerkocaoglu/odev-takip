@@ -50,11 +50,28 @@ tetiklemesi, fotoğrafın aynı grid'e girmesi; 10 MB ve 30 dosya sınırı).
   > Not: headless ortamda OS kamera arayüzü açılamaz; kanıt, `capture`
   > öznitelikli input'un click ile tetiklenmesi ve aynı akışa eklenmesidir.
 
+### Sonradan düzeltme (deploy) — Render `db:reset` guard çakışması
+
+**Belirti (Render deploy log):** `db:reset üretim ortamında çalıştırılamaz
+(NODE_ENV=production). ==> Exited with status 1` → servis başlamadı.
+
+**Kök neden:** Render Node servislerine `NODE_ENV=production` verir; render.yaml
+`startCommand`'ı `db:reset` çalıştırır. `db:reset` için eklenen production guard
+(geri döndürülemez silme koruması) bu demo servisini de bloke etti.
+
+**Düzeltme:** `reset.ts` guard'ı açık opt-in'e bağlandı —
+`NODE_ENV=production` olsa bile `ALLOW_DB_RESET=1|true` verilirse çalışır;
+aksi hâlde (varsayılan) hâlâ reddeder. `render.yaml`'a `ALLOW_DB_RESET=1`
+eklendi (disk kalıcı değil → her deploy taze demo). Güvenlik korunur: opt-in
+verilmedikçe üretimde silme yok.
+
 ### Etkilenen dosyalar
 
 ```
 src/pages/student/HomeworkListPage.tsx
 src/student.test.tsx
+backend/scripts/reset.ts        (ALLOW_DB_RESET opt-in)
+render.yaml                     (ALLOW_DB_RESET=1)
 PROGRESS.md
 ```
 

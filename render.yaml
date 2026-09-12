@@ -22,3 +22,7 @@ services:
         value: admin123
       - key: STORAGE_DRIVER
         value: local
+      # Render NODE_ENV=production verir; db:reset'in demo için çalışmasına izin ver.
+      # (Disk kalıcı değil → her deploy taze demo verisi.)
+      - key: ALLOW_DB_RESET
+        value: "1"

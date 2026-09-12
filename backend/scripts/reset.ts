@@ -10,10 +10,16 @@ import { loadEnv } from '../src/utils/env.js';
 
 loadEnv();
 
-// Üretimde asla çalışmaz: DB ve yerel dosya deposunu geri döndürülemez şekilde
-// siler. Geliştirme/demo ortamı için tasarlanmıştır.
-if (process.env.NODE_ENV === 'production') {
-  console.error('db:reset üretim ortamında çalıştırılamaz (NODE_ENV=production).');
+// Üretimde varsayılan olarak çalışmaz: DB ve yerel dosya deposunu geri
+// döndürülemez şekilde siler. Yalnızca açık bir opt-in ile (ör. diski kalıcı
+// olmayan demo servisi) üretimde de izin verilir.
+const allowReset =
+  process.env.ALLOW_DB_RESET === '1' || process.env.ALLOW_DB_RESET === 'true';
+if (process.env.NODE_ENV === 'production' && !allowReset) {
+  console.error(
+    'db:reset üretim ortamında çalıştırılamaz (NODE_ENV=production). ' +
+      'Bilinçli demo için ALLOW_DB_RESET=1 verin.',
+  );
   process.exit(1);
 }
 
