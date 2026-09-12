@@ -625,7 +625,7 @@ describe('POST /api/v1/teacher/reports/:id/complete', () => {
     expect(JSON.parse(audit!.diff)).toMatchObject({ by_role: 'admin' });
   });
 
-  it('gönderilmiş (sent) rapor düzenlenemez ve tamamlanamaz (403)', async () => {
+  it('gönderilmiş (sent) rapor öğretmen tarafından düzenlenemez/tamamlanamaz (403)', async () => {
     db.prepare(`UPDATE reports SET status = 'sent' WHERE id = ?`).run(reportId);
 
     const put = await request(app)
@@ -639,6 +639,65 @@ describe('POST /api/v1/teacher/reports/:id/complete', () => {
       .post(`/api/v1/teacher/reports/${reportId}/complete`)
       .set('Authorization', `Bearer ${teacherToken}`);
     expect(complete.status).toBe(403);
+  });
+
+  it('admin gönderilmiş (sent) raporu düzenleyebilir; snapshot değişmez (spec §2)', async () => {
+    // Rapor sent durumda (önceki test bıraktı); idempotent olsun diye tekrar set.
+    db.prepare(`UPDATE reports SET status = 'sent' WHERE id = ?`).run(reportId);
+
+    // Velinin gördüğü kopya = sent anındaki snapshot. Marker ile izlenir.
+    const snapshotBefore = JSON.stringify({ marker: 'snapshot-degismemeli', v: 1 });
+    db.prepare(`DELETE FROM weekly_digests WHERE student_id = ? AND week_id = ?`).run(
+      studentIds[0],
+      WEEK2.id,
+    );
+    db.prepare(
+      `INSERT INTO weekly_digests
+         (id, student_id, week_id, guardian_id, token, status, send_count,
+          sent_at, sent_by, snapshot, is_revoked)
+       VALUES ('t-digest-sent', ?, ?, 'test-guardian-rec', 'tok-sent-1', 'sent', 1,
+               ?, 'test-admin', ?, 0)`,
+    ).run(studentIds[0], WEEK2.id, new Date().toISOString(), snapshotBefore);
+
+    // Admin `sent` raporu düzenleyebilir (spec §2) — öğretmen 403 alırken.
+    const res = await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ topic_covered: 'Admin sent düzeltmesi' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.report.status).toBe('sent');
+    expect(res.body.report.topic_covered).toBe('Admin sent düzeltmesi');
+
+    const dbRow = db
+      .prepare(`SELECT topic_covered, status FROM reports WHERE id = ?`)
+      .get(reportId) as { topic_covered: string; status: string };
+    expect(dbRow).toEqual({ topic_covered: 'Admin sent düzeltmesi', status: 'sent' });
+
+    // Düzenleme audit_logs'a report.update olarak yazılır (by_role=admin).
+    const audit = db
+      .prepare(
+        `SELECT action, diff FROM audit_logs
+         WHERE entity_type = 'report' AND entity_id = ?
+         ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(reportId) as { action: string; diff: string } | undefined;
+    expect(audit).toBeDefined();
+    expect(audit!.action).toBe('report.update');
+    expect(JSON.parse(audit!.diff)).toMatchObject({ by_role: 'admin' });
+
+    // Veli snapshot'ı DEĞİŞMEDİ (mevcut link eski kopyayı gösterir).
+    const digest = db
+      .prepare(`SELECT snapshot FROM weekly_digests WHERE id = 't-digest-sent'`)
+      .get() as { snapshot: string };
+    expect(digest.snapshot).toBe(snapshotBefore);
+
+    // `complete` admin için de 403 kalır — tamamlamak anlamsız, düzenleme hakkı PUT'ta.
+    const complete = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(complete.status).toBe(403);
+    expect(complete.body.error.code).toBe('FORBIDDEN');
   });
 });
 

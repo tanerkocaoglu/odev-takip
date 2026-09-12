@@ -538,8 +538,10 @@ router.put('/reports/:id', (req, res) => {
   const user = req.user!;
   const { id } = req.params;
   const report = loadOwnedReport(user, id);
-  // İlk satırda yetki: gönderilmiş rapor öğretmene kapalı (spec §2).
-  if (report.status === 'sent') {
+  // Gönderilmiş rapor öğretmene kapalı (403); admin düzenleyebilir (spec §2).
+  // Admin düzenlemesi snapshot'ı DEĞİŞTİRMEZ — veli eski kopyayı görmeye devam
+  // eder; admin dilerse ayrıca yeniden gönderir (yeni snapshot, yeni token).
+  if (report.status === 'sent' && user.role !== 'admin') {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }
   const input = putReportSchema.parse(req.body);
@@ -660,8 +662,10 @@ router.put('/reports/:id', (req, res) => {
     throw err;
   }
 
-  // completed raporu düzenleme audit'a yazılır (spec §2).
-  if (report.status === 'completed') {
+  // completed (öğretmen/admin) veya sent (yalnızca admin) düzenlemesi audit'e
+  // yazılır (spec §2). `sent` buraya yalnızca admin ile gelebildiği için
+  // öğretmenin sent düzenlemesi audit'e düşmez (zaten 403).
+  if (report.status === 'completed' || report.status === 'sent') {
     writeAuditLog({
       actorId: user.id,
       action: 'report.update',
@@ -682,6 +686,9 @@ router.post('/reports/:id/complete', (req, res) => {
   const user = req.user!;
   const { id } = req.params;
   const report = loadOwnedReport(user, id);
+  // Netleştirme (spec §2): `sent` rapor "tamamlanamaz" — burada rol ayrımı
+  // YOKTUR ve olmamalıdır. Rapor zaten tamamlanıp gönderilmiştir; "tamamlamak"
+  // anlamsızdır. Admin de 403 alır (admin düzenleme hakkı PUT ucundadır).
   if (report.status === 'sent') {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }

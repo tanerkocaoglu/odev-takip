@@ -5,6 +5,70 @@
 
 ---
 
+## Bulgu #6 düzeltildi — admin `sent` raporu düzenleyebilir ✅
+
+### Süreç özeti
+
+Denetim raporundaki Bulgu #6 (gerçek spec-uyum hatası) kapatıldı. Teşhis: `PUT
+/teacher/reports/:id` içindeki `if (report.status === 'sent') throw 403`
+koşulu rol ayrımı yapmıyordu; `loadOwnedReport` admin'e geçit verse de admin de
+403 alıyordu (canlıda doğrulandı). spec.md §2 ise `sent` raporu **yalnızca
+admin'in** düzenleyebileceğini söylüyor.
+
+**Düzeltme (`backend/src/routes/teacher.ts`):**
+- `PUT /reports/:id`: koşul `report.status === 'sent' && user.role !== 'admin'`
+  oldu → öğretmen hâlâ 403, admin 200.
+- Audit: `completed || sent` düzenlemeleri `audit_logs`'a `report.update`
+  (diff'te `by_role`) yazılıyor — admin'in sent düzenlemesi artık denetleniyor.
+- `POST /reports/:id/complete`: **değişmedi**. `sent` bir raporu "tamamlamak"
+  anlamsız (zaten tamamlanıp gönderilmiş); bu 403 admin dahil herkes için
+  doğru kalır. Kodun başına bu kararı netleştiren yorum eklendi.
+- Snapshot: `PUT` `weekly_digests`'e hiç dokunmaz; veli eski `snapshot`'ı
+  görmeye devam eder (spec §2 "sent sonrası admin düzenlemesi mevcut linki
+  değiştirmez"). Admin dilerse ayrıca yeniden gönderir.
+
+**Not:** "Gönderim öncesi admin düzenleme" turundaki "Düzenle butonu yalnızca
+gönderilmemiş raporlarda görünsün" kararı UI kapsamlıdır
+(`DigestSendPage.canEditPreview`) ve korunmuştur; spec §2'nin API düzeyindeki
+admin düzenleme hakkını engellemiyordu — asıl eksik olan backend koşuluydu.
+
+### Doğrulamalar
+
+**Statik/Tests** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅;
+backend **262/262** (+1 yeni), frontend **111/111**.
+
+**Yeni test** (`backend/src/teacher.test.ts`): admin `sent` raporu düzenler →
+**200**, `status` `sent` kalır, içerik DB'de güncellenir; `audit_logs`'a
+`report.update` `by_role=admin`; `weekly_digests.snapshot` **birebir aynı kalır**;
+admin `complete` → **403**. Mevcut "öğretmen sent düzenleyemez" testi korundu.
+
+**Canlı API (gerçek app.db; tüm mutasyonlar try/finally ile geri alındı):**
+- ADMIN `PUT` sent → **200**, DB `status=sent`, `topic` güncel.
+- `audit_logs` → `report.update {"edited_fields":["topic_covered"],"by_role":"admin"}`.
+- `weekly_digests.snapshot` → **değişmedi**.
+- ÖĞRETMEN `PUT` sent → **403**; ADMIN `complete` sent → **403**.
+- get-or-create (form açılışı) sent raporu → 200.
+
+**Canlı UX (headless Chrome, ReportEntryPage):** admin sent raporu
+`/teacher/reports/:cc/:week` ile açtı, "İşlenen konu" alanını değiştirdi,
+otomatik kaydetme **"Kaydedildi"** gösterdi (`403 hatası yok`), DB'de içerik
+güncellendi ve `status=sent` korundu; artifact'lar geri alındı. Yani "açılan
+ama kaydedilemeyen form" durumu **ortadan kalktı**.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts      (PUT rol ayrımı + audit; complete yorumu)
+backend/src/teacher.test.ts        (+1 admin sent testi)
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — Bulgu #6: admin'in `sent` raporu düzenleme hakkı (spec §2).
+
+---
+
 ## DB NOT NULL borcu kapandı — Migration #9 (`password_hash`, `whatsapp_phone`) ✅
 
 ### Süreç özeti
