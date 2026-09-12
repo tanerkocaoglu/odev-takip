@@ -5,6 +5,66 @@
 
 ---
 
+## Bulgu #3 düzeltildi — seed'de per-user hash (salt tekrarı giderildi) ✅
+
+### Süreç özeti
+
+Teşhis: `seed.ts` `adminHash` ve `userHash`'i **bir kez** üretip admin + 4
+öğretmene ve 12 öğrenci + 12 veliye **aynı hash string'i** yazıyordu (aynı salt).
+Bu, per-user salt ilkesini bozuyordu (aynı hash'ler parolaların aynı olduğunu
+sızdırır; tek kırma eforu tüm hesapları kapsar).
+
+**Düzeltme (`backend/src/db/seed.ts`):** iki toplu `const ...Hash` kaldırıldı;
+her kullanıcının `password_hash`'i artık döngü içinde **ayrı** `await
+hashPassword(...)` çağrısıyla üretiliyor:
+- admin → satır içi `await hashPassword(adminPassword)`,
+- öğretmenler → `TEACHER_NAMES.entries()` döngüsü içinde (forEach kaldırıldı,
+  `await` gerektirdiği için) her biri için ayrı çağrı,
+- her öğrenci ve her veli → iterasyon içinde ayrı `studentHash`/`guardianHash`.
+
+`hashPassword` her çağrıda rastgele salt üretir; aynı düz metin şifreden gelse
+bile hash'ler bağımsız olur.
+
+**İdempotentlik korundu:** `fillPasswordHash` hâlâ yalnızca `password_hash IS
+NULL` iken yazıyor; `INSERT OR IGNORE` değişmedi. Tek fark, ilk üretim anında
+her kullanıcıya ayrı hash gitmesi. Yeniden çalıştırmada mevcut hash'ler
+üzerine yazılmaz.
+
+### Performans
+
+`hashPassword` (scrypt N=16384) her çağrıda ~39 ms. Seed taze DB'de ölçüldü:
+- **Önce (2 hash): ~1.401 ms** → **Sonra (29 hash): ~2.445 ms** → **+~1.0 sn**.
+Gözle görülür bir yavaşlama yok; kabul edilebilir.
+
+### Doğrulamalar
+
+**Statik/Tests** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅;
+backend **262/262**, frontend **111/111** ✅.
+
+**Canlı `db:reset` sonrası (gerçek app.db) hash/salt kanıtı:**
+- `users=29` | **farklı hash=29** | **farklı salt=29** (hiç tekrar yok).
+- Admin (1) / öğretmen (4) / öğrenci (12) / veli (12): her grupta hash ve salt
+  sayısı kullanıcı sayısına eşit; **çapraz salt kesişimi = 0**.
+- **Login değişmedi:** admin, öğretmen (`ogretmen1`), öğrenci (`emrecetin1`),
+  veli (`alicetin1`) — hepsi başlangıç şifresiyle **HTTP 200**.
+
+**Onarım gerekmedi:** mevcut veri `db:reset` ile sıfırdan yeni mantıkla üretildi
+(seed zaten sıfırdan kuruluyor). Reset öncesi backend (DB kilidi için) durduruldu,
+sonra yeniden başlatıldı; `db:reset` uploads'ı da temizledi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/seed.ts
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — Bulgu #3: seed'de her kullanıcıya per-user hash (salt tekrarı yok).
+
+---
+
 ## Bulgu #6 düzeltildi — admin `sent` raporu düzenleyebilir ✅
 
 ### Süreç özeti

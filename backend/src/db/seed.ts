@@ -179,8 +179,11 @@ export async function seedDatabase(
   const yearId = 'seed-academic-year';
   const createdAt = nowTs();
 
-  const adminHash = await hashPassword(adminPassword);
-  const userHash = await hashPassword(userPassword);
+  // Per-user salt (spec §2.1): her kullanıcının `password_hash`'i döngü içinde
+  // AYRI `hashPassword()` çağrısıyla üretilir. Aynı düz metin şifreden
+  // (ADMIN_PASSWORD / SEED_USER_PASSWORD) gelse bile `hashPassword` her çağrıda
+  // rastgele salt ürettiğinden hash'ler bağımsızdır — tek hash birden çok
+  // kullanıcıya yazılmaz.
 
   // --- Haftalar (21) ---
   const weeks = buildWeeks();
@@ -214,7 +217,7 @@ export async function seedDatabase(
     full_name_normalized: normalizeTurkish('Sistem Yöneticisi'),
     username: null,
     email: 'admin@dershane.local',
-    password_hash: adminHash,
+    password_hash: await hashPassword(adminPassword),
     role: 'admin',
     is_active: 1,
     token_version: 1,
@@ -224,7 +227,7 @@ export async function seedDatabase(
 
   // --- Öğretmenler (4) — her biri tek derse sabitlenir ---
   const teacherIds: string[] = [];
-  TEACHER_NAMES.forEach((name, i) => {
+  for (const [i, name] of TEACHER_NAMES.entries()) {
     const id = `seed-user-teacher-${pad(i + 1)}`;
     teacherIds.push(id);
     insert('users', {
@@ -233,14 +236,14 @@ export async function seedDatabase(
       full_name_normalized: normalizeTurkish(name),
       username: null,
       email: `ogretmen${i + 1}@dershane.local`,
-      password_hash: adminHash,
+      password_hash: await hashPassword(adminPassword),
       role: 'teacher',
       is_active: 1,
       token_version: 1,
       deleted_at: null,
       created_at: createdAt,
     });
-  });
+  }
 
   // --- Dersler (4) ---
   const courseIds: string[] = [];
@@ -288,13 +291,14 @@ export async function seedDatabase(
     const guardianName = GUARDIAN_NAMES[s - 1] ?? `Veli ${s}`;
 
     const studentUsername = nextUsername(studentName);
+    const studentHash = await hashPassword(userPassword);
     insert('users', {
       id: studentUserId,
       full_name: studentName,
       full_name_normalized: normalizeTurkish(studentName),
       username: studentUsername,
       email: null,
-      password_hash: userHash,
+      password_hash: studentHash,
       role: 'student',
       is_active: 1,
       token_version: 1,
@@ -302,16 +306,17 @@ export async function seedDatabase(
       created_at: createdAt,
     });
     fillUsername(studentUserId, studentUsername);
-    fillPasswordHash(studentUserId, userHash);
+    fillPasswordHash(studentUserId, studentHash);
 
     const guardianUsername = nextUsername(guardianName);
+    const guardianHash = await hashPassword(userPassword);
     insert('users', {
       id: guardianUserId,
       full_name: guardianName,
       full_name_normalized: normalizeTurkish(guardianName),
       username: guardianUsername,
       email: null,
-      password_hash: userHash,
+      password_hash: guardianHash,
       role: 'guardian',
       is_active: 1,
       token_version: 1,
@@ -319,7 +324,7 @@ export async function seedDatabase(
       created_at: createdAt,
     });
     fillUsername(guardianUserId, guardianUsername);
-    fillPasswordHash(guardianUserId, userHash);
+    fillPasswordHash(guardianUserId, guardianHash);
 
     const studentRecId = `seed-student-${pad(s)}`;
     const guardianRecId = `seed-guardian-${pad(s)}`;
