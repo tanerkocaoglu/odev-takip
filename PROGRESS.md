@@ -5,7 +5,102 @@
 
 ---
 
-## Bağımlılık ayrımı — kök yalnızca frontend, backend kendi kendine yeterli ✅
+## Denetim son bulgusu — `routes/admin.ts` alt router'lara bölündü + iş mantığı servislere taşındı ✅
+
+### Süreç özeti
+
+2842 satırlık tek dosya (`routes/admin.ts`) konu bazlı **16 alt router** +
+toplayıcı + paylaşılan yardımcılara bölündü. **Hiçbir davranış değişmedi:**
+path/metot/yanıt/audit/transaction birebir korundu; yetki **tek noktada**
+(toplayıcıda bir kez `router.use(requireAuth, adminOnly)`) kaldı — alt
+router'lar bu korumanın altına mount edilir, hiçbir uç korumasız kalmadı.
+
+> Denetim "60+ endpoint" diyordu; gerçek sayım **55 route handler**. Kaynak
+> taramalı envanter script'i tek doğru kaynak olarak kullanıldı.
+
+### Yeni yapı (endpoint sayıları)
+
+| Dosya | Endpoint |
+|---|---|
+| `admin/academicYears.ts` | 3 |
+| `admin/weeks.ts` | 4 |
+| `admin/classes.ts` | 4 |
+| `admin/courses.ts` | 4 |
+| `admin/schools.ts` | 4 |
+| `admin/classCourses.ts` | 5 |
+| `admin/teachers.ts` | 6 |
+| `admin/admins.ts` | 1 |
+| `admin/guardians.ts` | 6 |
+| `admin/students.ts` | 7 |
+| `admin/studentImport.ts` | 2 |
+| `admin/digests.ts` | 4 |
+| `admin/dashboard.ts` | 3 |
+| `admin/reports.ts` | 1 |
+| `admin/backup.ts` | 1 |
+| `admin/index.ts` | toplayıcı (guard + mount, 0 uç) |
+| `admin/shared.ts` | rate-limit sabitleri + `sendCsv` + `resetPasswordSchema` |
+
+`routes/index.ts` içindeki import `./admin.js` → `./admin/index.js` oldu; eski
+`routes/admin.ts` silindi.
+
+### Servis katmanına çıkarılan mantık
+
+- **Yeni `services/dashboard.ts`:** `getDashboardOverview` (özet + missing +
+  matris + digest sayaçları), `getMissingReportsView`/`buildMissingReports`
+  (dashboard ve `/dashboard/missing`'teki **kopya sorgu/eşleme tek yere indi**),
+  `getRiskData` (risk agregasyonu), `resolveWeekId`.
+- **`services/digests.ts` genişletildi:** `currentDigestWeek`, `loadDigest`,
+  `listDigests`, `previewDigest`, `sendDigest` (KVKK iki 409 → token/snapshot/
+  tx/kaskad/audit → wa.me), `revokeDigest`. Route'lar yalnızca parse + yanıt.
+- **Yeni `services/backupCli.ts`:** `spawnBackup()` spawn + stdout parse +
+  `BACKUPS_DIR` path-traversal kontrolü; route 500 JSON'unu birebir kurar.
+- **`services/studentImport.ts`:** `prepareImportFromBuffer` (binary/metin
+  kontrolü servise alındı).
+- **`utils/time.ts`:** `prevDay` taşındı.
+
+### Kırmızı çizgiler
+
+- `router.use(requireAuth, adminOnly)` toplayıcıda **tek kez**.
+- `import`: `rateLimit → csvUploadSingle → handler`; `backup`:
+  `rateLimit → handler` sırası korundu.
+- Rol kapısı multer'dan önce (toplayıcı guard'ı).
+- **Hiçbir test dosyası değişmedi**; testler `createApp()` üzerinden çalıştığı
+  için import yolu güncellemesi dahi gerekmedi.
+
+### Doğrulamalar
+
+- **Envanter (statik):** eski `admin.ts`'ten çıkarılan 55 `(METHOD /path)` satırı
+  ile yeni `routes/admin/` klasöründen çıkarılan liste **birebir aynı**.
+- **Envanter (runtime):** `createApp()` router stack'i gezilerek kayıtlı uçlar
+  çıkarıldı; yine **55/55 birebir aynı**. Kanıt aracı:
+  `backend/scripts/audit-admin-routes.ts` (`static` / `runtime` / `compare`).
+- **Testler:** backend **293/293** (26 dosya), frontend **111/111** — mevcut
+  testler değişmeden.
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅.
+- **Canlı smoke (gerçek HTTP + izole seed DB, 28 assertion):** admin CRUD
+  (9 grup), dashboard/missing/risk, digests liste/önizleme/gönderim, CSV
+  export (3) + import `dry_run`, backup zip, ve yetki kapısı (token yok → 401,
+  öğretmen → 403; 4 uçta) — **28 PASS / 0 FAIL**.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/admin.ts                         (silindi)
+backend/src/routes/index.ts                         (import ./admin/index.js)
+backend/src/routes/admin/*.ts                       (17 yeni dosya)
+backend/src/services/dashboard.ts                   (yeni)
+backend/src/services/backupCli.ts                   (yeni)
+backend/src/services/digests.ts                     (genişletildi)
+backend/src/services/studentImport.ts               (prepareImportFromBuffer)
+backend/src/utils/time.ts                           (prevDay)
+backend/scripts/audit-admin-routes.ts               (yeni — doğrulama aracı)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
 
 ### Süreç özeti
 

@@ -30,6 +30,21 @@ export function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
   return classDay < today;
 }
 
+/**
+ * Yerel takvimde bir gün öncesi (YYYY-MM-DD) — UTC çıkarımı yapılmaz.
+ * `getPreviousWeek` boş döndüğünde (yılın ilk haftası) eski enrollment'ı
+ * hafta başlangıcından bir gün önce kapatmak için kullanılır.
+ */
+export function prevDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - 1);
+  const py = date.getFullYear();
+  const pm = String(date.getMonth() + 1).padStart(2, '0');
+  const pd = String(date.getDate()).padStart(2, '0');
+  return `${py}-${pm}-${pd}`;
+}
+
 /** ISO tarih/saat (UTC) → Europe/Istanbul yerel tarihi (YYYY-MM-DD). */
 export function localDateISO(input: string | Date): string {
   const d = typeof input === 'string' ? new Date(input) : input;

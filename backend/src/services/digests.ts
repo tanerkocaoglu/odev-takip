@@ -17,11 +17,72 @@
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { db } from '../db/index.js';
+import { AppError } from '../errors.js';
+import { localTodayISO } from '../utils/time.js';
 import type { WeekRecord } from '../utils/weeks.js';
+import { writeAuditLog } from './audit.js';
 
 /** Digest token'ı UUID DEĞİLDİR — kimlik doğrulamasız sayfayı açtığı için fiilen paroladır (CLAUDE.md). */
 export function newDigestToken(): string {
   return randomBytes(32).toString('base64url');
+}
+
+/** Aktif eğitim yılının "şu anki" haftası; yıl henüz başlamadıysa en erken hafta. */
+export function currentDigestWeek(): WeekRecord | undefined {
+  const today = localTodayISO();
+  return (
+    (db
+      .prepare(
+        `SELECT w.* FROM weeks w
+         JOIN academic_years a ON a.id = w.academic_year_id AND a.is_active = 1
+         WHERE w.start_date <= ?
+         ORDER BY w.start_date DESC LIMIT 1`,
+      )
+      .get(today) as WeekRecord | undefined) ??
+    (db
+      .prepare(
+        `SELECT w.* FROM weeks w
+         JOIN academic_years a ON a.id = w.academic_year_id AND a.is_active = 1
+         ORDER BY w.start_date ASC LIMIT 1`,
+      )
+      .get() as WeekRecord | undefined)
+  );
+}
+
+/** Digest satırı — veli/öğrenci/guardian bilgileriyle birlikte. */
+export interface DigestRecord {
+  id: string;
+  student_id: string;
+  week_id: string;
+  guardian_id: string;
+  status: string;
+  send_count: number;
+  is_revoked: number;
+  guardian_phone: string | null;
+  consent_at: string | null;
+  guardian_name: string;
+  student_name: string;
+}
+
+/** Digest satırını veli/öğrenci/guardian bilgileriyle yükler (yoksa 404). */
+export function loadDigest(digestId: string): DigestRecord {
+  const row = db
+    .prepare(
+      `SELECT d.id, d.student_id, d.week_id, d.guardian_id, d.status, d.send_count, d.is_revoked,
+              g.whatsapp_phone AS guardian_phone, g.consent_at,
+              u_g.full_name AS guardian_name, u_s.full_name AS student_name
+       FROM weekly_digests d
+       JOIN guardians g ON g.id = d.guardian_id
+       JOIN users u_g ON u_g.id = g.user_id
+       JOIN students s ON s.id = d.student_id
+       JOIN users u_s ON u_s.id = s.user_id
+       WHERE d.id = ?`,
+    )
+    .get(digestId) as DigestRecord | undefined;
+  if (!row) {
+    throw new AppError('NOT_FOUND', 404, 'Gönderim kaydı bulunamadı.');
+  }
+  return row;
 }
 
 /** Öğrencinin hafta başlangıcı itibarıyla aktif olduğu sınıf; yoksa null. */
@@ -357,4 +418,257 @@ export function markDigestViewed(digestId: string): void {
      SET first_viewed_at = COALESCE(first_viewed_at, ?), last_viewed_at = ?
      WHERE id = ?`,
   ).run(now, now, digestId);
+}
+
+// ===========================================================================
+// Admin haftalık gönderim ekranı (spec.md §5.4) — liste / önizleme / gönder /
+// iptal. İş mantığı burada; route yalnızca parse + yanıt.
+// ===========================================================================
+
+export interface DigestListItem {
+  id: string;
+  student_id: string;
+  student_name: string;
+  guardian_name: string;
+  week: { id: string; week_no: number; start_date: string; label: string };
+  class: { id: string | null; name: string | null };
+  status: string;
+  send_count: number;
+  sent_at: string | null;
+  is_revoked: boolean;
+  first_viewed_at: string | null;
+  last_viewed_at: string | null;
+  missing_course_count: number;
+  total_courses: number;
+}
+
+/**
+ * GET /admin/digests — pending + ready + sent satırlar (spec §5.4).
+ * Sınıf/ha/tarih filtresi; satır başına eksik ders sayısı. `token` dışarı sızmaz.
+ */
+export function listDigests(params: {
+  weekId: string | null;
+  status: string | null;
+  classId: string | null;
+}): { week_id: string | null; items: DigestListItem[] } {
+  const { weekId, status, classId } = params;
+  const where: string[] = [];
+  const values: string[] = [];
+  if (weekId) {
+    where.push('d.week_id = ?');
+    values.push(weekId);
+  }
+  if (status) {
+    where.push('d.status = ?');
+    values.push(status);
+  }
+  if (classId) {
+    where.push('c.id = ?');
+    values.push(classId);
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT d.id, d.student_id, d.week_id, d.status, d.send_count, d.sent_at, d.is_revoked,
+              d.first_viewed_at, d.last_viewed_at,
+              u_s.full_name AS student_name, u_g.full_name AS guardian_name,
+              w.week_no, w.start_date AS week_start, w.label AS week_label,
+              c.id AS class_id, c.name AS class_name,
+              (SELECT COUNT(*) FROM class_courses cc
+                WHERE cc.class_id = c.id AND cc.deleted_at IS NULL) AS total_courses,
+              (SELECT COUNT(*) FROM reports r
+                WHERE r.week_id = d.week_id AND r.status IN ('completed','sent')
+                  AND r.class_course_id IN (
+                    SELECT cc.id FROM class_courses cc
+                    WHERE cc.class_id = c.id AND cc.deleted_at IS NULL)) AS done_courses
+       FROM weekly_digests d
+       JOIN students s ON s.id = d.student_id AND s.deleted_at IS NULL
+       JOIN users u_s ON u_s.id = s.user_id
+       JOIN guardians g ON g.id = d.guardian_id
+       JOIN users u_g ON u_g.id = g.user_id
+       JOIN weeks w ON w.id = d.week_id
+       LEFT JOIN classes c ON c.id = (
+         SELECT e.class_id FROM enrollments e
+         WHERE e.student_id = d.student_id
+           AND e.start_date <= w.start_date
+           AND (e.end_date IS NULL OR e.end_date >= w.start_date)
+         ORDER BY e.start_date DESC LIMIT 1
+       )
+       ${where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''}
+       ORDER BY w.start_date DESC, c.name, u_s.full_name_normalized`,
+    )
+    .all(...values) as Array<{
+    id: string;
+    student_id: string;
+    status: string;
+    send_count: number;
+    sent_at: string | null;
+    is_revoked: number;
+    first_viewed_at: string | null;
+    last_viewed_at: string | null;
+    student_name: string;
+    guardian_name: string;
+    week_id: string;
+    week_no: number;
+    week_start: string;
+    week_label: string;
+    class_id: string | null;
+    class_name: string | null;
+    total_courses: number;
+    done_courses: number;
+  }>;
+
+  return {
+    week_id: weekId,
+    items: rows.map((r) => ({
+      id: r.id,
+      student_id: r.student_id,
+      student_name: r.student_name,
+      guardian_name: r.guardian_name,
+      week: {
+        id: r.week_id,
+        week_no: r.week_no,
+        start_date: r.week_start,
+        label: r.week_label,
+      },
+      class: { id: r.class_id, name: r.class_name },
+      status: r.status,
+      send_count: r.send_count,
+      sent_at: r.sent_at,
+      is_revoked: r.is_revoked === 1,
+      first_viewed_at: r.first_viewed_at,
+      last_viewed_at: r.last_viewed_at,
+      missing_course_count: Math.max(r.total_courses - r.done_courses, 0),
+      total_courses: r.total_courses,
+    })),
+  };
+}
+
+/** GET /admin/digests/:id/preview — göndermeden önce velinin göreceği içerik. */
+export function previewDigest(digestId: string): DigestSnapshot {
+  const digest = loadDigest(digestId);
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(digest.week_id) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  const classId = classIdForStudentAtWeek(digest.student_id, week);
+  if (!classId) {
+    throw new AppError('CONFLICT', 409, 'Bu öğrencinin haftada aktif sınıfı yok.');
+  }
+  return buildSnapshot(digest.student_id, digest.week_id, classId);
+}
+
+export interface SendDigestResult {
+  id: string;
+  status: 'sent';
+  send_count: number;
+  sent_at: string;
+  token: string;
+  snapshot: DigestSnapshot;
+  message: string;
+  wa_me_url: string;
+}
+
+/**
+ * POST /admin/digests/:id/send — gönderim (spec §5.4 adım 3-4).
+ *
+ * KVKK ön kontrolleri (iki ayrı 409) → yeni token/snapshot/status='sent'/
+ * send_count+1/sent_at/sent_by/is_revoked=0 tek transaction'da → aynı tx
+ * içinde `maybeCascadeSent` → audit (`digest.send`/`digest.resend`) →
+ * wa.me linki + mesaj üretimi.
+ */
+export function sendDigest(digestId: string, actorId: string): SendDigestResult {
+  const digest = loadDigest(digestId);
+
+  // KVKK — iki ayrı kontrol, iki ayrı mesaj (spec §9, Aşama 5 kararı).
+  if (!digest.guardian_phone || digest.guardian_phone.trim() === '') {
+    throw new AppError('CONFLICT', 409, 'Veli için WhatsApp numarası tanımlı değil.');
+  }
+  if (!digest.consent_at) {
+    throw new AppError('CONFLICT', 409, 'Velinin KVKK açık rızası alınmamış.');
+  }
+
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(digest.week_id) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  const classId = classIdForStudentAtWeek(digest.student_id, week);
+  if (!classId) {
+    throw new AppError('CONFLICT', 409, 'Bu öğrencinin haftada aktif sınıfı yok.');
+  }
+
+  const snapshot = buildSnapshot(digest.student_id, digest.week_id, classId);
+  const token = newDigestToken();
+  const now = new Date().toISOString();
+  const wasSentBefore = digest.send_count > 0;
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `UPDATE weekly_digests
+       SET token = ?, status = 'sent', send_count = send_count + 1,
+           sent_at = ?, sent_by = ?, snapshot = ?, is_revoked = 0
+       WHERE id = ?`,
+    ).run(token, now, actorId, JSON.stringify(snapshot), digest.id);
+
+    // Zorunlu kaskad: tüm digest'ler sent → completed raporlar sent (aynı tx).
+    maybeCascadeSent(classId, digest.week_id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  writeAuditLog({
+    actorId,
+    action: wasSentBefore ? 'digest.resend' : 'digest.send',
+    entityType: 'digest',
+    entityId: digest.id,
+    diff: snapshot,
+  });
+
+  const baseUrl = process.env.BASE_URL ?? 'http://localhost:5173';
+  const message =
+    `Sayın ${digest.guardian_name}, ${digest.student_name} için ` +
+    `${week.label} haftalık ödev takip raporu hazır:\n${baseUrl}/r/${token}`;
+  // wa.me, ülke koduyla birlikte rakam bekler (`+` yok).
+  const waPhone = digest.guardian_phone.replace(/\D/g, '');
+  const waUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(message)}`;
+
+  return {
+    id: digest.id,
+    status: 'sent',
+    send_count: digest.send_count + 1,
+    sent_at: now,
+    token,
+    snapshot,
+    message,
+    wa_me_url: waUrl,
+  };
+}
+
+/**
+ * POST /admin/digests/:id/revoke — token iptali (spec §5.4).
+ * Yalnızca gönderilmiş digest iptal edilebilir.
+ */
+export function revokeDigest(digestId: string, actorId: string): { id: string; is_revoked: true } {
+  const digest = loadDigest(digestId);
+  if (digest.status !== 'sent') {
+    throw new AppError('CONFLICT', 409, 'Yalnızca gönderilmiş raporlar iptal edilebilir.');
+  }
+
+  db.prepare(`UPDATE weekly_digests SET is_revoked = 1 WHERE id = ?`).run(digest.id);
+
+  writeAuditLog({
+    actorId,
+    action: 'digest.revoke',
+    entityType: 'digest',
+    entityId: digest.id,
+  });
+
+  return { id: digest.id, is_revoked: true };
 }

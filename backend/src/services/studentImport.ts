@@ -23,6 +23,7 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { GRADE_LEVELS } from '../constants.js';
 import { csvToRecords, toCsv } from '../utils/csv.js';
+import { looksLikeUtf8Text } from '../utils/fileSignature.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { normalizePhone } from '../utils/phone.js';
 import { nextUsername } from '../utils/username.js';
@@ -113,6 +114,20 @@ interface ExistingGuardian {
   id: string;
   full_name: string;
   full_name_normalized: string;
+}
+
+/**
+ * Yüklenen CSV buffer'ını doğrular (metin mi?) ve plana çevirir.
+ * İkili (binary) içerik CSV diye işlenmesin — Bulgu #9.
+ */
+export function prepareImportFromBuffer(buffer: Buffer): {
+  preview: ImportPreview;
+  plan: ImportPlan;
+} {
+  if (!looksLikeUtf8Text(buffer)) {
+    throw new AppError('VALIDATION_ERROR', 400, 'CSV dosyası geçerli bir metin dosyası değil.');
+  }
+  return prepareImport(buffer.toString('utf8'));
 }
 
 /**

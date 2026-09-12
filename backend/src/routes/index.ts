@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import authRoutes from './auth.js';
-import adminRoutes from './admin.js';
+import adminRoutes from './admin/index.js';
 import teacherRoutes from './teacher.js';
 import studentRoutes from './student.js';
 import filesRoutes from './files.js';
