@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, CheckCircle2, Clock3, UploadCloud, XCircle } from 'lucide-react';
+import { BookOpen, Camera, CheckCircle2, Clock3, UploadCloud, XCircle } from 'lucide-react';
 import type { StudentHomework } from '../../types';
 import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { LoadingState, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
@@ -94,6 +94,7 @@ export default function HomeworkListPage() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<Record<string, string>>({});
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const cameraInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -145,9 +146,16 @@ export default function HomeworkListPage() {
               fileInputRef={(el) => {
                 fileInputs.current[item.id] = el;
               }}
+              cameraInputRef={(el) => {
+                cameraInputs.current[item.id] = el;
+              }}
               onPick={() => fileInputs.current[item.id]?.click()}
+              onPickCamera={() => cameraInputs.current[item.id]?.click()}
               onFiles={(files) =>
-                setPending((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { files: [], note: '' }), files } }))
+                setPending((prev) => {
+                  const current = prev[item.id] ?? { files: [], note: '' };
+                  return { ...prev, [item.id]: { ...current, files: [...current.files, ...files] } };
+                })
               }
               onNote={(note) =>
                 setPending((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? { files: [], note: '' }), note } }))
@@ -196,7 +204,9 @@ function HomeworkCard({
   uploading,
   uploadError,
   fileInputRef,
+  cameraInputRef,
   onPick,
+  onPickCamera,
   onFiles,
   onNote,
   onClearFiles,
@@ -208,7 +218,9 @@ function HomeworkCard({
   uploading: boolean;
   uploadError?: string;
   fileInputRef: (el: HTMLInputElement | null) => void;
+  cameraInputRef: (el: HTMLInputElement | null) => void;
   onPick: () => void;
+  onPickCamera: () => void;
   onFiles: (files: File[]) => void;
   onNote: (note: string) => void;
   onClearFiles: () => void;
@@ -221,7 +233,8 @@ function HomeworkCard({
   const selectFiles = (list: FileList | null) => {
     if (!list) return;
     const incoming = Array.from(list);
-    if (incoming.length > MAX_FILES) {
+    // Eklenenler mevcut seçimle toplanır (aynı 30'luk üst sınır geçerli).
+    if (pending.files.length + incoming.length > MAX_FILES) {
       setPickError('En fazla 30 dosya seçebilirsiniz.');
       return;
     }
@@ -310,17 +323,42 @@ function HomeworkCard({
           }}
           aria-label="Ödev dosyalarını seç"
         />
+        {/* Arka kamera girişi; masaüstünde capture etkisizdir, normal seçici açılır. */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            selectFiles(e.target.files);
+            e.target.value = '';
+          }}
+          aria-label="Kamerayla fotoğraf çek"
+        />
 
         {!hasSelected ? (
-          <button
-            type="button"
-            onClick={onPick}
-            className="flex min-h-11 w-full flex-col items-center justify-center gap-1 text-sm text-muted transition-colors hover:text-text"
-          >
-            <UploadCloud className="h-5 w-5" />
-            <span className="font-medium text-accent">Dosya seç</span>
+          <div className="flex min-h-11 w-full flex-col items-center justify-center gap-3 text-sm text-muted">
+            <div className="flex flex-col items-center gap-2 sm:flex-row sm:gap-4">
+              <button
+                type="button"
+                onClick={onPick}
+                className="flex min-h-11 items-center gap-2 rounded-md border border-border px-4 py-2 font-medium text-accent transition-colors hover:border-accent hover:text-text"
+              >
+                <UploadCloud className="h-5 w-5" aria-hidden="true" />
+                <span>Dosya seç</span>
+              </button>
+              <button
+                type="button"
+                onClick={onPickCamera}
+                className="flex min-h-11 items-center gap-2 rounded-md border border-border px-4 py-2 font-medium text-accent transition-colors hover:border-accent hover:text-text"
+              >
+                <Camera className="h-5 w-5" aria-hidden="true" />
+                <span>Kamerayla çek</span>
+              </button>
+            </div>
             <span className="text-xs">JPEG, PNG, HEIC veya PDF · en fazla 30 dosya, her biri 10 MB</span>
-          </button>
+          </div>
         ) : (
           <div>
             <SubmissionFileGrid
@@ -328,13 +366,29 @@ function HomeworkCard({
               files={pending.files}
               onRemove={onRemoveFile}
             />
-            <button
-              type="button"
-              onClick={onClearFiles}
-              className="mt-3 text-xs font-medium text-muted hover:text-text"
-            >
-              Seçimi temizle
-            </button>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={onPick}
+                className="text-xs font-medium text-accent hover:underline"
+              >
+                Dosya seç
+              </button>
+              <button
+                type="button"
+                onClick={onPickCamera}
+                className="text-xs font-medium text-accent hover:underline"
+              >
+                Kamerayla çek
+              </button>
+              <button
+                type="button"
+                onClick={onClearFiles}
+                className="text-xs font-medium text-muted hover:text-text"
+              >
+                Seçimi temizle
+              </button>
+            </div>
           </div>
         )}
 

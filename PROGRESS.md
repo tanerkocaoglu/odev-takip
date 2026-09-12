@@ -5,6 +5,65 @@
 
 ---
 
+## Öğrenci yükleme: "Kamerayla çek" ikinci giriş noktası ✅
+
+### Süreç özeti
+
+Öğrenci "Ödevlerim" ekranındaki dosya seçme akışına, mevcut "Dosya seç"
+butonunun yanına **"Kamerayla çek"** butonu eklendi. Buton gizli bir
+`<input type="file" accept="image/*" capture="environment">` elementini
+tetikler (arka kamera). Yeni bir akış değil: aynı `pending.files` state'i, aynı
+thumbnail grid, aynı "kaldır" davranışı — limitler (30 dosya / 10 MB / tip) bu
+girişe de uygulanır. Yalnızca `HomeworkListPage`; öğretmen/admin tarafına
+dokunulmadı.
+
+**Karar:** İki giriş de mevcut seçime **ekler** (üst üste seçim kaybolmaz);
+toplam 30'u aşarsa "En fazla 30 dosya" hatası. Masaüstünde `capture` etkisizdir,
+tarayıcı normal seçiciye düşer (beklenen davranış).
+
+### Yapılanlar
+
+- **`HomeworkListPage`:** `cameraInputs` ref'i + ikinci gizli input
+  (`accept="image/*" capture="environment"`, `multiple` yok, `aria-label`
+  "Kamerayla fotoğraf çek"). "Kamerayla çek" butonu (`Camera` ikonu) boş
+  durumda "Dosya seç" yanında; dosya seçilince grid altında "Dosya seç /
+  Kamerayla çek / Seçimi temizle" satırında kalır.
+- `selectFiles` artık mevcut seçimi hesaba katar
+  (`pending.files.length + incoming.length > MAX_FILES`); `onFiles` seçimi
+  değiştirmek yerine ekler. Limit/tip hataları iki giriş için ortak.
+- Backend/şema değişikliği yok.
+
+### Doğrulamalar
+
+**Statik** — `typecheck` ✅, `lint` ✅, `build` ✅.
+**Testler** — frontend **102/102** (17 dosya; `student.test.tsx` +2: kamera
+input `capture=environment`/`accept=image/*`, butonun input click'ini
+tetiklemesi, fotoğrafın aynı grid'e girmesi; 10 MB ve 30 dosya sınırı).
+
+**Canlı (headless Chrome, mobil emülasyon — Pixel 7 UA, 390×844, touch):**
+- `capture="environment"`, `accept="image/*"`, `multiple=false` doğrulandı.
+- "Kamerayla çek" tıklandı → **tam olarak bir** kamera input click'i tetiklendi
+  (`{capture:'environment', accept:'image/*'}`).
+- Simüle edilen "çekilen" fotoğraf aynı pending grid'e düştü
+  (`kamera-foto.png dosyasını kaldır` + gerçek thumbnail, `naturalWidth=1024`).
+- Ekran görüntüsü: mobilde grid + "Dosya seç / Kamerayla çek / Seçimi temizle".
+  > Not: headless ortamda OS kamera arayüzü açılamaz; kanıt, `capture`
+  > öznitelikli input'un click ile tetiklenmesi ve aynı akışa eklenmesidir.
+
+### Etkilenen dosyalar
+
+```
+src/pages/student/HomeworkListPage.tsx
+src/student.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Dosya adı UTF-8 düzeltmesi + gönder öncesi dosya kaldırma + thumbnail grid ✅
 
 ### Süreç özeti

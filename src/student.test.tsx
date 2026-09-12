@@ -369,4 +369,63 @@ describe('HomeworkListPage', () => {
     });
     expect(screen.getByRole('button', { name: /sayfa-b\.png dosyasını kaldır/ })).toBeInTheDocument();
   });
+
+  it('Kamerayla çek arka kamera inputunu tetikler; fotoğraf aynı listeye eklenir', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    const cameraInput = screen.getAllByLabelText('Kamerayla fotoğraf çek')[0] as HTMLInputElement;
+    expect(cameraInput).toHaveAttribute('accept', 'image/*');
+    expect(cameraInput).toHaveAttribute('capture', 'environment');
+
+    const clickSpy = vi.spyOn(cameraInput, 'click');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Kamerayla çek' })[0]);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    // Çekilen fotoğraf mevcut grid'e/kaldır akışına girer.
+    fireEvent.change(cameraInput, {
+      target: { files: [new File(['img'], 'ekran.jpg', { type: 'image/jpeg' })] },
+    });
+    expect(
+      await screen.findByRole('button', { name: /ekran\.jpg dosyasını kaldır/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('kamera girişi de 10 MB ve 30 dosya sınırına tabidir', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    const fileInput = screen.getAllByLabelText('Ödev dosyalarını seç')[0] as HTMLInputElement;
+    const cameraInput = screen.getAllByLabelText('Kamerayla fotoğraf çek')[0] as HTMLInputElement;
+
+    // Önce boyut: 10 MB üstü fotoğraf reddedilir.
+    const big = new File([new Uint8Array(11 * 1024 * 1024)], 'buyuk.jpg', { type: 'image/jpeg' });
+    fireEvent.change(cameraInput, { target: { files: [big] } });
+    expect(screen.getByText('Her dosya en fazla 10 MB olabilir.')).toBeInTheDocument();
+
+    // Sonra toplam sayı: dosya seçici 30 ekledikten sonra kamera 1 daha ekleyemez.
+    fireEvent.change(fileInput, {
+      target: {
+        files: Array.from({ length: 30 }, (_, i) => new File(['x'], `s-${i}.png`, { type: 'image/png' })),
+      },
+    });
+    fireEvent.change(cameraInput, {
+      target: { files: [new File(['x'], 'fazla.png', { type: 'image/png' })] },
+    });
+    expect(screen.getByText('En fazla 30 dosya seçebilirsiniz.')).toBeInTheDocument();
+  });
 });
