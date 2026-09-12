@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, Camera, CheckCircle2, Clock3, UploadCloud, XCircle } from 'lucide-react';
 import type { StudentHomework } from '../../types';
 import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
-import { LoadingState, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
+import { LoadingState, EmptyState, FormError, PageTitle, FilterSelect } from '../../components/admin/ui';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -93,6 +93,8 @@ export default function HomeworkListPage() {
   const [pending, setPending] = useState<Record<string, PendingState>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<Record<string, string>>({});
+  const [weekFilter, setWeekFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const cameraInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -115,6 +117,18 @@ export default function HomeworkListPage() {
 
   if (loading) return <LoadingState />;
 
+  // Filtre seçenekleri mevcut ödevlerden türetilir (client-side; backend ucu yok).
+  // Hafta: en yakın (büyük) haftadan geriye doğru sıralanır.
+  const weekOptions = [...new Set((items ?? []).map((i) => i.week.week_no))].sort(
+    (a, b) => b - a,
+  );
+  const courseOptions = [...new Set((items ?? []).map((i) => i.course_name))].sort();
+  const filtered = (items ?? []).filter(
+    (i) =>
+      (!weekFilter || String(i.week.week_no) === weekFilter) &&
+      (!courseFilter || i.course_name === courseFilter),
+  );
+
   return (
     <div className="space-y-6">
       <PageTitle icon={BookOpen}>Ödevlerim</PageTitle>
@@ -136,7 +150,30 @@ export default function HomeworkListPage() {
 
       {!error && items && items.length > 0 && (
         <div className="space-y-6">
-          {items.map((item) => (
+          <div className="flex flex-wrap gap-3">
+            <FilterSelect label="Hafta" value={weekFilter} onChange={setWeekFilter}>
+              <option value="">Tümü</option>
+              {weekOptions.map((w) => (
+                <option key={w} value={String(w)}>
+                  Hafta {w}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Ders" value={courseFilter} onChange={setCourseFilter}>
+              <option value="">Tümü</option>
+              {courseOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </FilterSelect>
+          </div>
+
+          {filtered.length === 0 && (
+            <EmptyState message="Bu filtrelerle ödev bulunamadı." />
+          )}
+
+          {filtered.map((item) => (
             <HomeworkCard
               key={item.id}
               item={item}
@@ -294,6 +331,7 @@ function HomeworkCard({
           <SubmissionFileGrid
             variant="server"
             files={item.submission.files}
+            collapsible
             onOpenPdf={(key) => {
               setOpenError(null);
               openProtectedFile(key).catch((err) =>
@@ -364,6 +402,7 @@ function HomeworkCard({
             <SubmissionFileGrid
               variant="local"
               files={pending.files}
+              collapsible
               onRemove={onRemoveFile}
             />
             <div className="mt-3 flex flex-wrap items-center gap-3">

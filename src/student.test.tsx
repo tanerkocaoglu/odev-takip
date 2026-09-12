@@ -201,6 +201,50 @@ describe('HomeworkListPage', () => {
     });
   });
 
+  it('hafta + ders filtreleri birlikte süzer; sonuç boşsa boş durum gösterir', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+
+    // Hafta seçenekleri en yakından geriye (azalan) sıralanır.
+    const weekSelect = screen.getByLabelText('Hafta') as HTMLSelectElement;
+    expect([...weekSelect.options].map((o) => o.textContent)).toEqual([
+      'Tümü',
+      'Hafta 5',
+      'Hafta 4',
+    ]);
+
+    // Hafta 5 → yalnızca Matematik (h1).
+    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '5' } });
+    expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    expect(screen.queryByText('Fizik deney raporu.')).not.toBeInTheDocument();
+
+    // Hafta Tümü + Ders Fizik → yalnızca Fizik (h2).
+    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: 'Fizik' } });
+    expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+    expect(screen.queryByText('Problemler çözülecek.')).not.toBeInTheDocument();
+
+    // Kombinasyon: Hafta 5 + Ders Fizik → kesişim boş.
+    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '5' } });
+    expect(screen.getByText('Bu filtrelerle ödev bulunamadı.')).toBeInTheDocument();
+    expect(screen.queryByText('Problemler çözülecek.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fizik deney raporu.')).not.toBeInTheDocument();
+
+    // Tümü'ye dönünce liste geri gelir.
+    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '' } });
+    expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+  });
+
   it('geç yüklendi rozeti ayrı gösterilir', async () => {
     const data = {
       items: [

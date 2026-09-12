@@ -5,6 +5,180 @@
 
 ---
 
+## Öğrenci ödev listesi: hafta + ders filtreleri ✅
+
+### Süreç özeti
+
+`HomeworkListPage`'e veli panelindeki (`GuardianHomePage`) desenle **client-side**
+hafta + ders filtreleri eklendi. Filtreler API'den gelen ödev listesi üzerinde
+çalışır; **yeni backend ucu yok**. İki filtre birlikte çalışır (hafta VE ders
+kesişimi); ikisi de "Tümü" ile başlar. Sonuç boşsa "Bu filtrelerle ödev
+bulunamadı." gösterilir.
+
+**Ortak bileşen:** Görsel için `components/admin/ui.tsx`'teki mevcut
+**`FilterSelect`** yeniden kullanıldı; yeni stil tanımlanmadı. `comfortable`
+yoğunluk ve mobil öncelik korundu (filtre çubuğu `flex flex-wrap gap-3`).
+
+### Yapılanlar
+
+- **`HomeworkListPage`:** `weekFilter`/`courseFilter` state; hafta seçenekleri
+  `item.week.week_no`'dan (en yakın/büyük haftadan geriye, **azalan**), ders
+  seçenekleri `item.course_name`'den türetilir. `filtered = items.filter(...)`
+  ile hafta VE ders kesişimi uygulanır; liste `filtered.map` ile çizilir.
+  `FilterSelect` (Hafta: "Hafta 19", Ders: ad).
+- Boş sonuçta `EmptyState` → "Bu filtrelerle ödev bulunamadı."; hiç ödev yokken
+  mevcut "Sana verilmiş ödev yok." korunur. Backend/şema değişikliği yok.
+
+### Doğrulamalar
+
+**Statik** — `typecheck` ✅, `lint` ✅.
+**Testler** — frontend **107/107** (18 dosya; `student.test.tsx` +1: hafta
+seçenekleri azalan sırada, hafta=5 → yalnız Matematik; ders=Fizik → yalnız
+Fizik; hafta=5+ders=Fizik → boş durum; "Tümü" ile liste geri gelir).
+
+**Canlı (gerçek backend + headless Chrome, masaüstü 1000×900 ve mobil 390×844):**
+- Öğrenci `ornekkisi81` (12 ödev, hafta 17/18/19 × 4 ders): başlangıç **12
+  kart**; `Hafta 19` + `Ders Fizik` → **1 kart** (kesişim). Filtre çubuğu her
+  iki ekranda görünür ve mobilde kullanışlı.
+- **Boş durum:** taze seed'de tüm öğrenciler tam 3×4 matrise sahip olduğundan
+  doğal boş kombinasyon yok; bu yüzden canlıda düzensiz veri simüle edildi
+  (browser `fetch` sarmalayıcıyla hafta 19 Fizik ödevi çıkarıldı): başlangıç 11
+  → `Hafta 19` **3** → `+Ders Fizik` **0** ve "Bu filtrelerle ödev bulunamadı."
+  — hem masaüstü hem mobilde doğrulandı (mobil ekran görüntüsü: filtre çubuğu
+  + boş durum kartı).
+
+### Etkilenen dosyalar
+
+```
+src/pages/student/HomeworkListPage.tsx   (hafta + ders filtreleri)
+src/student.test.tsx                     (+1 filtre testi)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
+## Teslim dosyaları grid'i: daraltılabilir (collapsible) ✅
+
+### Süreç özeti
+
+`SubmissionFileGrid`'e dosya sayısı eşiğine bağlı daralt/ aç davranışı eklendi.
+Eşik **4**: 4 veya daha az dosyada galeri doğrudan açık (mevcut davranış);
+4'ten fazlada varsayılan **daraltılmış** — ilk 4 dosya + "+N daha (toplam M
+dosya)" hücresi. Butona basınca tümü açılır; "Daha az göster" ile tekrar
+daraltılabilir. PDF'ler de sayıma dahildir ve dosya sırası (görsel+PDF) korunur.
+
+**Kapsam:** `collapsible?: boolean` prop'u (varsayılan `false`). Öğrenci
+(`HomeworkListPage`, hem teslim edilmiş hem bekleyen grid) ve veli
+(`GuardianReportDetailPage`) `collapsible` verir; öğretmen
+(`SubmissionsReviewPage`) **vermez** → inceleme için her zaman açık.
+
+### Yapılanlar
+
+- **`SubmissionFileGrid`:** `THRESHOLD = 4`, `expanded` state; `items` dosya
+  sırasını koruyacak şekilde (görsel/PDF karışık) üretilir; daraltılmışta
+  `items.slice(0, 4)` render edilir. "+N daha" hücresi `aria-label="{M} dosyanın
+  tümünü göster"`, `min-h-11 min-w-11` (44×44). Açıldığında "Daha az göster"
+  (`aria-label="Dosyaları daralt"`). Liste eşiğin altına düşünce daraltma
+  sıfırlanır.
+- Kullanım yerleri: `HomeworkListPage` (server + local), `GuardianReportDetailPage`
+  → `collapsible`; `SubmissionsReviewPage` değişmedi.
+
+### Doğrulamalar
+
+**Statik** — `typecheck` ✅, `lint` ✅.
+**Testler** — frontend **106/106** (18 dosya; yeni `submission-file-grid.test.tsx`
++4: ≤4 açık, >4 daralt/aç/kapa + 44×44 + aria-label, `collapsible=false` hep
+açık, local varyantta yalnızca görünenlerde kaldır butonu).
+
+**Canlı (gerçek backend + gerçek 10 dosyalı teslim):**
+- **Öğrenci (`ornekkisi81`, Matematik w19, 10 dosya):** başlangıçta **4
+  thumbnail** + `aria-label="10 dosyanın tümünü göster"` ("+6 daha / toplam 10
+  dosya"); tıklayınca **10 thumbnail** ve "Daha az göster" göründü.
+- **Öğretmen (`ogretmen1`, teslim kontrol):** aynı teslim **10 thumbnail açık**,
+  "+N daha" butonu **yok**.
+- Ekran görüntüsü: öğrenci kartında daraltılmış grid (4 thumbnail + "+6 daha").
+
+### Etkilenen dosyalar
+
+```
+src/components/SubmissionFileGrid.tsx        (collapsible + THRESHOLD=4)
+src/pages/student/HomeworkListPage.tsx       (collapsible)
+src/pages/guardian/GuardianReportDetailPage.tsx (collapsible)
+src/submission-file-grid.test.tsx            (yeni)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
+## Veli rapor detayında teslim dosyaları: thumbnail grid ✅
+
+### Süreç özeti
+
+"Ödev teslim geçmişi" bölümündeki düz dosya butonları, öğretmen/öğrenci
+ekranlarındaki **`SubmissionFileGrid` + `ImageLightbox`** deseniyle değiştirildi
+(mevcut bileşen yeniden kullanıldı, yeni bileşen yazılmadı). Veli salt-okunur
+olduğu için `onRemove` **verilmedi**; PDF'ler mevcut davranışıyla (ikon + ad,
+yeni sekme) kaldı.
+
+**Önemli bulgu / kapsam kararı:** Bu bölüm `ReportSnapshot`'ta değil,
+`GuardianReportDetailPage`'de. `/r/{token}` public raporu ve admin digest
+önizlemesi teslim dosyalarını **zaten hiç göstermiyor** (`PublicDigestResponse`
+yalnızca `snapshot` taşır; `GuardianReportDetail` ise `submissions[].files`).
+Ayrıca public sayfa `GET /files/:key`'i (Bearer ister) çağıramaz. Bu yüzden
+kullanıcı kararıyla **yalnızca veli girişli detay** kapsamında kalındı; `/r` ve
+admin'e dosya göstermek token bazlı yeni route + spec değişikliği gerektiren
+ayrı bir özellik olarak ertelendi.
+
+### Yapılanlar
+
+- **`GuardianReportDetailPage`:** teslim dosyaları listesi
+  `<SubmissionFileGrid variant="server" files={sub.submission.files}
+  onOpenPdf={(key) => void openFile(key)} />` ile değiştirildi. `onRemove` yok.
+  Dosya erişim yetkisi/API değişmedi (yalnızca sunum).
+- **`guardian.test.tsx`:** detay testi güncellendi — görsel thumbnail → lightbox,
+  Esc kapatma, PDF → `window.open(..., '_blank', 'noreferrer')`, ve **kaldırma
+  butonu yok**; test için `mockFetch`'e `blob()` ve `ds_token` eklendi.
+
+### Doğrulamalar
+
+**Statik** — `typecheck` ✅, `lint` ✅.
+**Testler** — frontend **102/102** (17 dosya).
+
+**Canlı (gerçek backend + guardian `alicetin1`, kontrollü teslim: 2 görsel + 1
+PDF, matematik w19; sonunda silindi):**
+- "Ödev teslim geçmişi" bölümünde grid: `veli-görsel-1.png`,
+  `veli-görsel-2.png` thumbnail (`naturalWidth=300`) + `veli-çözüm.pdf` PDF
+  hücresi.
+- **`removeCount: 0`** — hiçbir yerde kaldırma butonu yok.
+- Görsele tıkla → lightbox (`alt="veli-görsel-1.png"`, sayaç `1 / 2`, portal →
+  `BODY`); **Esc** kapatıyor.
+- PDF → `window.open` 1 kez, modal açılmıyor.
+- Ekran görüntüsü: grid + PDF hücresi görsel olarak doğrulandı.
+- Temizlik: oluşturulan teslim + 5 dosya (2 görsel+2 thumb+1 PDF) silindi; seed
+  kullanıcısının kendi teslimi (ornekkisi81) korundu.
+
+### Etkilenen dosyalar
+
+```
+src/pages/guardian/GuardianReportDetailPage.tsx
+src/guardian.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğrenci yükleme: "Kamerayla çek" ikinci giriş noktası ✅
 
 ### Süreç özeti
