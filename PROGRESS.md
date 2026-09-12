@@ -5,6 +5,49 @@
 
 ---
 
+## Bağımlılık güvenlik açıkları — Grup 1: backend patch/minor ✅
+
+### Süreç özeti
+
+Denetim raporundaki bağımlılık açıklarının giderilmesi üç gruba bölündü; bu
+commit **Grup 1**'dir: backend'in `package.json` aralıkları içinde kalan
+patch/minor sürüm yükseltmeleri. `package.json` **değişmedi**, yalnızca
+`backend/package-lock.json` güncellendi.
+
+- `sharp` 0.35.3 → **0.35.4** (libheif bellek bozulması, GHSA-rgj7-g3m4-5g8c)
+- `multer` 2.2.0 → **2.3.0** (alan adı/array index/fd sızıntısı DoS advisory'leri)
+- `adm-zip` 0.6.0 → **0.6.1** (symlink çıkarma; uygulama zip'i hiç açmadığı için
+  gerçek risk düşüktü, yine de kapatıldı)
+
+### Doğrulamalar
+
+- **Statik:** `npm run typecheck` ✅
+- **Testler:** backend **258/258** (22 dosya) ✅ — `student.test.ts` 10 MB /
+  30 dosya limitleri, `storage.test.ts` görsel küçültme + PDF + HEIC hata yolu
+  dahil.
+- **Sürüm/ikili:** `sharp@0.35.4` (libvips 8.18.6) `require('sharp')` ile
+  yükleniyor; `multer@2.3.0`, `adm-zip@0.6.1`.
+- **Audit:** backend `npm audit` → **found 0 vulnerabilities** ✅
+
+### Çözülen sorunlar
+
+- `npm update` sonrası eski `@img/.sharp-win32-x64-*` geçici klasörü kilitli
+  `libvips-42.dll` nedeniyle silinemedi (EPERM). Klasör `node_modules` altında
+  ve gitignore kapsamında; kurulumu/işleyişi etkilemiyor.
+
+### Etkilenen dosyalar
+
+```
+backend/package-lock.json
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — backend bağımlılık güvenlik güncellemeleri (Grup 1: sharp/multer/adm-zip).
+
+---
+
 ## Yedekte düzenli dosya hiyerarşisi (`db:backup`) ✅
 
 ### Süreç özeti
