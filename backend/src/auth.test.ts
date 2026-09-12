@@ -371,4 +371,21 @@ describe('must_change_password — ilk girişte zorunlu şifre değiştirme', ()
       .set('Authorization', `Bearer ${login.body.token}`);
     expect(res.status).toBe(200);
   });
+
+  it('change-password brute-force: 5 yanlış denemeden sonra 429 RATE_LIMITED', async () => {
+    const token = await loginCp();
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app)
+        .post('/api/v1/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ current_password: 'YanlisSifre1', new_password: NEW_PASSWORD });
+      expect(res.status).toBe(400);
+    }
+    const blocked = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ current_password: 'YanlisSifre1', new_password: NEW_PASSWORD });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe('RATE_LIMITED');
+  });
 });

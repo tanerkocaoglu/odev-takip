@@ -24,6 +24,16 @@ export function clearRateLimits(): void {
   buckets.clear();
 }
 
+/**
+ * `process.env`'den pozitif tam sayı okur; boş/geçersiz/0 ise `fallback` döner.
+ * Geçersiz bir değer (`Number('abc') = NaN`) doğrudan `max`'a verilseydi
+ * `count > NaN` her zaman false olur ve limit fiilen kalkardı.
+ */
+export function envPositiveInt(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 export interface RateLimitOptions {
   windowMs: number;
   max: number;

@@ -437,6 +437,10 @@ SEED_USER_PASSWORD=<seed öğrenci/veli şifresi>   # yalnızca seed/demo verisi
 LOGIN_RATE_LIMIT_MAX=5        # demo ortamında 10'a kadar gevşetilebilir;
                               # üretimde 5'in altına inilmemeli, asla 100
                               # gibi yüksek bir değer kullanılmamalı
+CHANGE_PASSWORD_RATE_LIMIT_MAX=5   # hassas: mevcut şifre denemeleri, 15 dk
+                                   # penceresi, kullanıcı ID bazlı; demo'da gevşet
+ADMIN_IMPORT_RATE_LIMIT_MAX=5      # pahalı: CSV içe aktarma, 1 saat penceresi
+ADMIN_BACKUP_RATE_LIMIT_MAX=3      # pahalı: yedek indirme, 1 saat penceresi
 STORAGE_DRIVER="local"        # local | r2
 # üretimde:
 # R2_ENDPOINT= R2_BUCKET= R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY=

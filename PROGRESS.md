@@ -5,6 +5,87 @@
 
 ---
 
+## Bulgu #7 düzeltildi — hassas uçlara rate limiting ✅
+
+### Süreç özeti
+
+Login dışındaki hassas uçlara, mevcut `rateLimit` middleware'i yeniden
+kullanılarak kullanıcı ID bazlı limit eklendi:
+
+| Uç | Pencere | Varsayılan max | Anahtar |
+|---|---|---|---|
+| `POST /auth/change-password` | 15 dk | 5 | `cp:{userId}` |
+| `POST /admin/students/import` | 1 saat | 5 | `admin-import:{userId}` |
+| `POST /admin/backup` | 1 saat | 3 | `admin-backup:{userId}` |
+
+- **Anahtar = kullanıcı ID'si** (IP değil) — saldırgan IP değiştirse bile kova
+  değişmez; import ile backup **ayrı kova** (biri diğerini kilitlemez).
+- **Max değerleri env'den** ("demo'da gevşet, üretimde sıkı"): yeni
+  `envPositiveInt` yardımcısı boş/geçersiz/0 değerde güvenli varsayılana düşer
+  (aksi halde `Number('abc')=NaN` karşılaştırmayı etkisiz kılıp limiti
+  kaldırırdı). Pencereler kodda sabit.
+- **Uç bazlı Türkçe 429 mesajları** (hangi işlem olduğu anlaşılır).
+- `import`'ta rate limit **multer'dan önce** (reddi parse/tahsisten önce).
+- Dokümantasyon: `backend/.env.example` + `CLAUDE.md` "Ortam değişkenleri"ne üç
+  yeni değişken eklendi.
+
+### Yapılanlar
+
+- `backend/src/middleware/rateLimit.ts`: `envPositiveInt` eklendi.
+- `backend/src/routes/auth.ts`: `change-password`'a `rateLimit` (15 dk / env).
+- `backend/src/routes/admin.ts`: `import` + `backup` rotalarına `rateLimit`
+  (1 saat / env), sabitler ve açıklamalar.
+- `backend/src/rateLimit.test.ts` (yeni, 5 test): pencere/max/anahtar izolasyonu/
+  pencere sıfırlama/özel mesaj + `envPositiveInt`.
+- `backend/src/auth.test.ts`: change-password 429 testi (+1).
+- `backend/src/student-import.test.ts`: `beforeEach(clearRateLimits)` + import
+  429 testi (+1).
+- `.env.example`, `CLAUDE.md`.
+
+### Doğrulamalar
+
+**Statik/Tests** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅;
+backend **269/269** (+7), frontend **111/111** ✅.
+
+**Canlı (gerçek sunucu):** üç uç art arda hızlı çağrıldı —
+- change-password: 5 yanlış `current_password` → 400; **6. → 429**
+  ("...şifre değiştirme denemesi..."); farklı kullanıcı (öğretmen) tek denemesi
+  **400** (izolasyon; 429 değil).
+- import (`dry_run`): 5 → 200; **6. → 429** ("...içe aktarma isteği...").
+- backup: 3 → 200; **4. → 429** ("...yedek alma isteği...").
+Normal kullanım etkilenmedi (ilk çağrılar normal yanıt verdi; farklı kullanıcı
+kovası bağımsız). Test artığı geçici zip'ler temizlendi; kovaları sıfırlamak için
+backend yeniden başlatıldı.
+
+### Notlar
+
+- Küçük bir gözlem: `auth.ts`'teki login limiti hâlâ
+  `Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 5)` ile doğrudan okunuyor; aynı
+  `envPositiveInt` ile sertleştirmek ileride ayrı bir iyileştirme olabilir (bu
+  turun kapsamına alınmadı).
+- In-memory kova tek proses varsayar (mevcut not; Render tek servis).
+
+### Etkilenen dosyalar
+
+```
+backend/src/middleware/rateLimit.ts
+backend/src/routes/auth.ts
+backend/src/routes/admin.ts
+backend/src/rateLimit.test.ts        (yeni)
+backend/src/auth.test.ts
+backend/src/student-import.test.ts
+backend/.env.example
+CLAUDE.md
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — Bulgu #7: change-password/import/backup için kullanıcı bazlı rate
+limit + uç bazlı mesaj + env dokümantasyonu.
+
+---
+
 ## Bulgu #3 düzeltildi — seed'de per-user hash (salt tekrarı giderildi) ✅
 
 ### Süreç özeti

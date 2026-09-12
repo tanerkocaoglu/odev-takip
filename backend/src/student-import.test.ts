@@ -3,12 +3,13 @@
  * Gerçek test.db üzerinde şema + aktif yıl + iki sınıf kurulur.
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from './app.js';
 import { db } from './db/index.js';
 import { normalizeTurkish } from './utils/text.js';
 import { resetDb, insertTestUsers, TEST_PASSWORD } from './test/helpers.js';
+import { clearRateLimits } from './middleware/rateLimit.js';
 
 const app = createApp();
 let adminToken: string;
@@ -77,6 +78,11 @@ beforeAll(async () => {
     .post('/api/v1/auth/login')
     .send({ identifier: 'admin@test.local', password: TEST_PASSWORD });
   adminToken = login.body.token as string;
+});
+
+// Rate limit kovaları testler arası paylaşılır — her test taze başlasın.
+beforeEach(() => {
+  clearRateLimits();
 });
 
 describe('GET /admin/students/import/template', () => {
@@ -272,5 +278,19 @@ describe('Kaydetme (commit)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.fields.password).toBeDefined();
     expect(countUsers()).toBe(before);
+  });
+});
+
+describe('rate limit — pahalı içe aktarma (Bulgu #7)', () => {
+  it('1 saat penceresinde 5 istekten sonra 6. istek 429 RATE_LIMITED döner', async () => {
+    const body = csv('Test Ogrenci,ÖKLİD,Test Veli,+90 555 111 99 99,Örnek Okul 1,6');
+    for (let i = 0; i < 5; i++) {
+      const res = await importReq(body, true); // dry_run → yazmaz, yalnızca sayılır
+      expect(res.status).toBe(200);
+    }
+    const blocked = await importReq(body, true);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe('RATE_LIMITED');
+    expect(blocked.body.error.message).toContain('içe aktarma');
   });
 });

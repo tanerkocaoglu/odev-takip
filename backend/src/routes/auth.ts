@@ -23,7 +23,7 @@ import { verifyPassword, hashPasswordSync, hashPassword } from '../utils/hash.js
 import { passwordSchema } from '../utils/password.js';
 import { signToken } from '../utils/token.js';
 import { requireAuth } from '../middleware/auth.js';
-import { rateLimit } from '../middleware/rateLimit.js';
+import { rateLimit, envPositiveInt } from '../middleware/rateLimit.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthUser, Role } from '../types.js';
 
@@ -206,9 +206,22 @@ const changePasswordSchema = z.object({
   new_password: passwordSchema,
 });
 
+// Brute-force koruması (Bulgu #7): token'ı olup mevcut şifreyi bilmeyen bir
+// saldırgan `current_password`'ü denemekle sınırlanır. Anahtar **kullanıcı
+// ID'sidir** (IP değil) — saldırgan IP değiştirse bile kova değişmez.
+// `CHANGE_PASSWORD_RATE_LIMIT_MAX` env'den okunur (demo'da gevşetilebilir).
+const CHANGE_PASSWORD_RATE_LIMIT_MAX = envPositiveInt('CHANGE_PASSWORD_RATE_LIMIT_MAX', 5);
+
 router.post(
   '/change-password',
   requireAuth,
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: CHANGE_PASSWORD_RATE_LIMIT_MAX,
+    keyFn: (req) => `cp:${req.user!.id}`,
+    message:
+      'Çok fazla şifre değiştirme denemesi yapıldı, lütfen birkaç dakika sonra tekrar deneyin.',
+  }),
   asyncHandler(async (req, res) => {
     const { current_password, new_password } = changePasswordSchema.parse(req.body);
 

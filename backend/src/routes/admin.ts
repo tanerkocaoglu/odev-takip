@@ -20,6 +20,7 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { adminOnly } from '../middleware/adminOnly.js';
+import { rateLimit, envPositiveInt } from '../middleware/rateLimit.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { hashPassword } from '../utils/hash.js';
@@ -65,6 +66,12 @@ const router = Router();
 
 // Router seviyesinde yetki — tüm /admin/* rotaları yalnızca admin.
 router.use(requireAuth, adminOnly);
+
+// Pahalı admin işlemleri için düşük frekanslı limit (Bulgu #7). Anahtar admin
+// kullanıcı ID'sidir; import ile backup AYRI kovadır (biri diğerini kilitlemez).
+const EXPENSIVE_OP_WINDOW_MS = 60 * 60 * 1000; // 1 saat
+const ADMIN_IMPORT_RATE_LIMIT_MAX = envPositiveInt('ADMIN_IMPORT_RATE_LIMIT_MAX', 5);
+const ADMIN_BACKUP_RATE_LIMIT_MAX = envPositiveInt('ADMIN_BACKUP_RATE_LIMIT_MAX', 3);
 
 // ---------- Eğitim yılı ----------
 
@@ -2659,7 +2666,16 @@ router.get('/dashboard/risk', (_req, res) => {
  * üretilen .zip'i istemciye indirtir. CLI stdout'a zip yolunu yazar; yol
  * `BACKUPS_DIR` içinde değilse 500 (path traversal koruması).
  */
-router.post('/backup', (_req, res) => {
+router.post(
+  '/backup',
+  rateLimit({
+    windowMs: EXPENSIVE_OP_WINDOW_MS,
+    max: ADMIN_BACKUP_RATE_LIMIT_MAX,
+    keyFn: (req) => `admin-backup:${req.user!.id}`,
+    message:
+      'Çok fazla yedek alma isteği yapıldı, lütfen bir süre sonra tekrar deneyin.',
+  }),
+  (_req, res) => {
   const scriptPath = path.join(import.meta.dirname, '..', '..', 'scripts', 'backup.ts');
   const tsxCli = path.join(
     import.meta.dirname,
@@ -2740,6 +2756,13 @@ router.get('/students/import/template', (_req, res) => {
  */
 router.post(
   '/students/import',
+  rateLimit({
+    windowMs: EXPENSIVE_OP_WINDOW_MS,
+    max: ADMIN_IMPORT_RATE_LIMIT_MAX,
+    keyFn: (req) => `admin-import:${req.user!.id}`,
+    message:
+      'Çok fazla öğrenci içe aktarma isteği yapıldı, lütfen bir süre sonra tekrar deneyin.',
+  }),
   csvUploadSingle,
   asyncHandler(async (req, res) => {
     const dryRun = req.query.dry_run === 'true';
