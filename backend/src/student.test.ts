@@ -132,7 +132,7 @@ beforeAll(async () => {
     `INSERT INTO users
        (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
-     VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
+     VALUES (?, ?, ?, ?, NULL, 'x', 'student', 1, 1, NULL, ?)`,
   ).run(
     's-student-2',
     'İkinci Öğrenci',

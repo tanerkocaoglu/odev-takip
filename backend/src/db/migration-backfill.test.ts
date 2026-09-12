@@ -12,12 +12,26 @@
  * üzerinde koşar; #5 (username_login) da eski telefon şemasına uygulanır.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { db } from './index.js';
 import { runMigrations } from './migrations.js';
 import { resetDb } from '../test/helpers.js';
 
 beforeAll(() => {
+  // Önceki koşudan yarıda kalmış bir v8 + NULL/boş kalıntısı varsa #9'un ön
+  // kontrolünü geçmesi için temizle (FK sırası: önce guardians).
+  const version = (
+    db.prepare('SELECT user_version FROM pragma_user_version').get() as { user_version: number }
+  ).user_version;
+  if (version === 8) {
+    db.exec(
+      `DELETE FROM guardians
+        WHERE whatsapp_phone IS NULL OR whatsapp_phone = ''
+           OR user_id IN (SELECT id FROM users WHERE password_hash IS NULL OR password_hash = '')`,
+    );
+    db.exec(`DELETE FROM users WHERE password_hash IS NULL OR password_hash = ''`);
+  }
+
   resetDb();
 
   // ---- Şemayı #2 durumuna geri sar ----
@@ -114,9 +128,9 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4..#8 (submission_files, username_login, schools_grade_view,
-    // must_change_password, submission_file_thumb) de koşar.
-    expect(version.user_version).toBe(8);
+    // #3 backfill + #4..#9 (submission_files, username_login, schools_grade_view,
+    // must_change_password, submission_file_thumb, not_null_password_phone) koşar.
+    expect(version.user_version).toBe(9);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -169,7 +183,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     const after = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(after.user_version).toBe(8);
+    expect(after.user_version).toBe(9);
 
     const row = db
       .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
@@ -182,5 +196,203 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
       }>
     ).map((c) => c.name);
     expect(sfCols).toContain('thumb_key');
+  });
+});
+
+// ===========================================================================
+// Migration #9 — `password_hash` / `whatsapp_phone` NOT NULL rewind (9↔8)
+// ===========================================================================
+
+/**
+ * Şemayı #9 öncesine (iki alan nullable) geri sarar; veri korunur. Runner'daki
+ * `foreignKeysOff` ile aynı desen: pragma BEGIN'den önce kapatılır.
+ */
+function revertNotnullToV8(): void {
+  const fk = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number };
+  const wasOn = fk.foreign_keys === 1;
+  if (wasOn) db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE users_old (
+        id                   TEXT PRIMARY KEY,
+        full_name            TEXT NOT NULL,
+        full_name_normalized TEXT NOT NULL,
+        email                TEXT,
+        password_hash        TEXT,
+        role                 TEXT NOT NULL CHECK (role IN ('admin','teacher','guardian','student')),
+        is_active            INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        token_version        INTEGER NOT NULL DEFAULT 1,
+        deleted_at           TEXT,
+        created_at           TEXT NOT NULL,
+        username             TEXT,
+        must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (must_change_password IN (0,1))
+      ) STRICT;
+    `);
+    db.exec(`INSERT INTO users_old SELECT * FROM users`);
+    db.exec(`DROP TABLE users`);
+    db.exec(`ALTER TABLE users_old RENAME TO users`);
+    db.exec(`CREATE UNIQUE INDEX idx_users_username ON users(username) WHERE deleted_at IS NULL`);
+    db.exec(
+      `CREATE UNIQUE INDEX idx_users_email ON users(email) WHERE deleted_at IS NULL AND email IS NOT NULL`,
+    );
+    db.exec(`CREATE INDEX idx_users_normalized ON users(full_name_normalized)`);
+
+    db.exec(`
+      CREATE TABLE guardians_old (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL REFERENCES users(id),
+        whatsapp_phone  TEXT,
+        phone_secondary TEXT,
+        consent_at      TEXT,
+        deleted_at      TEXT
+      ) STRICT;
+    `);
+    db.exec(`INSERT INTO guardians_old SELECT * FROM guardians`);
+    db.exec(`DROP TABLE guardians`);
+    db.exec(`ALTER TABLE guardians_old RENAME TO guardians`);
+    db.exec(`CREATE UNIQUE INDEX idx_guardians_user ON guardians(user_id) WHERE deleted_at IS NULL`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    if (wasOn) db.exec('PRAGMA foreign_keys = ON');
+  }
+  db.exec('PRAGMA user_version = 8');
+}
+
+/** `PRAGMA table_info` içinden tek kolonu döner. */
+function columnInfo(table: string, name: string): { name: string; notnull: number } {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+    name: string;
+    notnull: number;
+  }>;
+  const col = cols.find((c) => c.name === name);
+  if (!col) throw new Error(`kolon bulunamadi: ${table}.${name}`);
+  return col;
+}
+
+function userVersion(): number {
+  return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+}
+
+const INSERT_USER = `INSERT INTO users
+  (id, full_name, full_name_normalized, username, email, password_hash, role,
+   is_active, token_version, deleted_at, created_at)
+  VALUES (?, ?, ?, ?, NULL, ?, ?, 1, 1, NULL, ?)`;
+
+describe('migration #9 — password_hash / whatsapp_phone NOT NULL rewind (9↔8)', () => {
+  // Test 2/3 bilerek v8 + NULL/boş bırakır; sonraki testin `resetDb()`'i #9'u
+  // koşabilmesi için bu veriyi temizleyip şemayı ileri sarar.
+  afterEach(() => {
+    db.exec(`DELETE FROM guardians WHERE id LIKE 'm9-%'`);
+    db.exec(`DELETE FROM users WHERE id LIKE 'm9-%'`);
+    if (userVersion() === 8) runMigrations();
+  });
+
+  it('nullable #8 şemasından koşunca veriyi korur, NOT NULL + boş string CHECK uygular', () => {
+    resetDb();
+    revertNotnullToV8();
+    const now = new Date().toISOString();
+    db.prepare(INSERT_USER).run('m9-student', 'M9 Ogrenci', 'm9 ogrenci', 'm9ogrenci1', 'hash-m9', 'student', now);
+    db.prepare(INSERT_USER).run('m9-guardian', 'M9 Veli', 'm9 veli', 'm9veli1', 'hash-g9', 'guardian', now);
+    db.prepare(
+      `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
+       VALUES ('m9-grec', 'm9-guardian', '+905550000009', NULL, NULL, NULL)`,
+    ).run();
+
+    expect(userVersion()).toBe(8);
+    expect(columnInfo('users', 'password_hash').notnull).toBe(0);
+    expect(columnInfo('guardians', 'whatsapp_phone').notnull).toBe(0);
+
+    runMigrations();
+
+    expect(userVersion()).toBe(9);
+    expect(columnInfo('users', 'password_hash').notnull).toBe(1);
+    expect(columnInfo('guardians', 'whatsapp_phone').notnull).toBe(1);
+    expect(db.prepare(`SELECT password_hash FROM users WHERE id = 'm9-student'`).get()).toEqual({
+      password_hash: 'hash-m9',
+    });
+    expect(
+      db.prepare(`SELECT whatsapp_phone FROM guardians WHERE id = 'm9-grec'`).get(),
+    ).toEqual({ whatsapp_phone: '+905550000009' });
+
+    const indexes = (
+      db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type='index'
+             AND tbl_name IN ('users','guardians') AND sql IS NOT NULL`,
+        )
+        .all() as Array<{ name: string }>
+    )
+      .map((r) => r.name)
+      .sort();
+    expect(indexes).toEqual([
+      'idx_guardians_user',
+      'idx_users_email',
+      'idx_users_normalized',
+      'idx_users_username',
+    ]);
+    expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
+
+    // DB seviyesinde zorlama: NULL ve boş string reddedilir.
+    expect(() =>
+      db
+        .prepare(INSERT_USER)
+        .run('m9-null', 'N', 'n', 'n1', null, 'student', now),
+    ).toThrow();
+    expect(() =>
+      db.prepare(INSERT_USER).run('m9-empty', 'E', 'e', 'e1', '', 'student', now),
+    ).toThrow();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO guardians (id, user_id, whatsapp_phone) VALUES ('m9-emptyg','m9-guardian','')`,
+        )
+        .run(),
+    ).toThrow();
+  });
+
+  it('NULL varsa fail-fast: hiçbir şey yazılmaz, sürüm 8 kalır', () => {
+    resetDb();
+    revertNotnullToV8();
+    const now = new Date().toISOString();
+    db.prepare(INSERT_USER).run('m9-nulluser', 'Null User', 'null user', 'nulluser1', null, 'student', now);
+
+    expect(() => runMigrations()).toThrow();
+    expect(userVersion()).toBe(8);
+    expect(columnInfo('users', 'password_hash').notnull).toBe(0);
+    expect(
+      db.prepare(`SELECT password_hash FROM users WHERE id = 'm9-nulluser'`).get(),
+    ).toEqual({ password_hash: null });
+  });
+
+  it('sonraki adımda hata olursa TÜM migration rollback olur (users rebuild dahil)', () => {
+    resetDb();
+    revertNotnullToV8();
+    const now = new Date().toISOString();
+    db.prepare(INSERT_USER).run('m9-u', 'U', 'u', 'u1', 'hash', 'guardian', now);
+    // Boş string NULL değildir → ön kontrolü geçer; guardians CHECK'inde patlar.
+    // users rebuild'i (drop + rename) çoktan tamamlanmış olur; rollback onu da
+    // geri almalıdır.
+    db.prepare(
+      `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
+       VALUES ('m9-ge', 'm9-u', '', NULL, NULL, NULL)`,
+    ).run();
+
+    expect(() => runMigrations()).toThrow();
+    expect(userVersion()).toBe(8);
+    expect(columnInfo('users', 'password_hash').notnull).toBe(0);
+    expect(
+      db.prepare(`SELECT whatsapp_phone FROM guardians WHERE id = 'm9-ge'`).get(),
+    ).toEqual({ whatsapp_phone: '' });
+    const leftovers = db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table'
+           AND name IN ('users_new','guardians_new','users_old','guardians_old')`,
+      )
+      .all();
+    expect(leftovers).toEqual([]);
   });
 });

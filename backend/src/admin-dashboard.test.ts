@@ -138,7 +138,7 @@ beforeAll(async () => {
     `INSERT INTO users
        (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
-     VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
+     VALUES (?, ?, ?, ?, NULL, 'x', 'student', 1, 1, NULL, ?)`,
   );
   const insertStudentRec = db.prepare(
     `INSERT INTO students (id, user_id, guardian_id, deleted_at) VALUES (?, ?, ?, NULL)`,
@@ -354,7 +354,7 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
       `INSERT INTO users
          (id, full_name, full_name_normalized, username, email, password_hash, role,
           is_active, token_version, deleted_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
+       VALUES (?, ?, ?, ?, NULL, 'x', 'student', 1, 1, NULL, ?)`,
     );
     const insS = db.prepare(
       `INSERT INTO students (id, user_id, guardian_id, deleted_at) VALUES (?, ?, NULL, NULL)`,

@@ -457,6 +457,111 @@ registerMigration(8, 'submission_file_thumb', () => {
   db.exec(`ALTER TABLE submission_files ADD COLUMN thumb_key TEXT`);
 });
 
+/**
+ * Migration #9 — `users.password_hash` ve `guardians.whatsapp_phone` DB
+ * seviyesinde `NOT NULL` (+ boş string yasağı).
+ *
+ * Migration #5'in yorumunda not edilen borç: bu iki alan şemada nullable
+ * kalmıştı; uygulama her yazma yolunda doldursa da DB garantisi yoktu (doğrudan
+ * SQL / unutulan bir kod yolu sessizce NULL üretebilirdi). `spec.md` §3.1 DDL'i
+ * zaten `TEXT NOT NULL` der — bu migration uygulamayı spec'e hizalar.
+ * (Dondurulmuş migration #5'e dokunulmaz; borcun kapandığı yalnızca burası ve
+ * PROGRESS.md'de belirtilir.)
+ *
+ * SQLite var olan kolonu `SET NOT NULL` ile değiştirmediğinden, SQLite'ın
+ * belgelediği 12 adımlı tablo yeniden kurulumu uygulanır. `foreign_keys`
+ * kapatma/açma işi runner'dadır (`foreignKeysOff: true`); runner COMMIT'ten
+ * önce `PRAGMA foreign_key_check` ile bütünlüğü doğrular. Diğer tablolar
+ * (`students`, `class_courses`, `reports`, `submissions`, `weekly_digests`,
+ * `audit_logs`) **yeniden kurulmaz**; FK'ları tablo adı üzerinden çözülür.
+ *
+ * NOT NULL kopya sırasında zaten ihlal edilirdi; net mesaj için ek olarak ön
+ * kontrol yapılır ve NULL varsa hiçbir şey yazılmadan durulur. Tüm adımlar tek
+ * transaction'dadır (hata → tam rollback).
+ */
+registerMigration(
+  9,
+  'not_null_password_phone',
+  () => {
+    // Fail-fast: NULL varsa açıklayıcı hatayla dur (veri temizliği gerekir).
+    const nullPasswords = (
+      db
+        .prepare('SELECT COUNT(*) AS c FROM users WHERE password_hash IS NULL')
+        .get() as { c: number }
+    ).c;
+    const nullPhones = (
+      db
+        .prepare('SELECT COUNT(*) AS c FROM guardians WHERE whatsapp_phone IS NULL')
+        .get() as { c: number }
+    ).c;
+    if (nullPasswords > 0 || nullPhones > 0) {
+      throw new Error(
+        `NOT NULL öncesi veri temizliği gerekli: users.password_hash NULL=${nullPasswords}, ` +
+          `guardians.whatsapp_phone NULL=${nullPhones}`,
+      );
+    }
+
+    // ---- users: aynı kolon sırası/CHECK'ler; password_hash NOT NULL + <> '' ----
+    db.exec(`
+      CREATE TABLE users_new (
+        id                   TEXT PRIMARY KEY,
+        full_name            TEXT NOT NULL,
+        full_name_normalized TEXT NOT NULL,
+        email                TEXT,
+        password_hash        TEXT NOT NULL CHECK (password_hash <> ''),
+        role                 TEXT NOT NULL CHECK (role IN ('admin','teacher','guardian','student')),
+        is_active            INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        token_version        INTEGER NOT NULL DEFAULT 1,
+        deleted_at           TEXT,
+        created_at           TEXT NOT NULL,
+        username             TEXT,
+        must_change_password INTEGER NOT NULL DEFAULT 0 CHECK (must_change_password IN (0,1))
+      ) STRICT;
+    `);
+    db.exec(`
+      INSERT INTO users_new
+        (id, full_name, full_name_normalized, email, password_hash, role,
+         is_active, token_version, deleted_at, created_at, username, must_change_password)
+      SELECT id, full_name, full_name_normalized, email, password_hash, role,
+             is_active, token_version, deleted_at, created_at, username, must_change_password
+      FROM users;
+    `);
+    db.exec(`DROP TABLE users`);
+    db.exec(`ALTER TABLE users_new RENAME TO users`);
+    db.exec(
+      `CREATE UNIQUE INDEX idx_users_username ON users(username) WHERE deleted_at IS NULL`,
+    );
+    db.exec(
+      `CREATE UNIQUE INDEX idx_users_email ON users(email) WHERE deleted_at IS NULL AND email IS NOT NULL`,
+    );
+    db.exec(`CREATE INDEX idx_users_normalized ON users(full_name_normalized)`);
+
+    // ---- guardians: aynı kolonlar; whatsapp_phone NOT NULL + <> '' ----
+    db.exec(`
+      CREATE TABLE guardians_new (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL REFERENCES users(id),
+        whatsapp_phone  TEXT NOT NULL CHECK (whatsapp_phone <> ''),
+        phone_secondary TEXT,
+        consent_at      TEXT,
+        deleted_at      TEXT
+      ) STRICT;
+    `);
+    db.exec(`
+      INSERT INTO guardians_new
+        (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
+      SELECT id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at
+      FROM guardians;
+    `);
+    db.exec(`DROP TABLE guardians`);
+    db.exec(`ALTER TABLE guardians_new RENAME TO guardians`);
+    db.exec(
+      `CREATE UNIQUE INDEX idx_guardians_user ON guardians(user_id) WHERE deleted_at IS NULL`,
+    );
+  },
+  { foreignKeysOff: true },
+);
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

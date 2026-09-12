@@ -117,13 +117,16 @@ beforeAll(async () => {
   insertCc.run(CC_1, 'ad-class', 'ad-course-1', 'test-teacher', 1, '09:00');
   insertCc.run(CC_2, 'ad-class', 'ad-course-2', 'test-teacher', 2, '10:00');
 
-  // --- Veliler: geçerli / consentsız / telefon numarasız ---
+  // --- Veliler: geçerli / consentsız / telefon boş (yalnızca boşluk) ---
+  // Not (migration #9): `whatsapp_phone` artık DB seviyesinde NOT NULL + `<> ''`.
+  // "Numara tanımlı değil" 409 guard'ı, `.trim() === ''` üzerinden yalnızca
+  // boşluk değerle (savunma amaçlı) tetiklenebilir; fixture bunu kullanır.
   const now = new Date().toISOString();
   const insertUser = db.prepare(
     `INSERT INTO users
        (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
-     VALUES (?, ?, ?, NULL, NULL, NULL, 'guardian', 1, 1, NULL, ?)`,
+     VALUES (?, ?, ?, NULL, NULL, 'x', 'guardian', 1, 1, NULL, ?)`,
   );
   const insertGuardian = db.prepare(
     `INSERT INTO guardians (id, user_id, whatsapp_phone, phone_secondary, consent_at, deleted_at)
@@ -131,15 +134,15 @@ beforeAll(async () => {
   );
   insertUser.run('g2-user', 'Consent Yok Veli', 'consent yok veli', now);
   insertGuardian.run('g2-rec', 'g2-user', '+905009990004', null);
-  insertUser.run('g3-user', 'Telefon Yok Veli', 'telefon yok veli', now);
-  insertGuardian.run('g3-rec', 'g3-user', null, now);
+  insertUser.run('g3-user', 'Telefon Bos Veli', 'telefon bos veli', now);
+  insertGuardian.run('g3-rec', 'g3-user', '   ', now);
 
   // --- Öğrenciler (3'ü de aynı sınıfta) ---
   const insertStudent = db.prepare(
     `INSERT INTO users
        (id, full_name, full_name_normalized, username, email, password_hash, role,
         is_active, token_version, deleted_at, created_at)
-     VALUES (?, ?, ?, ?, NULL, NULL, 'student', 1, 1, NULL, ?)`,
+     VALUES (?, ?, ?, ?, NULL, 'x', 'student', 1, 1, NULL, ?)`,
   );
   const insertStudentRec = db.prepare(
     `INSERT INTO students (id, user_id, guardian_id, deleted_at) VALUES (?, ?, ?, NULL)`,
@@ -255,7 +258,7 @@ describe('POST /api/v1/admin/digests/:id/send', () => {
     expect(res.body.error.message).toBe('Velinin KVKK açık rızası alınmamış.');
   });
 
-  it('whatsapp_phone yok → 409 farklı mesajla', async () => {
+  it('whatsapp_phone etkin olarak boş (yalnızca boşluk) → 409 farklı mesajla', async () => {
     const res = await request(app)
       .post(`/api/v1/admin/digests/${digestIdFor('ad-stu-rec-3')}/send`)
       .set('Authorization', `Bearer ${adminToken}`);

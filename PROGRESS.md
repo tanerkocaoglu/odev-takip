@@ -5,6 +5,111 @@
 
 ---
 
+## DB NOT NULL borcu kapandı — Migration #9 (`password_hash`, `whatsapp_phone`) ✅
+
+### Süreç özeti
+
+Denetim raporunun **Yüksek** öncelikli teknik borcu kapatıldı: migration #5'in
+yorumunda itiraf edilen `users.password_hash` ve `guardians.whatsapp_phone`
+nullable kullanımı, **migration #9** ile DB seviyesinde `NOT NULL` +
+`CHECK (<> '')` oldu. `spec.md` §3.1 zaten `TEXT NOT NULL` diyordu; bu adım
+uygulamayı spec'e hizaladı (spec değişikliği gerekmedi).
+
+**Teşhis (kanıt):** canlı `app.db` (v8) → `users=29`, `password_hash IS NULL=0`;
+`guardians=12`, `whatsapp_phone IS NULL=0`; boş string de 0. Yani veri temizliği
+gerekmedi. Yine de fail-fast ön kontrolü eklendi (NULL varsa hiçbir şey
+yazmadan durur).
+
+**Mekanizma:** SQLite `SET NOT NULL` desteklemediğinden, SQLite'ın belgelediği
+**12 adımlı tablo yeniden kurulumu**. Scratch DB'de doğrulandı: `foreign_keys`
+transaction içinde kapatılamıyor, FK açıkken referanslı tablo `DROP`
+edilemiyor, `defer_foreign_keys` çözüm değil; pragma **BEGIN'den önce**
+kapatılınca 12 adım çalışıyor. Bu nedenle runner'a `foreignKeysOff` desteği
+eklendi (önceki commit) — runner pragma'yı kapatır, COMMIT öncesi
+`PRAGMA foreign_key_check` ile doğrular, hata/commit sonrası geri açar.
+
+**Kapsam:** yalnızca `users` ve `guardians` yeniden kurulur. `students`,
+`class_courses`, `reports`, `submissions`, `submission_files`, `weekly_digests`,
+`audit_logs` **kopyalanmaz**; FK'ları tablo adı üzerinden çözülür,
+`foreign_key_check` bütünlüğü doğrular. NOT NULL/CHECK dışında CREATE TABLE
+ifadeleri mevcut DDL ile birebir aynıdır.
+
+### Yapılanlar
+
+- `backend/src/db/migrations.ts`: **#9** `not_null_password_phone`,
+  `{ foreignKeysOff: true }`; users + guardians yeniden kurulumu; fail-fast ön
+  kontrol; `password_hash`/`whatsapp_phone` için `NOT NULL` + `CHECK (<> '')`.
+- `backend/src/db/migration-backfill.test.ts`: #9 rewind testleri (happy +
+  NULL fail-fast + kısmi rollback); #8'e geri sarma yardımcısı; version
+  assert'leri 8 → 9.
+- Test fixture'ları: `password_hash = NULL` yazan 7 INSERT `'x'` yapacak şekilde
+  güncellendi (`student/teacher/digests/admin-dashboard/admin-digests`).
+- `admin-digests.test.ts`: "telefon yok" fixture'ı, yeni şemada NULL olamayacağı
+  için **yalnızca boşluk** (`'   '`) kullanır — `.trim() === ''` 409 guard'ı
+  (savunma amaçlı) hâlâ kapsanır.
+
+### DDL birebir kanıtı
+
+v8 yedeği ile #9 uygulanmış kopyanın `sqlite_master` DDL'i token bazında
+karşılaştırıldı. **Tek anlamlı farklar:** `password_hash TEXT` →
+`password_hash TEXT NOT NULL CHECK (password_hash <> '')` ve aynısı
+`whatsapp_phone` için. İki ek fark yalnızca boşluk/virgül biçimiydi (eski
+`ALTER TABLE` ile sona eklenen `username`/`must_change_password`'tan kalan
+kozmetik; anlamsal değişiklik yok). `PRAGMA table_info` yalnızca iki alanda
+`notnull: 0 → 1` gösterdi; diğer tüm kolonlar/tiplemeler, indeksler
+(`idx_users_username/email/normalized`, `idx_guardians_user`) ve CHECK'ler aynı.
+
+### Doğrulamalar
+
+**Statik** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅
+**Testler** — backend **261/261** (22 dosya; +3 #9 rewind) ✅, frontend **111/111** ✅
+
+**Yedek (geri dönüş noktası):** `db:backup` → `dershane-yedek-20260912-190947.zip`;
+proje dışına (`%TEMP%\opencode\notnull-backup\`) kopyalandı, SHA-256 **iki tarafta
+birebir aynı**, ayrıca ham `app.db` kopyası alındı.
+
+**Canlı `db:migrate` (gerçek app.db):**
+- `user_version` 8 → **9**; `password_hash`/`whatsapp_phone` `notnull=1`.
+- **Veri korunumu:** `users 29→29`, `guardians 12→12`; `password_hash` ve
+  `whatsapp_phone` değerlerinin SHA-256'sı (sıralı id) yedekle **birebir aynı**.
+- **Doğrudan SQL bypass denemeleri (uygulama kodu atlanarak) — hepsi DB
+  seviyesinde reddedildi:** `password_hash NULL` → NOT NULL; `password_hash ''`
+  → CHECK; `whatsapp_phone NULL` → NOT NULL; `whatsapp_phone ''` → CHECK;
+  geçersiz FK `guardian.user_id` → FOREIGN KEY. Denemeler savepoint ile geri
+  alındı; satır sayıları değişmedi.
+- `PRAGMA foreign_key_check` = **[]**; dört indeks yerinde.
+
+**Taze seed DB** (`DB_PATH=<temp> npm run db:seed`): v9, `users=29`,
+`guardians=12`, NULL/boş = **0**, `foreign_key_check` boş, NULL/boş insert
+reddedildi.
+
+### Çözülen sorunlar
+
+- **Test fixture'ları NULL parola yazıyordu:** 7 INSERT artık geçerli kısa
+  değer (`'x'`) yazıyor.
+- **Guardian NULL telefona dayalı 409 testi:** NULL/nullable artık imkânsız;
+  fixture yalnızca boşluğa çevrildi, `.trim()` guard'ı üzerinden kapsam korundu.
+- **Kalıcı `test.db` takılması:** yarıda kalan bir koşu v8 + NULL bırakınca
+  sonraki koşunun `beforeAll`'ı #9 ön kontrolünde patlıyordu; `migration-backfill`
+  `beforeAll`'ına #9 öncesi temizlik guard'ı eklendi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts                          (+ #9)
+backend/src/db/migration-backfill.test.ts             (rewind + guard)
+backend/src/student.test.ts  teacher.test.ts  digests.test.ts
+backend/src/admin-dashboard.test.ts  admin-digests.test.ts
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — migration #9: `password_hash` / `whatsapp_phone` NOT NULL + boş
+string CHECK (Yüksek öncelikli teknik borç).
+
+---
+
 ## DB NOT NULL borcu — migration runner'a `foreignKeysOff` desteği ✅ (Grup A)
 
 ### Süreç özeti
