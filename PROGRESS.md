@@ -58,9 +58,20 @@ Her iki simülasyon da `node_modules` + `backend/node_modules` silinerek yapıld
 - **Değerlendirme:** Bu kırılma **bu değişiklikten bağımsız, önceden beri var**;
   build her iki tarafta da dev-only araçlara (`vite`, `typescript`) ihtiyaç
   duyar. `NODE_ENV=production`, npm'in devDeps'i atlamasına yol açar ve
-  değişiklik öncesi de kök build aynı şekilde düşerdi. Dolayısıyla gerçek Render
-  build'i bu env ile çalışmıyor olmalı (aksi halde mevcut deploy da kırılırdı).
-  `render.yaml` bu yüzden değiştirilmedi.
+  değişiklik öncesi de kök build aynı şekilde düşerdi.
+- **Render teyidi (resmî dokümantasyon):** Render'ın "Default Environment
+  Variables" sayfası, Node.js için `NODE_ENV` değerini
+  **`production` (runtime only)** olarak listeler (bu sayfadaki tüm değişkenler
+  aksi belirtilmedikçe build+runtime'da; `(runtime only)` işareti tek istisna).
+  Yani `buildCommand` (`npm install`, `npm run build`) çalışırken NODE_ENV
+  **production değildir** → npm devDependencies'i kurar → build geçer.
+  `NODE_ENV=production` yalnızca `startCommand` sırasında geçerlidir; bu da
+  daha önce görülen `db:reset ... (NODE_ENV=production)` runtime hatasıyla
+  birebir tutarlıdır. (Repo'daki PROGRESS kaydı, o deploy logunun yalnızca
+  runtime `db:reset` kısmını saklamıştı; build logundaki `npm install` çıktısı
+  elimizde yok. Yine de mevcut deploy'un daha önce başarılı olması, kök build
+  için gerekli devDeps'in build sırasında kurulduğunu kanıtlar.)
+  → **`render.yaml`'a dokunmama kararı kesinleşti.**
 
 ### Doğrulamalar
 
