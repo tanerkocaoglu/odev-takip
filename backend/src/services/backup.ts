@@ -9,8 +9,23 @@
  * Adımlar:
  * 1. `VACUUM INTO` ile tutarlı bir SQLite kopyası (WAL güvenli — çalışan
  *    sunucunun bağlantısına dokunmadan, ayrı bağlantıdan okur).
- * 2. DB kopyası + `uploads` klasörünü tek .zip dosyada birleştirir (adm-zip).
- * 3. Geçici DB kopyasını temizler; zip yolunu döner.
+ * 2. `uploads/` içindeki dosyalar, DB ilişkisiyle (submission_files →
+ *    submissions → homeworks → class_courses → courses/weeks → students/users)
+ *    anlamlı bir hiyerarşiye kopyalanır:
+ *      `Ad_Soyad_kullaniciadi/Ders_Adi/Hafta_N/orijinal_dosya_adi`
+ *    Hiyerarşi **yalnızca gerçekten yüklenmiş (orijinal) dosyaları** içerir.
+ *    Üretilen thumbnail'lar ve DB'de karşılığı olmayan (sahipsiz) dosyalar
+ *    `_depo/<key>` altına konur — hiçbir dosya kaybolmaz.
+ * 3. DB kopyası (`veritabani/app.db`) + hiyerarşi + `_depo/` tek .zip'te
+ *    birleştirilir.
+ *
+ * Sınıf değiştiren öğrenci (retrofit): klasörleme `homeworks.class_course_id`
+ * üzerinden yapılır — bu alan ödevin verildiği andaki atamanın denormalize
+ * kopyasıdır (spec.md §3.2). Yani "o haftaki gerçek atama" kullanılır; güncel
+ * `enrollments`'a bakılmaz. Tarihsel doğruluk korunur.
+ *
+ * Canlı `uploads/` klasörüne, `storage.ts`'e, dosya key'lerine ve R2 geçiş
+ * planına **dokunulmaz**; yedek yalnızca okur + geçici klasöre kopyalar.
  */
 
 import { DatabaseSync } from 'node:sqlite';
@@ -19,12 +34,232 @@ import path from 'node:path';
 import os from 'node:os';
 import AdmZip from 'adm-zip';
 
-function stamp(): string {
-  const d = new Date();
-  const p = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(
-    d.getMinutes(),
-  )}${p(d.getSeconds())}`;
+/** Zip hiyerarşisinde türev/artık dosyaların toplandığı klasör. */
+const DEPO_DIR = '_depo';
+
+/** İlişkiden gelen tek dosya satırı (JOIN sonucu). */
+interface BackupFileRow {
+  key: string;
+  thumb_key: string | null;
+  filename: string;
+  full_name: string;
+  username: string | null;
+  course_name: string;
+  week_no: number;
+}
+
+const TR_ASCII: Record<string, string> = {
+  ı: 'i',
+  İ: 'I',
+  ğ: 'g',
+  Ğ: 'G',
+  ü: 'u',
+  Ü: 'U',
+  ş: 's',
+  Ş: 'S',
+  ö: 'o',
+  Ö: 'O',
+  ç: 'c',
+  Ç: 'C',
+};
+
+/**
+ * Türkçe karakterleri ASCII karşılıklarına indirger; **harf durumunu korur**
+ * (`İstanbul` → `Istanbul`). `normalizeTurkish` küçük harfe çevirdiği için
+ * burada kullanılamaz. Yalnızca yedek klasör adları için; uygulama verisi
+ * değişmez.
+ */
+export function asciiFoldTr(input: string): string {
+  let out = '';
+  for (const ch of input.normalize('NFC')) out += TR_ASCII[ch] ?? ch;
+  return out;
+}
+
+const RESERVED_NAMES = new Set([
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+  ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`),
+]);
+
+/**
+ * Tek bir klasör segmentini dosya sistemi/zip uyumlu hale getirir:
+ * ASCII'ye indirger, geçersiz karakter + boşlukları `_` yapar, tekrarları
+ * sadeleştirir, baş/son `_`-`.` temizler, Windows ayrılmış adlarını ve aşırı
+ * uzunluğu güvenceye alır. Boş sonuç `_` olur (hiçbir segment boş kalmaz).
+ */
+export function sanitizeSegment(raw: string): string {
+  let s = asciiFoldTr(raw).replace(/[^A-Za-z0-9._-]+/g, '_');
+  s = s.replace(/_+/g, '_').replace(/^[_.]+|[_.]+$/g, '');
+  if (s.length === 0) s = '_';
+  if (s.length > 100) s = s.slice(0, 100).replace(/[_.]+$/g, '') || '_';
+
+  const dot = s.indexOf('.');
+  const stem = (dot === -1 ? s : s.slice(0, dot)).toUpperCase();
+  if (RESERVED_NAMES.has(stem)) s += '_';
+  return s;
+}
+
+/**
+ * Dosya adını, uzantıyı koruyarak temizler. Orijinal ad boşsa `dosya`ya,
+ * uzantı geçersizse uzantısız ada düşer.
+ */
+export function sanitizeFilename(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return 'dosya';
+  const idx = trimmed.lastIndexOf('.');
+  if (idx <= 0 || idx === trimmed.length - 1) return sanitizeSegment(trimmed);
+  const base = sanitizeSegment(trimmed.slice(0, idx)) || 'dosya';
+  const ext = asciiFoldTr(trimmed.slice(idx + 1))
+    .replace(/[^A-Za-z0-9]+/g, '')
+    .slice(0, 10);
+  return ext ? `${base}.${ext}` : base;
+}
+
+/**
+ * Klasör içinde ad çakışmasını çözer: dolu ise `govde_2`, `govde_3`… dener
+ * (uzantıdan önce). Karşılaştırma büyük/küçük harf duyarsızdır (Windows
+ * dosya sistemi davranışı). Sessiz üzerine yazma asla olmaz.
+ */
+function uniqueEntryName(used: Set<string>, name: string): string {
+  const stampName = name.toLowerCase();
+  if (!used.has(stampName)) {
+    used.add(stampName);
+    return name;
+  }
+  const idx = name.lastIndexOf('.');
+  const base = idx > 0 ? name.slice(0, idx) : name;
+  const ext = idx > 0 ? name.slice(idx) : '';
+  let n = 2;
+  let candidate = `${base}_${n}${ext}`;
+  while (used.has(candidate.toLowerCase())) {
+    n += 1;
+    candidate = `${base}_${n}${ext}`;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/** Görselin `filename`ı eksik/bozuksa anahtarın uzantısından türetilir. */
+function fallbackFilename(key: string): string {
+  const ext = key.includes('.') ? key.slice(key.lastIndexOf('.')) : '';
+  return `teslim_dosyasi${ext}`;
+}
+
+/** Key path traversal içeriyor mu (güvenlik — key DB'den gelse de doğrulanır). */
+function isSafeKey(key: string): boolean {
+  return (
+    key.length > 0 &&
+    key.length <= 200 &&
+    /^[0-9A-Za-z._-]+$/.test(key) &&
+    !key.includes('..') &&
+    !key.startsWith('.') &&
+    !key.endsWith('.')
+  );
+}
+
+/**
+ * `uploads/<key>` dosyasını hedefe kopyalar; kaynak yoksa sessizce atlar
+ * (bozuk/eksik dosya yedeği çökertmez). Kopyanan key'ler `accounted`e işlenir.
+ */
+function copyByKey(
+  uploadsDir: string,
+  key: string,
+  destPath: string,
+  accounted: Set<string>,
+): void {
+  if (!isSafeKey(key)) return;
+  const src = path.join(uploadsDir, key);
+  if (!fs.existsSync(src)) return;
+  fs.copyFileSync(src, destPath);
+  accounted.add(key);
+}
+
+/**
+ * VACUUM kopyasındaki ilişkiyi okur ve `uploads/` dosyalarını anlamlı
+ * hiyerarşiye (orijinaller) + `_depo/`ya (thumbnail + sahipsiz) dağıtır.
+ * Metadata sorgusu başarısız olursa (şema yok vb.) yedek yine üretilir:
+ * tüm dosyalar `_depo/`ya alınır — ham veri asla kaybolmaz.
+ */
+function buildStructuredTree(
+  dbCopyPath: string,
+  uploadsDir: string,
+  stagingDir: string,
+): void {
+  const treeRoot = stagingDir;
+  const depoRoot = path.join(treeRoot, DEPO_DIR);
+
+  const uploadsExists = fs.existsSync(uploadsDir);
+  const accounted = new Set<string>();
+  const usedByDir = new Map<string, Set<string>>();
+
+  let rows: BackupFileRow[];
+  try {
+    const copy = new DatabaseSync(dbCopyPath, { readOnly: true });
+    try {
+      rows = copy
+        .prepare(
+          `SELECT sf.key AS key, sf.thumb_key AS thumb_key, sf.filename AS filename,
+                  u.full_name AS full_name, u.username AS username,
+                  co.name AS course_name, w.week_no AS week_no
+             FROM submission_files sf
+             JOIN submissions  sub ON sub.id = sf.submission_id
+             JOIN homeworks    h   ON h.id  = sub.homework_id
+             JOIN class_courses cc ON cc.id = h.class_course_id
+             JOIN courses      co  ON co.id = cc.course_id
+             JOIN weeks        w   ON w.id  = h.week_id
+             JOIN students     st  ON st.id = sub.student_id
+             JOIN users        u   ON u.id  = st.user_id`,
+        )
+        .all() as unknown as BackupFileRow[];
+    } finally {
+      copy.close();
+    }
+  } catch {
+    rows = [];
+  }
+
+  if (uploadsExists) fs.mkdirSync(depoRoot, { recursive: true });
+
+  for (const row of rows) {
+    const username = row.username ?? 'kullanici';
+    const studentFolder = `${sanitizeSegment(row.full_name)}_${sanitizeSegment(username)}`;
+    const relDir = path.join(
+      studentFolder,
+      sanitizeSegment(row.course_name),
+      `Hafta_${row.week_no}`,
+    );
+    const absDir = path.join(treeRoot, relDir);
+    fs.mkdirSync(absDir, { recursive: true });
+
+    let used = usedByDir.get(relDir);
+    if (!used) {
+      used = new Set<string>();
+      usedByDir.set(relDir, used);
+    }
+
+    const name = uniqueEntryName(
+      used,
+      sanitizeFilename(row.filename || fallbackFilename(row.key)),
+    );
+    copyByKey(uploadsDir, row.key, path.join(absDir, name), accounted);
+
+    if (row.thumb_key && isSafeKey(row.thumb_key)) {
+      copyByKey(uploadsDir, row.thumb_key, path.join(depoRoot, row.thumb_key), accounted);
+    }
+  }
+
+  if (uploadsExists) {
+    for (const entry of fs.readdirSync(uploadsDir, { withFileTypes: true })) {
+      if (!entry.isFile() || accounted.has(entry.name)) continue;
+      // Sahipsiz/artık dosya: key adıyla `_depo/`ya (hiçbir dosya kaybolmaz).
+      if (isSafeKey(entry.name)) {
+        copyByKey(uploadsDir, entry.name, path.join(depoRoot, entry.name), accounted);
+      }
+    }
+  }
 }
 
 export interface BackupOptions {
@@ -38,9 +273,18 @@ function sqlLiteral(p: string): string {
   return `'${p.replace(/'/g, "''")}'`;
 }
 
+function stamp(): string {
+  const d = new Date();
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(
+    d.getMinutes(),
+  )}${p(d.getSeconds())}`;
+}
+
 /**
  * Tutarlı yedek üretir: `{outDir}/dershane-yedek-{zaman}.zip` döner.
- * DB kopyası zip içinde `veritabani/app.db`, uploads içeriği `uploads/` altında.
+ * Zip içeriği: `veritabani/app.db` + `Ad_Soyad_kullaniciadi/Ders_Adi/Hafta_N/...`
+ * (orijinaller) + `_depo/` (thumbnail + sahipsiz).
  */
 export function createBackup(options: BackupOptions = {}): string {
   const dbPath = options.dbPath ?? process.env.DB_PATH ?? path.join('db', 'app.db');
@@ -49,27 +293,36 @@ export function createBackup(options: BackupOptions = {}): string {
   const outDir = options.outDir ?? path.join('backups');
 
   fs.mkdirSync(outDir, { recursive: true });
-  const tmpDir = path.join(os.tmpdir(), `dershane-backup-${process.pid}`);
-  fs.mkdirSync(tmpDir, { recursive: true });
-
+  // `mkdtempSync` tekil klasör açar: aynı pid'li eski kalıntıyla karışmaz.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dershane-backup-'));
   const dbCopy = path.join(tmpDir, 'app.db');
+  const stagingDir = path.join(tmpDir, 'staging');
   const zipPath = path.join(outDir, `dershane-yedek-${stamp()}.zip`);
+  let zipWritten = false;
 
   try {
     // 1) Tutarlı SQLite kopyası — VACUUM INTO (ayrı bağlantı, WAL içeriğini kapsar).
     const db = new DatabaseSync(dbPath);
-    db.exec(`VACUUM INTO ${sqlLiteral(dbCopy)}`);
-    db.close();
+    try {
+      db.exec(`VACUUM INTO ${sqlLiteral(dbCopy)}`);
+    } finally {
+      db.close();
+    }
 
-    // 2) DB kopyası + uploads klasörü → tek .zip.
+    // 2) DB ilişkisiyle anlamlı hiyerarşiyi geçici klasöre kur (canlı uploads'a dokunmaz).
+    fs.mkdirSync(stagingDir, { recursive: true });
+    buildStructuredTree(dbCopy, uploadsDir, stagingDir);
+
+    // 3) DB kopyası + geçici ağacı tek .zip'te birleştir.
     const zip = new AdmZip();
     zip.addFile('veritabani/app.db', fs.readFileSync(dbCopy));
-    if (fs.existsSync(uploadsDir)) {
-      zip.addLocalFolder(uploadsDir, 'uploads');
-    }
+    zip.addLocalFolder(stagingDir);
     zip.writeZip(zipPath);
+    zipWritten = true;
   } finally {
+    // 4) Hata dahil her durumda geçici klasör silinir; yarım zip bırakılmaz.
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (!zipWritten) fs.rmSync(zipPath, { force: true });
   }
 
   return zipPath;

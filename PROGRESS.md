@@ -5,6 +5,86 @@
 
 ---
 
+## Yedekte düzenli dosya hiyerarşisi (`db:backup`) ✅
+
+### Süreç özeti
+
+`npm run db:backup` (ve onu spawn eden `POST /admin/backup`) artık `uploads/`
+klasörünü düz/key isimleriyle zip'lemiyor; dosyaları DB ilişkisiyle anlamlı bir
+hiyerarşiye kopyalıyor:
+
+```
+Ad_Soyad_kullaniciadi/Ders_Adi/Hafta_N/orijinal_dosya_adi
+Ornek_Kisi_8_ornekkisi81/Matematik/Hafta_19/odev_cozumu.jpg
+```
+
+Canlı `uploads/`, `storage.ts`, dosya key'leri ve R2 geçiş planı **değişmedi** —
+yedek yalnızca okur + geçici klasöre kopyalar, `finally` ile temizler. Şema
+değişikliği/migration/bağımlılık yok.
+
+**Kararlar (kullanıcı onaylı):**
+- Klasörleme `homeworks.class_course_id` (ödevin verildiği andaki atama)
+  üzerinden yapılır; güncel `enrollments`'a bakılmaz → tarihsel doğruluk.
+- Orijinaller hiyerarşide; üretilen thumbnail + DB karşılığı olmayan (sahipsiz)
+  dosyalar `_depo/<key>` altında (hiçbir dosya kaybolmaz).
+- Geçici klasör `fs.mkdtempSync` + `try/finally`; hata halinde yarım zip de
+  silinir.
+- İsim temizleme kendi kararım: harf durumu korunarak ASCII'ye indirgeme,
+  boşluk/geçersiz karakter → `_`; ad çakışırsa `_2` (sessiz üzerine yazma yok).
+
+### Yapılanlar
+
+- **`backend/src/services/backup.ts`:** `asciiFoldTr`, `sanitizeSegment`,
+  `sanitizeFilename`, çakışma çözümü; VACUUM kopyası üzerinden JOIN
+  (`submission_files → submissions → homeworks → class_courses →
+  courses/weeks → students/users`); `_depo` + sahipsiz taraması; `mkdtempSync`
+  + `finally` temizlik; key path-traversal guard. Metadata sorgusu çökerse ham
+  dosyalar `_depo`'ya alınır (yedek yine üretilir, veri kaybı yok).
+- **`backend/src/backup.test.ts`** (12 test): hiyerarşi, çakışma `_2`,
+  Türkçe/boşluk, tarihsel class_course, teslimsiz öğrenci, sahipsiz → `_depo`,
+  uploads hash değişmezliği, uploads yokken yalnız DB, başarı/hata geçici
+  temizlik.
+- **`spec.md` §8** yedek düzeni maddeleri.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅.
+**Testler** — backend **258/258** (22 dosya; backup 12), frontend **107/107** (18).
+
+**Canlı (gerçek `app.db` + `npm run db:backup`):**
+1. **Canlı uploads değişmezliği (hash kanıtı):** işlem öncesi 20 dosyanın
+   (10 orijinal + 10 thumb) SHA-256'sı alındı; backup sonrası tekrar alındı;
+   `Compare-Object` **fark yok = 20/20 hash birebir aynı**, dosya sayısı 20.
+2. **Yapı (zip 25 girdi):** `veritabani/app.db` + hiyerarşide 10 orijinal
+   (`Ornek_Kisi_8_ornekkisi81/Matematik/Hafta_19/bvsan.png … escom.png`) +
+   `_depo/` altında 10 thumbnail. Thumbnail hiyerarşiye girmedi.
+3. **Tarihsel atama kanıtı:** mevcut seed'de sınıf değişikliği **yok** (seed
+   rework'ünde kaldırılmış; öğrenci 3 tek aktif enrollment'a sahip). Kanıt için
+   kontrollü, geri alınan senaryo kuruldu: öğrenci 3 (`seed-student-003` /
+   `ornekkisi81`) için geçmiş B Şubesi üyeliği + **Geometri** `class_course`
+   (aktif sınıfında olmayan ders) + week 8 ödev/teslimi geçici eklendi. Backup,
+   dosyayı **`Ornek_Kisi_8_ornekkisi81/Geometri/Hafta_8/tarihsel_geometri.jpg`**
+   altına koydu — yani ödevin tarihsel `class_course`'u kullanıldı, güncel sınıf
+   değil. Temizlik sonrası tüm geçici satırlar + dosya silindi; DB sayıları
+   (users 29, students 12, submissions 1, submission_files 10, homeworks 38,
+   enrollments 12) ve uploads **20/20 hash** orijinaline döndü, `tmp-bkp`
+   kalıntısı **0**.
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/backup.ts
+backend/src/backup.test.ts
+spec.md
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğrenci ödev listesi: hafta + ders filtreleri ✅
 
 ### Süreç özeti

@@ -1014,6 +1014,23 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 - Silme işi Faz 6'da otomatikleştirilir; öncesinde manuel bir bakım komutu
   yeterlidir.
 
+**Yedek düzeni (`db:backup`)**
+- Yedek, canlı `uploads/` klasörüne **dokunmadan** dosyaları DB ilişkisiyle
+  anlamlı bir hiyerarşiye kopyalar:
+  `Ad_Soyad_kullaniciadi/Ders_Adi/Hafta_N/orijinal_dosya_adi` (ör.
+  `Ornek_Kisi_8_ornekkisi81/Matematik/Hafta_19/odev_cozumu.jpg`).
+- Klasörleme `homeworks.class_course_id` (ödevin verildiği andaki atama)
+  üzerinden yapılır; öğrenci sonradan sınıf değiştirse bile **tarihsel ders/sınıf**
+  korunur, güncel `enrollments`'a bakılmaz.
+- Klasör/dosya adları ASCII'ye indirgenir (harf durumu korunur), boşluk ve
+  geçersiz karakterler `_` olur; aynı klasörde ad çakışırsa `_2`, `_3`… eklenir
+  (sessiz üzerine yazma yok).
+- Hiyerarşi **yalnızca gerçek yüklemeleri** içerir; teslim edilmeyen ödev için
+  klasör oluşmaz. Üretilen thumbnail'lar ve DB karşılığı olmayan (sahipsiz)
+  dosyalar `_depo/<key>` altında zip'lenir — hiçbir dosya kaybolmaz. Zip ayrıca
+  `veritabani/app.db` tutarlı kopyasını taşır.
+- Geçici düzenleme klasörü her durumda (hata dahil) silinir; yarım zip bırakılmaz.
+
 ---
 
 ## 9. KVKK ve gizlilik
