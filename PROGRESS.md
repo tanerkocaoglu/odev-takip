@@ -5,6 +5,45 @@
 
 ---
 
+## DB NOT NULL borcu — migration runner'a `foreignKeysOff` desteği ✅ (Grup A)
+
+### Süreç özeti
+
+Denetim raporunun **Yüksek** öncelikli teknik borcu (`users.password_hash`,
+`guardians.whatsapp_phone` şemada nullable) için ön hazırlık. SQLite var olan
+kolonu `SET NOT NULL` ile değiştirmediğinden, SQLite'ın belgelediği **12 adımlı
+tablo yeniden kurulumu** gerekiyor; bu da `foreign_keys`'in geçici kapatılmasını
+gerektirir. Scratch DB'de doğrulandı:
+- `PRAGMA foreign_keys = OFF` **transaction içinde etkisiz**;
+- FK açıkken referanslı tabloyu `DROP` → `FOREIGN KEY constraint failed`;
+- `PRAGMA defer_foreign_keys = ON` **çözüm değil** (aynı hata);
+- pragma **BEGIN'den önce** kapatılırsa 12 adım çalışıyor, `foreign_key_check`
+  boş dönüyor, FK'lar ve veri korunuyor.
+
+Bu commit yalnızca **runner altyapısını** ekler (henüz yeni migration yok):
+`registerMigration(v, name, up, { foreignKeysOff })`; runner pragma'yı
+BEGIN'den önce kapatır, COMMIT'ten önce `PRAGMA foreign_key_check` ile
+bütünlüğü doğrular, ihlalde `ROLLBACK`, işlem sonunda pragma'yı geri açar.
+Mevcut migration #1–#8 davranışı değişmez.
+
+### Doğrulamalar
+
+- `npm run typecheck` ✅
+- backend **258/258** (22 dosya) ✅ — mevcut migration testleri dahil.
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — migration runner `foreignKeysOff` + `foreign_key_check` desteği.
+
+---
+
 ## Bağımlılık güvenlik açıkları — Grup 3: react-router v7 + returnTo ✅
 
 ### Süreç özeti

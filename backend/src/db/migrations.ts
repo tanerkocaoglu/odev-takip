@@ -8,14 +8,30 @@ import { normalizeTurkish } from '../utils/text.js';
  *
  * Dondurma kuralı: Aşama 1 bitmeden #1 düzenlenebilir; sonrası yeni numara.
  */
-const migrations: Array<{ version: number; name: string; up: () => void }> = [];
+interface Migration {
+  version: number;
+  name: string;
+  up: () => void;
+  /**
+   * SQLite 12 adımlı tablo yeniden kurulumu gibi, `foreign_keys`'in geçici
+   * olarak kapatılmasını gerektiren migration'lar için. `true` ise runner
+   * pragma'yı **BEGIN'den önce** kapatır, COMMIT'ten önce
+   * `PRAGMA foreign_key_check` ile bütünlüğü doğrular ve işlem sonunda geri
+   * açar. (Pragma transaction içinde etkisizdir — bu yüzden runner'da ele
+   * alınır.)
+   */
+  foreignKeysOff?: boolean;
+}
+
+const migrations: Migration[] = [];
 
 export function registerMigration(
   version: number,
   name: string,
   up: () => void,
+  options: { foreignKeysOff?: boolean } = {},
 ): void {
-  migrations.push({ version, name, up });
+  migrations.push({ version, name, up, foreignKeysOff: options.foreignKeysOff });
 }
 
 /**
@@ -462,9 +478,27 @@ export function runMigrations(): void {
       );
     }
 
+    // `foreign_keys` pragma'sı yalnızca **pending transaction yokken** değişir;
+    // bu yüzden tablo yeniden kurulumu isteyen migration'larda BEGIN'den ÖNCE
+    // kapatılır, COMMIT/ROLLBACK sonrası geri açılır.
+    const fkState = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number };
+    const restoreForeignKeys =
+      migration.foreignKeysOff === true && fkState.foreign_keys === 1;
+    if (restoreForeignKeys) {
+      db.exec('PRAGMA foreign_keys = OFF');
+    }
+
     db.exec('BEGIN');
     try {
       migration.up();
+      // FK kapalıyken yapılan yeniden kurulumun bütünlüğünü COMMIT'ten önce
+      // doğrula; ihlal varsa rollback edilir (hepsi ya da hiçbiri).
+      if (migration.foreignKeysOff === true) {
+        const violations = db.prepare('PRAGMA foreign_key_check').all();
+        if (violations.length > 0) {
+          throw new Error(`foreign_key_check ihlali: ${JSON.stringify(violations)}`);
+        }
+      }
       db.exec(`PRAGMA user_version = ${migration.version}`);
       db.exec('COMMIT');
       nextVersion = migration.version;
@@ -476,6 +510,10 @@ export function runMigrations(): void {
         }`,
         { cause: err },
       );
+    } finally {
+      if (restoreForeignKeys) {
+        db.exec('PRAGMA foreign_keys = ON');
+      }
     }
   }
 }
