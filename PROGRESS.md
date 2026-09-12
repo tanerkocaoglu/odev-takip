@@ -61,9 +61,9 @@ tetiklemesi, fotoğrafın aynı grid'e girmesi; 10 MB ve 30 dosya sınırı).
 
 **Düzeltme:** `reset.ts` guard'ı açık opt-in'e bağlandı —
 `NODE_ENV=production` olsa bile `ALLOW_DB_RESET=1|true` verilirse çalışır;
-aksi hâlde (varsayılan) hâlâ reddeder. `render.yaml`'a `ALLOW_DB_RESET=1`
-eklendi (disk kalıcı değil → her deploy taze demo). Güvenlik korunur: opt-in
-verilmedikçe üretimde silme yok.
+aksi hâlde (varsayılan) hâlâ reddeder. `render.yaml` `startCommand`'ına bayrak
+gömüldü: `ALLOW_DB_RESET=1 npm run db:reset ...` (Blueprint env senkronuna
+bağımlı olmasın diye). Güvenlik korunur: opt-in verilmedikçe üretimde silme yok.
 
 ### Etkilenen dosyalar
 
@@ -71,7 +71,7 @@ verilmedikçe üretimde silme yok.
 src/pages/student/HomeworkListPage.tsx
 src/student.test.tsx
 backend/scripts/reset.ts        (ALLOW_DB_RESET opt-in)
-render.yaml                     (ALLOW_DB_RESET=1)
+render.yaml                     (startCommand: ALLOW_DB_RESET=1)
 PROGRESS.md
 ```
 

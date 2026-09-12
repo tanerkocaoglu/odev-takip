@@ -12,7 +12,9 @@ services:
     runtime: node
     plan: free
     buildCommand: npm install && npm install --prefix backend && npm run build && npm run build --prefix backend
-    startCommand: npm run db:reset --prefix backend && npm start --prefix backend
+    # Render NODE_ENV=production verir; db:reset guard'ını açıkça opt-in et.
+    # Bayrağı startCommand'a gömmek, Blueprint env senkronuna bağımlı olmaz.
+    startCommand: ALLOW_DB_RESET=1 npm run db:reset --prefix backend && npm start --prefix backend
     envVars:
       - key: JWT_SECRET
         generateValue: true
@@ -22,7 +24,3 @@ services:
         value: admin123
       - key: STORAGE_DRIVER
         value: local
-      # Render NODE_ENV=production verir; db:reset'in demo için çalışmasına izin ver.
-      # (Disk kalıcı değil → her deploy taze demo verisi.)
-      - key: ALLOW_DB_RESET
-        value: "1"
