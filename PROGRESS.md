@@ -5,6 +5,42 @@
 
 ---
 
+## Bağımlılık güvenlik açıkları — Grup 2: kök lock güncellemesi ✅
+
+### Süreç özeti
+
+Denetim raporundaki açıkların **Grup 2**'si: kök `package.json`'a
+**dokunulmadı** (backend bağımlılıklarının kökten ayrılması §5/Grup 4'e
+bırakıldı); yalnızca aralık içinde kalan `package-lock.json` güncellendi.
+
+- `sharp` 0.35.3 → **0.35.4** (libheif, GHSA-rgj7-g3m4-5g8c)
+- `multer` 2.2.0 → **2.3.0** (DoS advisory'leri)
+- `qs` 6.15.3 → **6.16.0** (transitif: express `^6.14.0`, body-parser
+  `^6.15.2`, superagent `^6.14.1` — hepsi kapsıyor; express sürümü sabit kaldı)
+
+### Doğrulamalar
+
+- **Statik:** `npm run typecheck` ✅, `npm run lint` ✅
+- **Testler:** frontend **107/107** (18 dosya) ✅
+- **Build:** `npm run build` ✅
+- **Audit:** kök `npm audit` → **5 vulnerabilities (4 moderate, 1 high)**, beklenen
+  kalanlar: `nanoid` (dev) + `vitest`/`@vitest/mocker` (dev, ertelenen) +
+  `react-router`/`react-router-dom` (**Grup 3'te kapatılacak**). `qs`, `multer`,
+  `sharp` artık raporda **yok**.
+
+### Etkilenen dosyalar
+
+```
+package-lock.json
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — kök lock bağımlılık güvenlik güncellemeleri (Grup 2: sharp/multer/qs).
+
+---
+
 ## Bağımlılık güvenlik açıkları — Grup 1: backend patch/minor ✅
 
 ### Süreç özeti
