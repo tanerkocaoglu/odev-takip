@@ -6,18 +6,22 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { studentApi, openProtectedFile } from './services/api';
+import { studentApi, openProtectedFile, fetchProtectedFileUrl, fetchProtectedThumbUrl, releaseProtectedFileUrl } from './services/api';
 import HomeworkListPage from './pages/student/HomeworkListPage';
 
 const BASE_URL = '/api/v1';
 
 // Dosya açma davranışı openProtectedFile'ın kendi birim testlerinde kapsanır;
-// sayfa testinde yalnızca butonun doğru anahtarla çağırdığını doğruluyoruz.
+// sayfa testinde görsellerin lightbox'ı, PDF'lerin yeni sekmeyi kullandığını
+// doğruluyoruz.
 vi.mock('./services/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./services/api')>();
   return {
     ...actual,
     openProtectedFile: vi.fn().mockResolvedValue(undefined),
+    fetchProtectedFileUrl: vi.fn(),
+    fetchProtectedThumbUrl: vi.fn(),
+    releaseProtectedFileUrl: vi.fn(),
   };
 });
 
@@ -31,6 +35,9 @@ function mockFetch(status: number, body: unknown) {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(fetchProtectedFileUrl).mockImplementation(async (key) => `blob:${key}`);
+  vi.mocked(fetchProtectedThumbUrl).mockImplementation(async (key) => `blob:thumb-${key}`);
+  vi.mocked(releaseProtectedFileUrl).mockClear();
 });
 
 afterEach(() => {
@@ -124,9 +131,8 @@ describe('HomeworkListPage', () => {
     expect(screen.queryByText(/inceleme|değerlendir|sırada/i)).not.toBeInTheDocument();
   });
 
-  it('dosya butonuna basınca openProtectedFile doğru anahtarla çağrılır', async () => {
+  it('görsele tıklayınca lightbox açılır, openProtectedFile çağrılmaz', async () => {
     const openMock = vi.mocked(openProtectedFile);
-    // afterEach'teki restoreAllMocks mock uygulamasını sıfırlar — burada yeniden kur.
     openMock.mockReset();
     openMock.mockResolvedValue(undefined);
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
@@ -140,7 +146,47 @@ describe('HomeworkListPage', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: /rapor\.jpg/ }));
-    expect(openMock).toHaveBeenCalledWith('1234567890-0123456789abcdef.jpg');
+    expect(await screen.findByAltText('rapor.jpg')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it('PDF butonuna basınca openProtectedFile çağrılır (lightbox değil)', async () => {
+    const openMock = vi.mocked(openProtectedFile);
+    openMock.mockReset();
+    openMock.mockResolvedValue(undefined);
+    const data = {
+      items: [
+        {
+          ...HOMEWORKS.items[0],
+          submission: {
+            id: 'sub-pdf',
+            submitted_at: '2026-01-09T18:00:00.000Z',
+            is_late: false,
+            status: 'submitted',
+            files: [
+              {
+                key: '1234567890-ffffffffffffffff.pdf',
+                filename: 'cozum.pdf',
+                size: 2048,
+                mime: 'application/pdf',
+                ext: 'pdf',
+              },
+            ],
+          },
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', mockFetch(200, data));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /cozum\.pdf/ }));
+    expect(openMock).toHaveBeenCalledWith('1234567890-ffffffffffffffff.pdf');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('boş listede boş durum gösterilir', async () => {
@@ -274,5 +320,53 @@ describe('HomeworkListPage', () => {
     expect(fetchMock.mock.calls[1][1].method).toBe('POST');
     const body = fetchMock.mock.calls[1][1].body as FormData;
     expect(body.getAll('files')).toHaveLength(1);
+  });
+
+  it('30 dosyadan fazlası seçilince "30" hatası gösterilir', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    const fileInput = screen.getAllByLabelText('Ödev dosyalarını seç')[0] as HTMLInputElement;
+    const files = Array.from(
+      { length: 31 },
+      (_, i) => new File(['x'], `sayfa-${i + 1}.png`, { type: 'image/png' }),
+    );
+    fireEvent.change(fileInput, { target: { files } });
+
+    expect(screen.getByText('En fazla 30 dosya seçebilirsiniz.')).toBeInTheDocument();
+  });
+
+  it('seçilen dosya gönder öncesi tek tek kaldırılabilir', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
+    render(
+      <MemoryRouter>
+        <HomeworkListPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    const fileInput = screen.getAllByLabelText('Ödev dosyalarını seç')[0] as HTMLInputElement;
+    const files = [
+      new File(['a'], 'sayfa-a.png', { type: 'image/png' }),
+      new File(['b'], 'sayfa-b.png', { type: 'image/png' }),
+    ];
+    fireEvent.change(fileInput, { target: { files } });
+
+    expect(await screen.findAllByRole('button', { name: /dosyasını kaldır/ })).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: /sayfa-a\.png dosyasını kaldır/ }));
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /sayfa-a\.png dosyasını kaldır/ })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /sayfa-b\.png dosyasını kaldır/ })).toBeInTheDocument();
   });
 });

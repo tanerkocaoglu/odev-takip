@@ -232,6 +232,30 @@ describe('ReportEntryPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('teslim rozeti tıklanabilir değildir (yalnızca metin)', async () => {
+    const withSubmission = {
+      ...REPORT,
+      entries: REPORT.entries.map((e, i) => ({
+        ...e,
+        submission:
+          i === 0
+            ? { is_late: 1, status: 'submitted', files: [{ key: 'k.jpg', filename: 'a.jpg' }] }
+            : null,
+      })),
+    };
+    vi.stubGlobal('fetch', mockFetch(200, withSubmission));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getAllByText('Geç yüklendi').length).toBeGreaterThan(0);
+    // Rozet artık tıklanabilir değil — buton rolüyle bulunmamalı.
+    expect(screen.queryByRole('button', { name: /Geç yüklendi/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /ödevi aç/ })).not.toBeInTheDocument();
+  });
+
   it('devamsızlık seçilince puan alanları devre dışı kalır', async () => {
     vi.stubGlobal('fetch', mockFetch(200, REPORT));
     renderEntryPage();

@@ -31,6 +31,7 @@ export interface StoredFile {
   size: number;     // saklanan bayt (görsel küçültme sonrası gerçek boyut)
   mime: string;     // saklanan mime (görsel her zaman image/jpeg)
   ext: string;      // saklanan uzantı (jpg | pdf)
+  thumbKey: string | null; // görsel thumbnail anahtarı; PDF'te null
 }
 
 // Test ortamı `UPLOADS_DIR` ile ayrı dizin kullanabilir (vitest.config.ts);
@@ -40,6 +41,9 @@ const uploadsDir =
 
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/heic', 'image/heif']);
 const HEIC_MIMES = new Set(['image/heic', 'image/heif']);
+
+/** Thumbnail grid için kare küçük görsel kenarı (px). */
+export const THUMB_SIZE = 300;
 
 /** Mime eksikse/bozuksa orijinal dosya adının uzantısına bakar. */
 function resolveMime(file: UploadedFile): string {
@@ -88,14 +92,22 @@ export async function saveUpload(file: UploadedFile): Promise<StoredFile> {
       .toBuffer();
 
     const key = generateKey('jpg');
+    // Grid için kare thumbnail (2000px orijinali indirmemek adına).
+    const thumbKey = generateKey('jpg');
+    const thumb = await sharp(processed)
+      .resize({ width: THUMB_SIZE, height: THUMB_SIZE, fit: 'cover' })
+      .jpeg({ quality: 70 })
+      .toBuffer();
     await fs.mkdir(uploadsDir, { recursive: true });
     await fs.writeFile(path.join(uploadsDir, key), processed);
+    await fs.writeFile(path.join(uploadsDir, thumbKey), thumb);
     return {
       key,
       filename: file.originalname,
       size: processed.length,
       mime: 'image/jpeg',
       ext: 'jpg',
+      thumbKey,
     };
   }
 
@@ -109,6 +121,7 @@ export async function saveUpload(file: UploadedFile): Promise<StoredFile> {
     size: file.buffer.length,
     mime: 'application/pdf',
     ext: 'pdf',
+    thumbKey: null,
   };
 }
 

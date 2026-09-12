@@ -418,7 +418,7 @@ npm run typecheck     # tsc --noEmit
 npm test              # vitest + supertest — backend testleri
 npm run db:migrate    # bekleyen migration'ları çalıştır
 npm run db:seed       # örnek veri + ilk admin (idempotent)
-npm run db:reset      # db sil + migrate + seed
+npm run db:reset      # db sil + migrate + seed (+ uploads temizliği; NODE_ENV=production'da reddeder)
 npm run db:backup     # yedek: VACUUM INTO kopyası + uploads → tek .zip (backend/backups/)
 cd ..
 ```
@@ -570,7 +570,7 @@ raporu klavyeden çıkmadan doldurulabiliyor ve `completed` oluyor.
   yerel: `res.sendFile()`, R2: imzalı URL 302. `express.static` **kullanılmaz.**
 - Öğrenci "Ödevlerim" ekranı: ders, öğretmen, hafta, açıklama, son tarih,
   teslim durumu. **Puan ve öğretmen notu gösterilmez.**
-- Yükleme: `jpg/jpeg/png/heic/pdf`, dosya başına 10 MB, teslim başına 10 dosya
+- Yükleme: `jpg/jpeg/png/heic/pdf`, dosya başına 10 MB, teslim başına 30 dosya
 - `is_late` işaretlemesi
 - Öğretmen teslim kontrol ekranı: bir ödevin tüm teslimlerini sırayla gezme,
   `reviewed` işaretleme

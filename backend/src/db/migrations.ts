@@ -429,6 +429,18 @@ registerMigration(7, 'must_change_password', () => {
   );
 });
 
+/**
+ * Migration #8 — `submission_files.thumb_key`.
+ *
+ * Thumbnail grid için: görsel teslimde ~300px ayrı bir dosya saklanır; grid
+ * bunu yükler (2000px orijinali değil). PDF'lerde thumb yoktur (`NULL`).
+ * Kolon yalnızca şema değişikliğidir; yeni yüklemeler doldurur, eski
+ * satırlarda `NULL` kalır ve dosya rotası bu durumda orijinali servis eder.
+ */
+registerMigration(8, 'submission_file_thumb', () => {
+  db.exec(`ALTER TABLE submission_files ADD COLUMN thumb_key TEXT`);
+});
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

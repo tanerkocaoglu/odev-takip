@@ -437,16 +437,17 @@ CREATE INDEX idx_submissions_student ON submissions(student_id);
 > Yüklenen dosyaların meta bilgisi (`key`, `filename`, `size`, `mime`) `submissions`
 > üzerinde JSON olarak tutulmaz; **`submission_files` tek doğru kaynaktır** (migration #4).
 
-**`submission_files`** — teslim dosyaları (migration #4; Aşama 4)
+**`submission_files`** — teslim dosyaları (migration #4; Aşama 4 — `thumb_key` migration #8)
 ```sql
 CREATE TABLE submission_files (
   id            TEXT PRIMARY KEY,
   submission_id TEXT NOT NULL REFERENCES submissions(id),
   key           TEXT NOT NULL,   -- storage anahtarı; GET /api/v1/files/:key
-  filename      TEXT NOT NULL,   -- orijinal kullanıcı dosya adı
+  filename      TEXT NOT NULL,   -- orijinal kullanıcı dosya adı (UTF-8)
   size          INTEGER NOT NULL, -- bayt; küçültme sonrası gerçek boyut
   mime          TEXT NOT NULL,
   ext           TEXT NOT NULL,   -- key uzantısı (jpg, pdf, ...)
+  thumb_key     TEXT,            -- görsel thumbnail anahtarı; PDF'te NULL (#8)
   UNIQUE (key)
 ) STRICT;
 
@@ -456,6 +457,11 @@ CREATE INDEX idx_submission_files_sub ON submission_files(submission_id);
 > `submissions` → `homeworks` zinciriyle sahiplik doğrular (spec.md §8).
 > `files_purged_at` doluysa ilgili `submission_files` kayıtları kaldırılmıştır
 > (saklama politikası §8).
+>
+> `filename` istemciden UTF-8 olarak alınır (multer `defParamCharset: 'utf8'`);
+> yalnızca görüntüleme amaçlı metadır, dosya erişimi `key` üzerindendir.
+> `thumb_key` görsellerde ~300px JPEG thumbnail'a işaret eder (grid için);
+> `NULL` ise dosya rotası orijinali servis eder.
 
 ### 3.3 Bildirim ve denetim
 
@@ -582,7 +588,7 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
    (yüklendi / yüklenmedi / geç yüklendi). **Puan, öğretmen notu, ders içi performans
    ve rapor içeriği bu ekranda yoktur.**
 2. Yükleme: çoklu dosya, izin verilen tipler `jpg/jpeg/png/heic/pdf`,
-   dosya başına max 10 MB, teslim başına max 10 dosya.
+   dosya başına max 10 MB, teslim başına max 30 dosya.
 3. **Görsel küçültme zorunludur** — yüklenen görseller uzun kenarı max 2000px
    olacak şekilde yeniden boyutlandırılır ve JPEG q80 olarak saklanır.
    Ham telefon fotoğrafı olduğu gibi saklanmaz (§8 hacim hesabı).
@@ -973,6 +979,14 @@ Bu ölçekte (~32.000 satır/yıl, ~100 MB) SQLite fazlasıyla yeterlidir.
 ≈ **1,2 GB/hafta, ~50 GB/yıl.** Küçültme yapılmazsa bu rakam 8 katına çıkar.
 Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 
+> **Üst sınır notu (teslim başına 30 dosya):** Yukarıdaki ortalama ~3 dosya
+> varsayımına dayanır; teslim başına üst sınırın 10'dan 30'a çıkması **ortalama
+> kullanımı değiştirmesi beklenmez** (tipik ödev hâlâ birkaç sayfa). Değişen şey
+> olası **maksimum senaryodur:** teorik en kötü durum ~800 teslim × 30 dosya ×
+> ~500 KB ≈ **~12 GB/hafta** olur. Ortalamaya dayalı ~50 GB/yıl tahmini geçerli
+> kalır; üst sınırı fiilen zorlayan kullanım görülürse R2/saklama planı yeniden
+> değerlendirilir. Yeniden boyutlandırma bu senaryoda da zorunludur.
+
 **Sonuçlar**
 - Geliştirmede yerel disk yeterli. **Üretimde Cloudflare R2 kullanılır**;
   50 GB VPS diskinde biriktirilmez.
@@ -980,10 +994,16 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   (multer memory → heic-convert (gerekiyorsa) → sharp → diske yaz). R2'ye
   geçiş Aşama 6'da bu modülün içi değiştirilerek yapılır.
   Modül: dosya yolu/key üretimi ve meta bilgisi (key, filename, size, mime).
+  Görsellerde ayrıca **~300px kare JPEG thumbnail** üretilir (`thumbKey`);
+  grid bu küçük nesneyi yükler, tam görsel yalnızca lightbox'ta açılır.
+  Thumbnail deposu orijinalin yanında ikinci bir nesnedir; hacmi ihmal
+  edilebilir (küçültülmüş görselin ~%5'i). PDF'lerde thumbnail yoktur.
 - **Dosya erişimi** (Aşama 4'ten itibaren): `express.static` kullanılmaz.
   `GET /api/v1/files/:key` rotası `auth` middleware'i + yetki kontrolü içerir
   (öğrenci: kendi teslimi; öğretmen: kendi ödevinin teslimi; veli: çocuğununki;
   admin: hepsi). Yerel modda `res.sendFile()`, R2 modunda imzalı URL'ye 302.
+  `GET /api/v1/files/:key/thumb` aynı yetkiyle thumbnail'ı servis eder;
+  `thumb_key` boşsa orijinale düşer.
 - Bucket public değildir.
 
 **Saklama politikası**

@@ -5,7 +5,295 @@
 
 ---
 
+## Dosya adı UTF-8 düzeltmesi + gönder öncesi dosya kaldırma + thumbnail grid ✅
+
+### Süreç özeti
+
+Üç ilişkili iş birlikte yapıldı:
+1. **Mojibake (gerçek hata):** Türkçe karakterli dosya adları bozuk kaydediliyordu.
+   Kök neden **multer'ın `defParamCharset` varsayılanı `'latin1'`** olması
+   (`node_modules/multer/index.js:22`); tarayıcı `filename=` alanına UTF-8
+   yazıyor, busboy latin1 çözüyordu. DB'de 24 bozuk satır mevcuttu.
+2. **Gönder öncesi dosya kaldırma:** öğrenci seçtiği dosyayı "Gönder"den önce
+   tek tek çıkarabiliyor (yalnızca öğrenci; öğretmen tarafında silme yok).
+3. **Thumbnail grid:** iki ekranda düz metin listesi yerine kare thumbnail
+   grid + mevcut lightbox; PDF'ler ikon + ad ile yeni sekmede.
+
+**Kullanıcı kararları:** Thumbnail için **ayrı ~300px versiyon üretilip
+saklanır** (2000px grid'e konmaz); bekleyen dosyalar **tarayıcıda
+`URL.createObjectURL`** ile önizlenir; bekleyen görseller de lightbox açar;
+eski bozuk kayıtlar için onarım script'i / thumbnail backfill **yazılmadı** —
+yerine **`db:reset`** ile seed sıfırdan kuruldu ve **`db:reset` artık
+`backend/uploads` fiziksel dosyalarını da temizliyor** (NODE_ENV=production'da
+reddeder).
+
+### Yapılanlar
+
+**1. Dosya adı kodlaması**
+- `backend/src/middleware/upload.ts`: `upload` + `csvMulter` seçeneklerine
+  `defParamCharset: 'utf8'`.
+- Onarım/backfill script'i eklenmedi (karar gereği). `db:reset` eski kayıtları
+  ve dosyaları sildi.
+
+**2. Seçilen dosyayı kaldırma**
+- `HomeworkListPage`: `onRemoveFile(index)` → `pending.files.filter`. Grid'de
+  her yerel görselin/PDF'in hücresinde "kaldır" butonu; kaldırılan dosyanın
+  object URL'si grid tarafından revoke edilir.
+
+**3. Thumbnail grid**
+- **Migration #8** (`submission_file_thumb`): `submission_files.thumb_key TEXT`.
+- `storage.ts`: görselde 2000px JPEG'den sonra `sharp(...).resize(300,300,
+  {fit:'cover'}).jpeg({quality:70})` ile ikinci nesne; `StoredFile.thumbKey`.
+  PDF'te `null`. `student.ts` insert'e `thumb_key`; teslim güncellemesinde eski
+  thumb dosyaları da diskten temizlenir.
+- `routes/files.ts`: `GET /api/v1/files/:key/thumb` — ana dosyayla **aynı auth
+  matrisi**; `thumb_key` yoksa orijinale düşer. Ortak `loadFileRow`/`assertAccess`.
+- `services/api.ts`: `fetchProtectedThumbUrl(key)`.
+- **`components/SubmissionFileGrid.tsx` (yeni):** sunucu görselleri için
+  thumbnail blob URL (lazy, listeye göre revoke), bekleyen dosyalar için object
+  URL; PDF hücresi (ikon+ad, `onOpenPdf`/yerel blob); thumbnail tıklamasında
+  grid kendi `ImageLightbox`'ını açar; `onRemove` yalnızca local varyantta.
+- `ImageLightbox`: `LightboxImage.src?` desteği — yerel (bekleyen) görselin
+  URL'si çağırana ait, lightbox fetch/revoke etmez.
+- `SubmissionsReviewPage` + `HomeworkListPage` grid'e geçti.
+
+**4. Ortam / script**
+- `backend/scripts/reset.ts`: `NODE_ENV=production` ise çıkış 1; DB ile birlikte
+  `uploads` klasörü de silinir (yetim dosya kalmaz).
+- Docs: `spec.md` §3.2 (`thumb_key` + UTF-8 filename notu) §8 (thumbnail +
+  `/thumb` rotası); `CLAUDE.md` komut notu.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+**Testler** — frontend **98/98** (17 dosya; +`fetchProtectedThumbUrl`, +kaldırma
+testi), backend **248/248** (22 dosya; +Türkçe ad, +thumb üretimi/rotası; #8
+rewind testi güncellendi).
+
+**Canlı (`db:reset` sonrası taze seed; gerçek app.db + Vite + headless Chrome):**
+1. **db:reset temizliği:** öncesi 57 dosya → `Yüklenen dosyalar silindi
+   (uploads)`; `uploads` klasörü yok, `submissions=0`, `submission_files=0`,
+   mojibake satır 0. `NODE_ENV=production npm run db:reset` → **exit 1**, DB ve
+   dosyalar **dokunulmadı** (57 dosya duruyor). `user_version=8`, `thumb_key`
+   kolonu var.
+2. **Türkçe ad (uçtan uca):** tarayıcıdan gerçek dosyalarla:
+   `Ekran görüntüsü 1.png`, `Ekran görüntüsü 2.png`, `çözüm ödev.pdf`.
+   Önizleme grid'inde adlar **birebir doğru**; DB'de `filename="Ekran görüntüsü
+   2.png"`, `thumb_key` dolu, PDF `thumb_key=NULL`; `filename LIKE '%Ã%'` = 0.
+3. **Kaldırma:** iki görselden `Ekran görüntüsü 1.png` kaldırıldı → grid'de
+   yalnızca diğer görsel + PDF kaldı; gönderim sonrası DB'de 2 dosya.
+4. **Thumbnail grid + lightbox (her iki ekran):** öğrenci gönderimi sonrası
+   sunucu thumbnail'i `naturalWidth=300`; öğretmen `SubmissionsReviewPage`'de
+   aynı (300px) thumbnail; tıklayınca lightbox `alt="Ekran görüntüsü 2.png"`,
+   sayaç `1 / 1`; **Esc** kapatıyor.
+5. **PDF:** her iki ekranda PDF ikon+ad; tıklayınca `window.open` 1 kez, modal
+   açılmıyor.
+6. Temizlik: canlı testin teslimi + 3 dosya (orijinal+thumb+pdf) silindi;
+   `submissions=0`, `uploads=0` — taze seed korundu.
+
+### Çözülen sorunlar
+
+- **`db:reset` EPERM:** art arda açık kalan `tsx watch`/`vite` süreçleri
+  `app.db`'yi kilitliyordu; süreçler durdurulup reset yeniden çalıştırıldı
+  (script değişikliği değil, ortam).
+- **Thumbnail boyut testi:** 1×1 PNG'den `fit:cover` 300px üretimi (811B)
+  orijinalden (270B) büyük çıkıyordu; test gerçekçi 1200×900 kaynakla yeniden
+  yazıldı (thumb < orijinal ve 300×300 doğrulanır).
+- **jsdom object URL:** `URL.createObjectURL` jsdom'da yok; `src/test/setup.ts`'e
+  deterministik sahte eklendi.
+
+### Sonradan düzeltme (onay sonrası) — lightbox hover döngüsü
+
+**Belirti (kullanıcı, canlı):** Modal önce küçük açılıyor; fare hareket
+ettirildikçe büyüyüp küçülüyor, fare durunca bile arka arkaya sürekli
+osilasyon.
+
+**Kök neden:** `ImageLightbox` `position: fixed` overlay'i, öğrenci ekranındaki
+bekleyen dosyalar grid'i üzerinden **`.card-interactive` kapsayıcısının DOM
+torunu** olarak render ediliyordu. `.card-interactive:hover { transform:
+translateY(-1px); transition: all 150ms }` bir `transform` uygulayınca
+`position: fixed`'in **containing block'u viewport yerine kart** olur. Fare
+overlay üzerindeyken kart `:hover` alır → overlay karta göre konumlanır/küçülür
+→ imleç overlay dışında kalır → `:hover` bırakılır → overlay viewport'a döner →
+döngü. (Bu yüzden modal karta sığdırılmış görünüyordu.)
+
+**Düzeltme:** `ImageLightbox` çıktısı `createPortal(..., document.body)` ile
+`body` altına taşındı. Böylece overlay hiçbir transform/overflow kapsayıcısının
+içinde kalmaz; fixed konum viewport'a sabitlenir. Mevcut lazy yükleme, klavye,
+focus trap ve blob URL yaşam döngüsü **değişmedi**.
+
+**Doğrulama:** `src/lightbox.test.tsx` +1 test — `card-interactive` içinde
+render edilse bile `[role=dialog]` doğrudan `document.body` çocuğudur (ata
+kapsayıcı içermez). Canlı (gerçek tarayıcı, 1280×800, bekleyen 3 görsel):
+fare overlay üzerinde 6 farklı noktaya ve hareketsiz 6 örneğe taşındı —
+`dialog` her örnekte **1280×800 (tam viewport)**, görsel sabit **640×640**,
+`.card-interactive` transform'u hiç tetiklenmedi (`anyCardTransform:false`),
+`stable:true`.
+
+### Sonradan düzeltme (onay sonrası) — rapor girişindeki teslim rozeti
+
+**İstek (kullanıcı):** Öğretmen rapor giriş ekranında öğrenci adının yanındaki
+"Geç yüklendi / Yüklendi" rozeti tıklanınca ödevin ilk dosyasını açıyordu; bu
+tıklama özelliği istenmiyor, yalnızca durum metni kalmalı.
+
+**Değişiklik:** `ReportEntryPage` — masaüstü tablo ve mobil kart görünümündeki
+iki `<button>` rozeti düz `<span>`'a çevrildi (mobildeki "· ödevi aç" ibaresi
+kaldırıldı). Artık `onClick`/`openProtectedFile` yok; `fileOpenError` state'i ve
+ona bağlı `FormError` satırı silindi, kullanılmayan `openProtectedFile` importu
+kaldırıldı. "Yüklenmedi" rozeti zaten `<span>`'dı. Yalnızca görüntüleme; veri
+akışı/API değişmedi.
+
+**Doğrulama:** `src/teacher.test.tsx` +1 test — teslimli satırda "Geç yüklendi"
+metni görünür ama `button` rolüyle (ve "ödevi aç" adıyla) bulunmaz. Frontend
+**100/100**, `typecheck` + `lint` ✅.
+
+### Etkilenen dosyalar
+
+```
+backend/src/middleware/upload.ts
+backend/src/db/migrations.ts                         (+ #8)
+backend/src/db/migration-backfill.test.ts
+backend/src/services/storage.ts  backend/src/storage.test.ts
+backend/src/routes/student.ts     backend/src/routes/files.ts
+backend/src/student.test.ts
+backend/scripts/reset.ts
+src/services/api.ts  src/services/api.test.ts
+src/components/ImageLightbox.tsx                     (+ portal düzeltmesi)
+src/components/SubmissionFileGrid.tsx                (yeni)
+src/pages/teacher/ReportEntryPage.tsx                (rozet tıklaması kaldırıldı)
+src/pages/teacher/SubmissionsReviewPage.tsx
+src/pages/student/HomeworkListPage.tsx
+src/student.test.tsx  src/submissions-review.test.tsx
+src/test/setup.ts
+spec.md  CLAUDE.md  PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
+## Görsel lightbox/galeri modalı + teslim başına 30 dosya ✅
+
+### Süreç özeti
+
+İki değişiklik birlikte yapıldı. (1) Öğretmen teslim kontrol
+(`SubmissionsReviewPage`) ve öğrenci "Ödevlerim" (`HomeworkListPage`)
+ekranlarında görsel teslim dosyasına tıklanınca yeni sekme yerine **sayfa içi
+lightbox** açılıyor; PDF'ler mevcut `openProtectedFile` deseniyle yeni sekmede
+açılmaya devam ediyor. (2) Teslim başına dosya limiti **10 → 30** çıkarıldı.
+Şema değişikliği/migration yok.
+
+Kullanıcı kararları: lazy + komşu (index ±1) yükleme (hepsini ön yükleme yok);
+yeni bağımsız bileşen (`ImageLightbox.tsx`, yeni bağımlılık yok); kapsam
+yalnızca iki ekran (`ReportEntryPage`/`GuardianReportDetailPage` dışarıda
+kaldı).
+
+### Yapılanlar
+
+**Lightbox**
+- **`src/components/ImageLightbox.tsx` (yeni):** `compact`/`comfortable`
+  dışında bağımsız overlay. Karartılmış arka plan, ortada büyük görsel,
+  sağ/sol ok butonları, `tabular` sayaç ("3 / 12"), dosya adı. `Esc` +
+  kapatma butonu + overlay tıklaması kapatır; ok butonları ve klavye
+  `ArrowLeft`/`ArrowRight` gezinir. `role="dialog"` + `aria-modal`, odak modal
+  içine alınır, **Tab focus trap**, kapanınca odak tetikleyen öğeye döner;
+  açıkken body scroll kilidi. Dokunma hedefleri 44×44px.
+- **Lazy yükleme:** yalnızca aktif görsel + komşuları fetch edilir; pencere
+  dışına çıkan blob URL **anında** `URL.revokeObjectURL` ile bırakılır; kapanış
+  ve unmount'ta pencere içi URL'ler de bırakılır. `keysSignature` ile gereksiz
+  efekt tekrarı önlenir.
+- **`src/services/api.ts`:** `fetchProtectedFileBlob` (ortak fetch/hata yolu),
+  `fetchProtectedFileUrl` (blob URL), `releaseProtectedFileUrl` eklendi;
+  `openProtectedFile` aynı ortak yolu kullanacak şekilde refactor edildi
+  (davranış birebir korundu).
+- Görsel/PDF ayrımı `mime !== 'application/pdf' && ext !== 'pdf'` ile;
+  görselde `FileImage`, PDF'te `FileText` ikonu.
+
+**Limit 10 → 30**
+- `backend/src/middleware/upload.ts`: `MAX_FILES = 30`.
+- `backend/src/errors.ts`: "Teslim başına en fazla 30 dosya…" + multer'ın
+  `.array(maxCount)` yolundan gelen `LIMIT_UNEXPECTED_FILE` de aynı mesaja
+  eşlendi (önceden yalnızca `LIMIT_FILE_COUNT`).
+- `src/pages/student/HomeworkListPage.tsx`: `MAX_FILES = 30`, istemci uyarısı
+  ve yükleme ipucu metni.
+- `spec.md` §5.3 (max 30) + §8 hacim notu (ortalama ~3 dosya varsayımı
+  değişmez; olası maksimum ~12 GB/hafta'ya çıkar, ~50 GB/yıl tahmini geçerli
+  kalır); `CLAUDE.md` Aşama 4.
+
+### Doğrulamalar
+
+**Statik** — kök + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+**Testler** — frontend **96/96** (17 dosya; +`lightbox.test.tsx` 6, +
+`submissions-review.test.tsx` 2, `student.test.tsx` +PDF/30-dosya testleri),
+backend **245/245** (22 dosya; `student.test.ts` +31-dosya reddi). Mevcut
+`openProtectedFile` birim testleri refactor sonrası değişmeden geçti.
+
+**Canlı — gerçek app.db + Vite dev + headless Chrome/CDP** (`ogrenci1` +
+`ogretmen2`, geçici Fizik hafta 19 teslimi; sonunda silindi):
+1. **Her iki ekranda modal açılıyor:** görsele tıkla → `[role=dialog]`,
+   `aria-modal=true`, görsel `alt`, sayaç `1 / 4`.
+2. **Klavye/ok gezinme:** `ArrowRight` → `2 / 4` (`lb-sayfa2.png`) → `3 / 4`
+   (`lb-sayfa3.png`); ok butonları da aynı.
+3. **Esc kapatıyor:** sonrasında `[role=dialog]` yok.
+4. **PDF yeni sekmede:** `window.open` 1 kez çağrıldı, modal açılmadı.
+5. **Blob URL sızıntısı yok (devtools muadili enstrümantasyon):**
+   `URL.createObjectURL`/`revokeObjectURL` sarılarak ölçüldü. Görsel açık →
+   canlı 2; bir sonraki → canlı 3; bir daha sonraki → pencere dışına çıkan URL
+   revoke edildi (canlı yine 3); **Esc/kapanış sonrası canlı 0** (created 6 =
+   revoked 6). PDF için üretilen URL mevcut 60 sn'lik gecikmeli revoke
+   davranışındadır (sızıntı değil).
+6. **31 dosya reddi (tutarlı Türkçe mesaj):**
+   - Gerçek HTTP: `400 VALIDATION_ERROR` —
+     "Teslim başına en fazla 30 dosya yükleyebilirsiniz."
+   - Tarayıcı içinden gerçek `fetch` (Vite proxy): aynı yanıt/mesaj.
+   - Tarayıcı dosya seçici (31 dosya): istemci uyarısı
+     "En fazla 30 dosya seçebilirsiniz."
+   > Not: 30 dosya tam sınırda kabul edildi (`200`, `files: 30`).
+7. Temizlik: oluşturulan teslim + 30 dosya DB'den ve diskten silindi
+   (`submissionsLeft: 0`); demo verisi eski halinde.
+
+### Çözülen sorunlar
+
+- **React StrictMode + `aliveRef` çifte yükleme hatası (canlıda yakalandı):**
+  İlk sürümde unmount'ta `aliveRef=false` yapılıyordu; StrictMode'un
+  mount→cleanup→mount döngüsünde bayrak yeniden `true` yapılmadığı için
+  ikinci yükleme kendi URL'lerini hemen revoke ediyor ve görseller hiç
+  görünmüyordu (alt `null`, yalnızca sayaç çalışıyordu). Çözüm: `aliveRef`
+  kaldırıldı, iptal yalnızca efekt kapanışındaki yerel `cancelled` bayrağıyla
+  yönetildi. Birim testleri bunu yakalamadı (jsdom StrictMode dışı), **canlı
+  tarayıcı** yakaladı.
+- **Kapatma butonunda çift `onClose`:** buton tıklaması overlay'in
+  `onClick`'ine köpürüyordu; butonda `stopPropagation` eklendi.
+- **Multer iki hata kodu:** `.array('files', 30)` yolu
+  `LIMIT_UNEXPECTED_FILE`, `limits.files` yolu `LIMIT_FILE_COUNT` üretiyor;
+  ikisi de tek Türkçe mesaja eşlendi ve gerçek istekte doğrulandı.
+
+### Etkilenen dosyalar
+
+```
+src/components/ImageLightbox.tsx                         (yeni)
+src/services/api.ts                                      (blob URL helpers)
+src/pages/teacher/SubmissionsReviewPage.tsx
+src/pages/student/HomeworkListPage.tsx
+src/lightbox.test.tsx submissions-review.test.tsx        (yeni)
+src/student.test.tsx
+backend/src/middleware/upload.ts
+backend/src/errors.ts
+backend/src/routes/student.ts
+backend/src/student.test.ts
+spec.md  CLAUDE.md  PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Rapor tamamlama doğrulaması + devamsızlık varsayılanı 'absent' ✅
+
 
 ### Süreç özeti
 

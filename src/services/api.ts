@@ -458,22 +458,25 @@ export const teacherApi = {
 // ---------- Öğrenci ödev ve teslim (Aşama 4) ----------
 
 /**
- * Korumalı dosyayı Bearer token ile çekip yeni sekmede açar.
+ * Korumalı dosyayı Bearer token ile çekip Blob döner.
  *
  * `<a href>` doğrudan Authorization header gönderemediği için backend 401
- * dönerdi. Bu yardımcı fetch + blob + `URL.createObjectURL` kullanır:
- * token header'a konur, yanıt blob olarak alınır, geçici URL üretilip
- * `window.open` ile açılır. Hata durumunda ApiClientError fırlatılır
- * (401'de apiFetch gibi oturum temizlenir).
+ * dönerdi; bu yüzden token header'a konur. Hata durumunda ApiClientError
+ * fırlatılır (401'de apiFetch gibi oturum temizlenir). `openProtectedFile`
+ * (yeni sekme) ve `fetchProtectedFileUrl` (lightbox) bu ortak yolu paylaşır.
  */
-export async function openProtectedFile(key: string): Promise<void> {
+export async function fetchProtectedFileBlob(
+  key: string,
+  variant?: 'thumb',
+): Promise<Blob> {
   const token = getToken();
   if (!token) {
     clearToken();
     throw new ApiClientError(401, 'UNAUTHORIZED', 'Giriş yapmanız gerekiyor.');
   }
 
-  const res = await fetch(`${BASE_URL}/files/${encodeURIComponent(key)}`, {
+  const suffix = variant === 'thumb' ? '/thumb' : '';
+  const res = await fetch(`${BASE_URL}/files/${encodeURIComponent(key)}${suffix}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -498,11 +501,44 @@ export async function openProtectedFile(key: string): Promise<void> {
     );
   }
 
-  const blob = await res.blob();
+  return res.blob();
+}
+
+/**
+ * Korumalı dosyayı Bearer token ile çekip yeni sekmede açar (PDF ve benzeri).
+ * Blob URL geçicidir; tarayıcı açılışı başlattıktan sonra serbest bırakılır.
+ */
+export async function openProtectedFile(key: string): Promise<void> {
+  const blob = await fetchProtectedFileBlob(key);
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank', 'noreferrer');
-  // Blob URL'yi bir sonraki tick'te temizle; önce tarayıcı indirmeyi başlatsın.
+  // Blob URL'yi bir sonraki tick'te temizle; önce tarayıcı açılışı başlasın.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * Korumalı görseli çekip görüntülenebilir bir blob URL döner (lightbox).
+ * Çağıran taraf KULLANIM SONRASI `releaseProtectedFileUrl(url)` çağırmalıdır;
+ * aksi hâlde blob bellekte kalır (sızıntı).
+ */
+export async function fetchProtectedFileUrl(key: string): Promise<string> {
+  const blob = await fetchProtectedFileBlob(key);
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * Korumalı görselin küçük thumbnail'ını çekip blob URL döner (grid).
+ * `fetchProtectedFileUrl` ile aynı yaşam döngüsü: kullanım sonrası
+ * `releaseProtectedFileUrl(url)` çağrılmalıdır.
+ */
+export async function fetchProtectedThumbUrl(key: string): Promise<string> {
+  const blob = await fetchProtectedFileBlob(key, 'thumb');
+  return URL.createObjectURL(blob);
+}
+
+/** `fetchProtectedFileUrl` ile üretilen blob URL'yi serbest bırakır. */
+export function releaseProtectedFileUrl(url: string): void {
+  URL.revokeObjectURL(url);
 }
 
 export const studentApi = {

@@ -10,6 +10,13 @@ import { loadEnv } from '../src/utils/env.js';
 
 loadEnv();
 
+// Üretimde asla çalışmaz: DB ve yerel dosya deposunu geri döndürülemez şekilde
+// siler. Geliştirme/demo ortamı için tasarlanmıştır.
+if (process.env.NODE_ENV === 'production') {
+  console.error('db:reset üretim ortamında çalıştırılamaz (NODE_ENV=production).');
+  process.exit(1);
+}
+
 const adminPassword = process.env.ADMIN_PASSWORD?.trim();
 if (!adminPassword) {
   console.error('ADMIN_PASSWORD ortam değişkeni boş. backend/.env dosyasını kontrol edin.');
@@ -33,6 +40,16 @@ for (const suffix of ['', '-wal', '-shm']) {
 }
 
 console.log('Veritabanı silindi. Migration + seed çalıştırılıyor…');
+
+// DB ile birlikte yerel yüklemeleri de temizle; aksi hâlde yetim dosyalar
+// diskte kalır. Üretimde STORAGE_DRIVER=r2 olduğundan bu adım yalnızca
+// geliştirme/yerel modu ilgilendirir.
+const uploadsDir =
+  process.env.UPLOADS_DIR ?? path.join(import.meta.dirname, '..', 'uploads');
+if (fs.existsSync(uploadsDir)) {
+  fs.rmSync(uploadsDir, { recursive: true, force: true });
+  console.log('Yüklenen dosyalar silindi (uploads).');
+}
 
 // Migration'ları + seed'i şema kurulduktan sonra yükle.
 // (Statik import olsaydı `db` bağlantısı silme işleminden önce açılırdı

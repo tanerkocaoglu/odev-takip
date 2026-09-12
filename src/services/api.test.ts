@@ -11,6 +11,7 @@ import {
   setToken,
   clearToken,
   openProtectedFile,
+  fetchProtectedThumbUrl,
 } from './api';
 
 const BASE_URL = '/api/v1';
@@ -207,6 +208,34 @@ describe('openProtectedFile', () => {
     const err = await openProtectedFile('k.jpg').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiClientError);
     expect(err).toMatchObject({ status: 403, message: 'Erişim yok.' });
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('fetchProtectedThumbUrl', () => {
+  it('thumbnail ucuna (/files/:key/thumb) gider ve blob URL döner', async () => {
+    setToken('abc');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(['x'], { type: 'image/jpeg' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const createObjectURL = vi.fn(() => 'blob:thumb');
+    const OriginalURL = globalThis.URL;
+    vi.stubGlobal(
+      'URL',
+      class extends OriginalURL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = vi.fn();
+      },
+    );
+
+    const url = await fetchProtectedThumbUrl('abc.jpg');
+    expect(url).toBe('blob:thumb');
+    const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe(`${BASE_URL}/files/abc.jpg/thumb`);
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer abc' });
     vi.unstubAllGlobals();
   });
 });

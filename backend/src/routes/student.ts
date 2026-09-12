@@ -5,7 +5,7 @@
  * - `GET /student/homeworks` — "Ödevlerim": yalnızca `completed`/`sent`
  *   raporların ödevleri görünür (karar noktası 1); puan/not/rapor asla
  *   dönmez. Teslim durumu: yüklendi / geç yüklendi / yüklenmedi.
- * - `POST /student/homeworks/:id/submit` — çoklu dosya (10 MB × 10),
+ * - `POST /student/homeworks/:id/submit` — çoklu dosya (10 MB × 30),
  *   görsel küçültme, `is_late` (Europe/Istanbul yerel günü > due_date).
  *
  * Yetki (CLAUDE.md): her handler ilk satırında kontrol eder — yalnızca
@@ -226,11 +226,10 @@ router.post(
     try {
       db.exec('BEGIN');
       if (existing) {
-        oldKeys = (
-          db
-            .prepare('SELECT key FROM submission_files WHERE submission_id = ?')
-            .all(existing.id) as Array<{ key: string }>
-        ).map((r) => r.key);
+        const oldRows = db
+          .prepare('SELECT key, thumb_key FROM submission_files WHERE submission_id = ?')
+          .all(existing.id) as Array<{ key: string; thumb_key: string | null }>;
+        oldKeys = oldRows.flatMap((r) => (r.thumb_key ? [r.key, r.thumb_key] : [r.key]));
         db.prepare('DELETE FROM submission_files WHERE submission_id = ?').run(existing.id);
         db.prepare(
           `UPDATE submissions
@@ -246,11 +245,11 @@ router.post(
       }
 
       const insertFile = db.prepare(
-        `INSERT INTO submission_files (id, submission_id, key, filename, size, mime, ext)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO submission_files (id, submission_id, key, filename, size, mime, ext, thumb_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const sf of stored) {
-        insertFile.run(randomUUID(), subId, sf.key, sf.filename, sf.size, sf.mime, sf.ext);
+        insertFile.run(randomUUID(), subId, sf.key, sf.filename, sf.size, sf.mime, sf.ext, sf.thumbKey);
       }
       db.exec('COMMIT');
     } catch (err) {

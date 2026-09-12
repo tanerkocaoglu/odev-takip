@@ -114,9 +114,9 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4 (submission_files) + #5 (username_login) + #6
-    // (schools_grade_view) + #7 (must_change_password) de koşar.
-    expect(version.user_version).toBe(7);
+    // #3 backfill + #4..#8 (submission_files, username_login, schools_grade_view,
+    // must_change_password, submission_file_thumb) de koşar.
+    expect(version.user_version).toBe(8);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -134,10 +134,13 @@ describe('migration #3 backfill', () => {
 
 describe('migration #7 — must_change_password rewind (7↔6)', () => {
   it('kolon yokken user_version 6; yeniden koşunca default 0 ile ekler', () => {
-    // Şema #7'ye kadar kurulur, tablolar temizlenir.
+    // Şema #8'e kadar kurulur, tablolar temizlenir.
     resetDb();
 
     // #7'yi geri sar: kolon YOK, sürüm 6 (eski migration turlarındaki desen).
+    // #8 (thumb_key) de #7'den sonra geldiği için burada geri alınır; böylece
+    // runMigrations #7 ve #8'i birlikte koşar.
+    db.exec(`ALTER TABLE submission_files DROP COLUMN thumb_key`);
     db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
     db.exec(`PRAGMA user_version = 6`);
 
@@ -160,17 +163,24 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
                'student', 1, 1, NULL, ?)`,
     ).run(now);
 
-    // #7 yeniden koşar → kolon eklenir, mevcut satır 0 alır.
+    // #7 + #8 yeniden koşar → kolonlar eklenir, mevcut satır 0 alır.
     runMigrations();
 
     const after = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(after.user_version).toBe(7);
+    expect(after.user_version).toBe(8);
 
     const row = db
       .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
       .get() as { must_change_password: number };
     expect(row.must_change_password).toBe(0);
+
+    const sfCols = (
+      db.prepare(`SELECT name FROM pragma_table_info('submission_files')`).all() as Array<{
+        name: string;
+      }>
+    ).map((c) => c.name);
+    expect(sfCols).toContain('thumb_key');
   });
 });

@@ -74,13 +74,15 @@ export function errorHandler(
     return;
   }
 
-  // Multer limit ihlalleri (10 MB / 10 dosya) — Türkçe, tek biçimli hata.
+  // Multer limit ihlalleri (10 MB / 30 dosya) — Türkçe, tek biçimli hata.
+  // `MAX_FILES` değeri `middleware/upload.ts` ile senkron tutulur (döngüsel
+  // import olmaması için burada sabit; ikisi birlikte güncellenir).
   if (err instanceof MulterError) {
     const message =
       err.code === 'LIMIT_FILE_SIZE'
         ? 'Dosya başına en fazla 10 MB yükleyebilirsiniz.'
-        : err.code === 'LIMIT_FILE_COUNT'
-          ? 'Teslim başına en fazla 10 dosya yükleyebilirsiniz.'
+        : err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE'
+          ? 'Teslim başına en fazla 30 dosya yükleyebilirsiniz.'
           : 'Dosya yüklenemedi.';
     res.status(400).json({
       error: { code: 'VALIDATION_ERROR', message },

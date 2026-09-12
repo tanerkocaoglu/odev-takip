@@ -5,10 +5,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Clock3, FileText } from 'lucide-react';
+import { CheckCircle2, Clock3 } from 'lucide-react';
 import type { TeacherHomeworkWithSubmissions, TeacherSubmission } from '../../types';
 import { teacherApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { LoadingState, EmptyState, FormError, PrimaryButton } from '../../components/admin/ui';
+import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -176,29 +177,22 @@ export default function SubmissionsReviewPage() {
 
                     {s.note && <p className="mt-2 text-sm text-text">Not: {s.note}</p>}
 
-                    <ul className="mt-3 space-y-1">
-                      {s.files.map((f) => (
-                        <li key={f.key}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDetailError(null);
-                              openProtectedFile(f.key).catch((err) =>
-                                setDetailError(
-                                  err instanceof ApiClientError
-                                    ? err.message
-                                    : 'Dosya açılırken bir hata oluştu.',
-                                ),
-                              );
-                            }}
-                            className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
-                          >
-                            <FileText className="h-4 w-4 shrink-0" />
-                            <span className="truncate">{f.filename}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="mt-3">
+                      <SubmissionFileGrid
+                        variant="server"
+                        files={s.files}
+                        onOpenPdf={(key) => {
+                          setDetailError(null);
+                          openProtectedFile(key).catch((err) =>
+                            setDetailError(
+                              err instanceof ApiClientError
+                                ? err.message
+                                : 'Dosya açılırken bir hata oluştu.',
+                            ),
+                          );
+                        }}
+                      />
+                    </div>
 
                     {s.status === 'submitted' && (
                       <div className="mt-3">

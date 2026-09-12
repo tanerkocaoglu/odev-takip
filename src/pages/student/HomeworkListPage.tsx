@@ -3,17 +3,18 @@
  * `comfortable` yoğunluk (mobil öncelikli). Ekranda yalnızca ders, öğretmen,
  * hafta, açıklama, son tarih ve teslim durumu vardır — puan/not/rapor asla
  * gösterilmez. Yükleme: jpg/jpeg/png/heic/pdf, dosya başına 10 MB, teslim
- * başına 10 dosya; son tarih geçtikten sonra da yüklenebilir (geç rozeti).
+ * başına 30 dosya; son tarih geçtikten sonra da yüklenebilir (geç rozeti).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, CheckCircle2, Clock3, FileText, UploadCloud, XCircle } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock3, UploadCloud, XCircle } from 'lucide-react';
 import type { StudentHomework } from '../../types';
 import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { LoadingState, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
+import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MAX_FILES = 10;
+const MAX_FILES = 30;
 const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'heic', 'heif', 'pdf']);
 
 interface PendingState {
@@ -24,12 +25,6 @@ interface PendingState {
 function fmtDate(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${d}.${m}.${y}`;
-}
-
-function fmtBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
@@ -160,6 +155,15 @@ export default function HomeworkListPage() {
               onClearFiles={() =>
                 setPending((prev) => ({ ...prev, [item.id]: { files: [], note: prev[item.id]?.note ?? '' } }))
               }
+              onRemoveFile={(index) =>
+                setPending((prev) => {
+                  const current = prev[item.id] ?? { files: [], note: '' };
+                  return {
+                    ...prev,
+                    [item.id]: { ...current, files: current.files.filter((_, i) => i !== index) },
+                  };
+                })
+              }
               onUpload={async () => {
                 const p = pending[item.id];
                 if (!p || p.files.length === 0) return;
@@ -196,6 +200,7 @@ function HomeworkCard({
   onFiles,
   onNote,
   onClearFiles,
+  onRemoveFile,
   onUpload,
 }: {
   item: StudentHomework;
@@ -207,6 +212,7 @@ function HomeworkCard({
   onFiles: (files: File[]) => void;
   onNote: (note: string) => void;
   onClearFiles: () => void;
+  onRemoveFile: (index: number) => void;
   onUpload: () => void;
 }) {
   const [pickError, setPickError] = useState<string | null>(null);
@@ -216,7 +222,7 @@ function HomeworkCard({
     if (!list) return;
     const incoming = Array.from(list);
     if (incoming.length > MAX_FILES) {
-      setPickError('En fazla 10 dosya seçebilirsiniz.');
+      setPickError('En fazla 30 dosya seçebilirsiniz.');
       return;
     }
     if (incoming.some((f) => f.size > MAX_FILE_SIZE)) {
@@ -272,30 +278,18 @@ function HomeworkCard({
           <p className="tabular text-xs text-muted">
             Teslim: {fmtDate(item.submission.submitted_at.slice(0, 10))}
           </p>
-          <ul className="space-y-1">
-            {item.submission.files.map((f) => (
-              <li key={f.key}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenError(null);
-                    openProtectedFile(f.key).catch((err) =>
-                      setOpenError(
-                        err instanceof ApiClientError
-                          ? err.message
-                          : 'Dosya açılırken bir hata oluştu.',
-                      ),
-                    );
-                  }}
-                  className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
-                >
-                  <FileText className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{f.filename}</span>
-                  <span className="tabular text-xs text-muted">({fmtBytes(f.size)})</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <SubmissionFileGrid
+            variant="server"
+            files={item.submission.files}
+            onOpenPdf={(key) => {
+              setOpenError(null);
+              openProtectedFile(key).catch((err) =>
+                setOpenError(
+                  err instanceof ApiClientError ? err.message : 'Dosya açılırken bir hata oluştu.',
+                ),
+              );
+            }}
+          />
           {openError && (
             <p className="text-sm font-medium text-att-absent">{openError}</p>
           )}
@@ -325,28 +319,19 @@ function HomeworkCard({
           >
             <UploadCloud className="h-5 w-5" />
             <span className="font-medium text-accent">Dosya seç</span>
-            <span className="text-xs">JPEG, PNG, HEIC veya PDF · en fazla 10 dosya, her biri 10 MB</span>
+            <span className="text-xs">JPEG, PNG, HEIC veya PDF · en fazla 30 dosya, her biri 10 MB</span>
           </button>
         ) : (
           <div>
-            <ul className="space-y-1">
-              {pending.files.map((f, i) => (
-                <li
-                  key={`${f.name}-${i}`}
-                  className="flex items-center justify-between gap-2 rounded-md bg-bg px-2 py-1.5 text-sm"
-                >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <FileText className="h-4 w-4 shrink-0 text-muted" />
-                    <span className="truncate">{f.name}</span>
-                  </span>
-                  <span className="tabular shrink-0 text-xs text-muted">{fmtBytes(f.size)}</span>
-                </li>
-              ))}
-            </ul>
+            <SubmissionFileGrid
+              variant="local"
+              files={pending.files}
+              onRemove={onRemoveFile}
+            />
             <button
               type="button"
               onClick={onClearFiles}
-              className="mt-2 text-xs font-medium text-muted hover:text-text"
+              className="mt-3 text-xs font-medium text-muted hover:text-text"
             >
               Seçimi temizle
             </button>

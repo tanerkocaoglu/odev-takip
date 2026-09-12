@@ -1,7 +1,7 @@
 /**
  * Dosya yükleme middleware'i — Multer `memoryStorage` (CLAUDE.md §Dosya).
  * Kısıtlar (spec.md §5.3): jpg/jpeg/png/heic/pdf, dosya başına 10 MB,
- * teslim başına 10 dosya. Ham dosya diskte tutulmaz; yalnızca memory buffer.
+ * teslim başına 30 dosya. Ham dosya diskte tutulmaz; yalnızca memory buffer.
  */
 
 import multer, { MulterError } from 'multer';
@@ -9,7 +9,7 @@ import type { RequestHandler } from 'express';
 import { AppError } from '../errors.js';
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-export const MAX_FILES = 10;
+export const MAX_FILES = 30;
 
 const ALLOWED_MIMES = new Set([
   'image/jpeg',
@@ -23,6 +23,9 @@ const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'heic', 'heif', 'pdf']);
 
 export const upload = multer({
   storage: multer.memoryStorage(),
+  // Tarayıcı `filename=` alanına UTF-8 baytları yazar; multer varsayılanı
+  // `latin1` olduğu için Türkçe adlar mojibake gelirdi. UTF-8'e sabitlenir.
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
   fileFilter: (_req, file, cb) => {
     const ext = file.originalname.toLowerCase().split('.').pop() ?? '';
@@ -54,6 +57,7 @@ const CSV_MIMES = new Set([
 
 const csvMulter = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_CSV_SIZE, files: 1 },
   fileFilter: (_req, file, cb) => {
     const ext = file.originalname.toLowerCase().split('.').pop() ?? '';

@@ -9,27 +9,38 @@
  *
  * Yerel modda `res.sendFile()`. R2 modunda (Aşama 6) imzalı URL'ye 302.
  * Saklama politikası (§8): `files_purged_at` doluysa 404.
+ *
+ * `GET /:key/thumb` aynı yetkiyi kullanarak grid için küçük thumbnail'ı servis
+ * eder (migration #8 `thumb_key`); thumbnail yoksa orijinale düşer.
  */
 
-import { Router } from 'express';
+import { Router, type Response as ExpressResponse } from 'express';
 import fs from 'node:fs';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { localPathFor } from '../services/storage.js';
+import type { AuthUser } from '../types.js';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/:key', (req, res) => {
-  const user = req.user!;
-  const { key } = req.params;
+interface FileRow {
+  key: string;
+  thumb_key: string | null;
+  mime: string;
+  student_id: string;
+  files_purged_at: string | null;
+  teacher_id: string;
+  guardian_id: string | null;
+}
 
-  // key → submission_files → submissions → homeworks → class_courses → öğrenci
-  const row = db
+/** key → submission_files → submissions → homeworks → class_courses zinciri. */
+function loadFileRow(key: string): FileRow | undefined {
+  return db
     .prepare(
-      `SELECT sf.key, sf.mime,
+      `SELECT sf.key, sf.thumb_key, sf.mime,
               s.student_id, s.files_purged_at,
               cc.teacher_id,
               st.guardian_id
@@ -40,22 +51,11 @@ router.get('/:key', (req, res) => {
        JOIN students st ON st.id = s.student_id
        WHERE sf.key = ?`,
     )
-    .get(key) as
-    | {
-        key: string;
-        mime: string;
-        student_id: string;
-        files_purged_at: string | null;
-        teacher_id: string;
-        guardian_id: string | null;
-      }
-    | undefined;
+    .get(key) as FileRow | undefined;
+}
 
-  if (!row) {
-    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
-  }
-
-  // Yetki matrisi — her rol için tek yol.
+/** Yetki matrisi — her rol için tek yol. */
+function assertAccess(user: AuthUser, row: FileRow): void {
   let allowed = false;
   if (user.role === 'admin') {
     allowed = true;
@@ -69,17 +69,45 @@ router.get('/:key', (req, res) => {
   if (!allowed) {
     throw new AppError('FORBIDDEN', 403, 'Bu dosyaya erişim yetkiniz yok.');
   }
+}
+
+function sendStored(res: ExpressResponse, key: string): void {
+  const filePath = localPathFor(key);
+  if (!fs.existsSync(filePath)) {
+    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
+  }
+  res.sendFile(filePath);
+}
+
+router.get('/:key', (req, res) => {
+  const user = req.user!;
+  const row = loadFileRow(req.params.key);
+  if (!row) {
+    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
+  }
+  assertAccess(user, row);
 
   if (row.files_purged_at) {
     throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
   }
 
-  const filePath = localPathFor(row.key);
-  if (!fs.existsSync(filePath)) {
+  sendStored(res, row.key);
+});
+
+router.get('/:key/thumb', (req, res) => {
+  const user = req.user!;
+  const row = loadFileRow(req.params.key);
+  if (!row) {
     throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
   }
+  assertAccess(user, row);
 
-  res.sendFile(filePath);
+  if (row.files_purged_at) {
+    throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+  }
+
+  // Eski kayıtta thumbnail yoksa orijinali servis et (yine de doğru yetki).
+  sendStored(res, row.thumb_key ?? row.key);
 });
 
 export default router;

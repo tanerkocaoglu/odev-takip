@@ -67,6 +67,11 @@ async function login(email: string): Promise<string> {
 const createdKeys: string[] = [];
 function trackKey(key: string): void {
   createdKeys.push(key);
+  // Varsa türetilmiş thumbnail dosyasını da temizle.
+  const row = db
+    .prepare('SELECT thumb_key FROM submission_files WHERE key = ?')
+    .get(key) as { thumb_key: string | null } | undefined;
+  if (row?.thumb_key) createdKeys.push(row.thumb_key);
 }
 
 function insertCompletedReport(
@@ -321,12 +326,44 @@ describe('POST /api/v1/student/homeworks/:id/submit', () => {
     expect(res.body.error.message).toContain('10 MB');
   });
 
+  it('30 dosyadan fazla yükleme 400 ve Türkçe "30 dosya" mesajı', async () => {
+    const req = request(app)
+      .post('/api/v1/student/homeworks/s-hw-w1/submit')
+      .set(auth(studentToken));
+    for (let i = 0; i < 31; i += 1) {
+      req.attach('files', PNG_BUFFER, { filename: `sayfa-${i}.png`, contentType: 'image/png' });
+    }
+    const res = await req;
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toContain('30 dosya');
+  });
+
   it('öğrenciye ait olmayan ödeve yükleme 404', async () => {
     const res = await request(app)
       .post('/api/v1/student/homeworks/s-hw-other/submit')
       .set(auth(studentToken))
       .attach('files', PNG_BUFFER, { filename: 'x.png', contentType: 'image/png' });
     expect(res.status).toBe(404);
+  });
+
+  it('Türkçe karakterli dosya adını mojibake olmadan saklar', async () => {
+    const name = 'Ekran görüntüsü çözüm ığş.pdf';
+    const res = await request(app)
+      .post('/api/v1/student/homeworks/s-hw-w1/submit')
+      .set(auth(studentToken))
+      .attach('files', PDF_BUFFER, { filename: name, contentType: 'application/pdf' });
+    expect(res.status).toBe(200);
+    const file = (res.body.item.submission.files as Array<{ key: string; filename: string }>).find(
+      (f) => f.filename === name,
+    );
+    expect(file).toBeTruthy();
+    trackKey(file!.key);
+    const row = db
+      .prepare('SELECT filename FROM submission_files WHERE key = ?')
+      .get(file!.key) as { filename: string };
+    expect(row.filename).toBe(name);
+    expect(row.filename).not.toContain('Ã');
   });
 });
 
@@ -385,6 +422,24 @@ describe('GET /api/v1/files/:key — yetki matrisi', () => {
       .get('/api/v1/files/9999999999-ffffffffffffffff.jpg')
       .set(auth(adminToken));
     expect(res.status).toBe(404);
+  });
+
+  it('görsel teslimde thumb_key üretilir; thumbnail rotası 200 döner', async () => {
+    const row = db
+      .prepare('SELECT thumb_key FROM submission_files WHERE key = ?')
+      .get(key) as { thumb_key: string | null };
+    expect(row.thumb_key).toMatch(/^[0-9]+-[a-f0-9]{16}\.jpg$/);
+
+    const res = await request(app).get(`/api/v1/files/${key}/thumb`).set(auth(studentToken));
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/jpeg');
+  });
+
+  it('başka öğrenci thumbnail için 403', async () => {
+    const res = await request(app)
+      .get(`/api/v1/files/${key}/thumb`)
+      .set(auth(secondStudentToken));
+    expect(res.status).toBe(403);
   });
 });
 

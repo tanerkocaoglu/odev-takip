@@ -6,14 +6,10 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
+import sharp from 'sharp';
 import { saveUpload, localPathFor, type StoredFile } from './services/storage.js';
 import { AppError } from './errors.js';
 
-// 1×1 geçerli PNG (sharp ile decode edilir).
-const PNG_BUFFER = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64',
-);
 const PDF_BUFFER = Buffer.from('%PDF-1.4 test icerik');
 
 const createdKeys: string[] = [];
@@ -34,13 +30,20 @@ afterAll(() => {
 
 function track(f: StoredFile): StoredFile {
   createdKeys.push(f.key);
+  if (f.thumbKey) createdKeys.push(f.thumbKey);
   return f;
 }
 
 describe('saveUpload', () => {
-  it('görseli JPEG q80 + max 2000px olarak küçültür ve saklar', async () => {
+  it('görseli JPEG q80 + max 2000px olarak küçültür ve saklar; thumbnail üretir', async () => {
+    // Gerçekçi boyut: 1200×900 kaynak (thumbnail orijinalden küçük olmalı).
+    const big = await sharp({
+      create: { width: 1200, height: 900, channels: 3, background: { r: 120, g: 80, b: 40 } },
+    })
+      .png()
+      .toBuffer();
     const stored = track(
-      await saveUpload({ originalname: 'foto.png', mimetype: 'image/png', size: PNG_BUFFER.length, buffer: PNG_BUFFER }),
+      await saveUpload({ originalname: 'foto.png', mimetype: 'image/png', size: big.length, buffer: big }),
     );
     expect(stored.ext).toBe('jpg');
     expect(stored.mime).toBe('image/jpeg');
@@ -48,9 +51,18 @@ describe('saveUpload', () => {
     expect(fs.existsSync(localPathFor(stored.key))).toBe(true);
     // Orijinalden daha küçük ya da işlenmiş JPEG.
     expect(stored.size).toBeGreaterThan(0);
+    // Thumbnail: ayrı dosya, geçerli key, orijinalden küçük.
+    expect(stored.thumbKey).toMatch(/^[0-9]+-[a-f0-9]{16}\.jpg$/);
+    expect(stored.thumbKey).not.toBe(stored.key);
+    const thumbPath = localPathFor(stored.thumbKey!);
+    expect(fs.existsSync(thumbPath)).toBe(true);
+    expect(fs.statSync(thumbPath).size).toBeLessThan(stored.size);
+    const meta = await sharp(fs.readFileSync(thumbPath)).metadata();
+    expect(meta.width).toBe(300);
+    expect(meta.height).toBe(300);
   });
 
-  it('PDF dosyasını görsel işlemeden aynen saklar', async () => {
+  it('PDF dosyasını görsel işlemeden aynen saklar; thumbnail üretmez', async () => {
     const stored = track(
       await saveUpload({ originalname: 'odev.pdf', mimetype: 'application/pdf', size: PDF_BUFFER.length, buffer: PDF_BUFFER }),
     );
@@ -58,6 +70,7 @@ describe('saveUpload', () => {
     expect(stored.mime).toBe('application/pdf');
     expect(stored.size).toBe(PDF_BUFFER.length);
     expect(stored.key).toMatch(/^[0-9]+-[a-f0-9]{16}\.pdf$/);
+    expect(stored.thumbKey).toBeNull();
     const saved = fs.readFileSync(localPathFor(stored.key));
     expect(saved.equals(PDF_BUFFER)).toBe(true);
   });
