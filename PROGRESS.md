@@ -5,6 +5,99 @@
 
 ---
 
+## Bağımlılık güvenlik açıkları — Grup 3: react-router v7 + returnTo ✅
+
+### Süreç özeti
+
+**react-router açıklarının tam kapanması** için major yükseltme yapıldı:
+`react-router-dom` 6.30.4 → **7.18.3**. `GHSA-wrjc-x8rr-h8h6` (backslash open
+redirect) yalnızca `7.18.0`'da düzeltildiği için 6.x'te kalmak açığı kapatmıyordu
+(`GHSA-337j-9hxr-rhxg`/SSR hydration advisory'si de aynı aralıkta). Kök
+`package.json`'da **yalnızca bu tek satır** değişti; backend bağımlılıklarının
+kökten ayrılması (§5/Grup 4) kapsam dışı bırakıldı.
+
+Bununla aynı grupta, denetim raporu §3.9'daki **returnTo open redirect**
+düzeltildi — aynı açığın uygulama tarafı.
+
+**v7 API değişikliği (tek):** `main.tsx`'te `<BrowserRouter future={{...}}>`
+prop'u v7'de kaldırıldı (v7 davranışları varsayılan); prop silindi. Kullanılan
+diğer tüm API'ler (`Routes/Route/Link/NavLink/Outlet/Navigate/useNavigate/
+useLocation/useParams/useSearchParams`, `MemoryRouter`) v7'de birebir mevcut.
+
+**returnTo düzeltmesi:** `ReportEntryPage`'deki `^\/(?!\/)` regex'i yerine
+`resolveReturnTo()` — `new URL(raw, window.location.origin)` ile parse edilir,
+origin farklıysa/parse edilemezse `/teacher`'a düşer, yalnızca
+`pathname+search+hash` döner. Böylece `//evil.com`, `/\evil.com`, `https://...`
+ve `javascript:` reddedilir.
+
+### Yapılanlar
+
+- `package.json`: `react-router-dom` `^6.30.4` → `^7.18.3` (+ `package-lock.json`)
+- `src/main.tsx`: kaldırılan `future` prop'u silindi
+- `src/pages/teacher/ReportEntryPage.tsx`: `resolveReturnTo()` + açıklama
+- `src/teacher.test.tsx`: +4 test (3 kötü niyetli returnTo → `/teacher`,
+  1 aynı-origin mutlak URL → dahili kabul)
+
+### Doğrulamalar
+
+**Statik** — kök `npm run typecheck` ✅, `npm run lint` ✅, `npm run build` ✅
+**Testler** — frontend **111/111** (18 dosya; +4) ✅
+**Audit** — kök `npm audit` → **3 vulnerabilities (2 moderate, 1 high) = yalnızca
+dev**: `nanoid`, `vitest`, `@vitest/mocker` (ertelenenler). `react-router`/
+`react-router-dom` ve `qs`/`multer`/`sharp` **kapandı**. Backend `npm audit` → **0**.
+
+**Canlı (gerçek `app.db` + seed + güncel `sharp`, gerçek HEIC):**
+1. **A — HEIC→JPEG:** public bir HEIC örneği (718 KB, `ftypmif1`) öğrenciyle
+   `POST /student/homeworks/:id/submit` ile yüklendi → **200**. DB:
+   `mime=image/jpeg`, `ext=jpg`, `thumb_key` dolu, boyut 319 KB; `sharp` ile
+   orijinal **1280×854**, thumbnail **300×300**. `heic-convert → sharp 0.35.4`
+   akışı sağlam.
+2. **B — limitler (gerçek API):** 10.1 MB → 400 "Dosya başına en fazla 10 MB";
+   tam **30 dosya → 200** (30 dosya); **31 dosya → 400** "Teslim başına en fazla
+   30 dosya yükleyebilirsiniz."; `.exe` → 400 tip mesajı.
+3. **C — navigasyon/returnTo (headless Chrome + CDP, Express'in sunduğu `dist`):**
+   - `returnTo=/admin/digests` → buton "Gönderim ekranına dön", tıklama →
+     `/admin/digests` ✅
+   - `returnTo=/\evil.com` → buton "Geri dön", tıklama → `localhost:3001/teacher`
+     (aynı origin, `evil.com` yok) ✅
+   - admin "Raporlar" linki → `/admin/reports` ✅
+   - **rol koruması:** admin `/student` → `/` üzerinden `/admin`'e yönlendi
+     (öğrenci ekranına erişemedi) ✅
+   - girişsiz `/teacher` → `/login` ✅
+
+### Çözülen sorunlar
+
+- **v7 tip hatası:** `src/main.tsx`'teki `future` prop'u derleme hatası verdi;
+  v7'de kaldırıldığı için temizlendi (beklenen tek breaking change).
+- **Yanıltıcı 31-dosya sonucu:** ilk canlı curl denemesinde PowerShell'in
+  ayrılmış `$args` değişkeni argümanları bozdu ve ZodError (400) döndü;
+  değişken yeniden adlandırılınca **doğru mesaj** ("30 dosya") alındı — kod
+  sorunu değil, test aracı sorunuydu. Backend `student.test.ts` zaten yeşildi.
+
+### Temizlik / ortam
+
+- Test teslimleri (HEIC 1 dosya + 30 PDF) DB'den ve diskten silindi; kalan
+  `submissions=1`, `submission_files=10` (test öncesi değer).
+- İndirilen HEIC ve tüm geçici test dosyaları silindi (repoya hiçbir şey
+  girmedi). Test için durdurulan `vite` (5173) + backend (3001) dev sunucuları
+  yeniden başlatıldı.
+
+### Etkilenen dosyalar
+
+```
+package.json  package-lock.json
+src/main.tsx
+src/pages/teacher/ReportEntryPage.tsx
+src/teacher.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — react-router-dom v7 + returnTo origin düzeltmesi (Grup 3).
+
+---
+
 ## Bağımlılık güvenlik açıkları — Grup 2: kök lock güncellemesi ✅
 
 ### Süreç özeti

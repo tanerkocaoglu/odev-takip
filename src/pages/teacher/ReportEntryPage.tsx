@@ -29,16 +29,36 @@ function parseScore(value: string): number | null {
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+/**
+ * `returnTo` query parametresini güvenli, dahili bir yola çevirir.
+ *
+ * `URL` ile `window.location.origin`'e göre çözümlenir; farklı origin'e çıkan
+ * ya da parse edilemeyen her girdi `/teacher`'a düşer. Yalnızca
+ * `pathname + search + hash` döndürülür — protokol/host asla korunmaz. Böylece
+ * `//evil.com`, `/\evil.com` (tek ters bölü), `https://evil.com` ve
+ * `javascript:` gibi open redirect vektörleri reddedilir.
+ */
+function resolveReturnTo(raw: string | null): string {
+  if (!raw) return '/teacher';
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return '/teacher';
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return '/teacher';
+  }
+}
+
 export default function ReportEntryPage() {
   const { classCourseId = '', weekId = '' } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   // Dönüş hedefi: admin gönderim ekranından gelindiyse oraya, aksi halde
-  // öğretmen paneline. Yalnızca uygulama içi yol kabul edilir (open redirect yok).
+  // öğretmen paneline. Yalnızca aynı origin'e ait gerçek dahili path kabul
+  // edilir (open redirect koruması — `resolveReturnTo`).
   const returnToParam = searchParams.get('returnTo');
-  const returnTo =
-    returnToParam && /^\/(?!\/)/.test(returnToParam) ? returnToParam : '/teacher';
+  const returnTo = resolveReturnTo(returnToParam);
   const returnLabel = returnTo.startsWith('/admin') ? 'Gönderim ekranına dön' : 'Geri dön';
 
   const [payload, setPayload] = useState<TeacherReportPayload | null>(null);

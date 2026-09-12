@@ -379,4 +379,58 @@ describe('ReportEntryPage', () => {
       expect(screen.getByText('Gönderim Sayfası')).toBeInTheDocument();
     });
   });
+
+  // Open redirect koruması: yalnızca aynı origin'in dahili path'leri kabul
+  // edilir. `/\evil.com` (tek ters bölü), `//evil.com` ve tam URL reddedilip
+  // `/teacher`'a düşülür (bkz. `resolveReturnTo`).
+  function renderWithReturnTo(returnTo: string) {
+    return render(
+      <MemoryRouter
+        initialEntries={[`/teacher/reports/cc1/w1?returnTo=${returnTo}`]}
+      >
+        <Routes>
+          <Route
+            path="/teacher/reports/:classCourseId/:weekId"
+            element={<ReportEntryPage />}
+          />
+          <Route path="/teacher" element={<div>Öğretmen Paneli</div>} />
+          <Route path="/evil.com" element={<div>HARİCİ HEDEF</div>} />
+          <Route path="/admin/digests" element={<div>Gönderim Sayfası</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it.each([
+    ['%2F%5Cevil.com', '/\\evil.com (tek ters bölü)'],
+    ['%2F%2Fevil.com', '//evil.com (protocol-relative)'],
+    ['https%3A%2F%2Fevil.com', 'https://evil.com (mutlak URL)'],
+  ])('güvensiz returnTo=%s reddedilir → "Geri dön" + /teacher', async (encoded, _label) => {
+    vi.stubGlobal('fetch', mockFetch(200, REPORT));
+    renderWithReturnTo(encoded);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Geri dön' }));
+    await waitFor(() => {
+      expect(screen.getByText('Öğretmen Paneli')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('HARİCİ HEDEF')).not.toBeInTheDocument();
+  });
+
+  it('aynı origin mutlak URL dahili kabul edilir', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, REPORT));
+    renderWithReturnTo(
+      encodeURIComponent(`${window.location.origin}/admin/digests`),
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Gönderim ekranına dön' }));
+    await waitFor(() => {
+      expect(screen.getByText('Gönderim Sayfası')).toBeInTheDocument();
+    });
+  });
 });
