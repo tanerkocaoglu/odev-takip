@@ -5,6 +5,69 @@
 
 ---
 
+## Bulgu #8 düzeltildi — rol kapısı multer'dan önce ✅
+
+### Süreç özeti
+
+`POST /student/homeworks/:id/submit` zincirinde `upload.array(...)` (multer)
+`assertStudent`'tan **önce** çalışıyordu; geçerli token'lı ama öğrenci olmayan
+bir kullanıcı (veli/öğretmen/admin) rol reddedilmeden ~30×10 MB'a kadar dosyayı
+`memoryStorage`'a yükletebiliyordu (DoS/kaynak tüketimi).
+
+**Düzeltme (`backend/src/routes/student.ts`):** mevcut `assertStudent` mantığını
+kullanan gerçek bir Express middleware'i (`requireStudent`) eklendi ve route
+zincirinde **multer'dan önce** kondu:
+```ts
+router.post('/homeworks/:id/submit', requireStudent, upload.array('files', MAX_FILES), handler)
+```
+Yanlış rollü istek artık dosya baytı okunmadan `403 FORBIDDEN` ile kesiliyor.
+Handler'daki `assertStudent` çağrısı savunma amaçlı korundu.
+
+**Diğer multer yolları:** `admin.ts` import (`csvUploadSingle`) zaten
+`router.use(requireAuth, adminOnly)` (satır 68) sayesinde multer'dan önce
+korumalıydı — **dokunulmadı**, kalıcı bir regresyon testiyle kilitlendi. Başka
+multer kullanımı yok.
+
+### Yapılanlar
+
+- `backend/src/routes/student.ts`: `requireStudent` middleware + route sırası.
+- `backend/src/student.test.ts` (+3): öğrenci olmayan 3 rol → 403; sıra kanıtı
+  olarak veli + `.exe` → **403** (multer'ın 400'ü değil); veli + 10 MB üstü dosya
+  → gövde tüketilmeden red (403 **veya** `ECONNRESET`/`EPIPE`).
+- `backend/src/student-import.test.ts` (+1): öğretmen + geçersiz dosya ile import
+  → **403** (adminOnly, multer'ın 400'ü değil).
+
+### Doğrulamalar
+
+**Statik/Tests** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅;
+backend **273/273** (+4), frontend **111/111** ✅.
+
+**Canlı (enstrümantasyonsuz kanıt):**
+- **A1** — veli + `.exe` → **403** `FORBIDDEN "Bu işlemi yapma yetkiniz yok."`
+  (multer `fileFilter` çalışsaydı **400** dönerdi → çalışmadığının kanıtı).
+- **A2** — veli, `Content-Length: ~50 MB` bildirip **gövdeyi hiç göndermeden**:
+  **7 ms'de 403**. Sunucu yanıtı gövdeyi okumadan verdi → multer hiç
+  tamponlamadı (rol kapısı multer'dan önce).
+- **D2** — öğretmen + `.exe` import → **403** "Bu işlem için yönetici yetkisi
+  gerekli." (adminOnly multer'dan önce).
+- **Regresyon** — normal öğrenci küçük PNG → **200**, teslim oluştu; test
+  artefaktı (submission + dosyalar) temizlendi; `uploads` 0 dosya.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/student.ts
+backend/src/student.test.ts
+backend/src/student-import.test.ts
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — Bulgu #8: rol kontrolü (`requireStudent`) multer'dan önce.
+
+---
+
 ## Bulgu #7 düzeltildi — hassas uçlara rate limiting ✅
 
 ### Süreç özeti

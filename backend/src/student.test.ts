@@ -247,6 +247,47 @@ describe('GET /api/v1/student/homeworks', () => {
 });
 
 describe('POST /api/v1/student/homeworks/:id/submit', () => {
+  // --- Bulgu #8: rol kapısı multer'dan ÖNCE çalışır (dosya belleğe alınmaz) ---
+  it('öğrenci olmayan rol (veli/öğretmen/admin) dosya yükleyemez (403)', async () => {
+    for (const token of [guardianToken, teacherToken, adminToken]) {
+      const res = await request(app)
+        .post('/api/v1/student/homeworks/s-hw-w1/submit')
+        .set(auth(token))
+        .attach('files', PNG_BUFFER, { filename: 'foto.png', contentType: 'image/png' });
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('FORBIDDEN');
+    }
+  });
+
+  it('sıra kanıtı: yanlış rol + geçersiz tip → 403 (multer fileFilter 400 değil)', async () => {
+    const res = await request(app)
+      .post('/api/v1/student/homeworks/s-hw-w1/submit')
+      .set(auth(guardianToken))
+      .attach('files', Buffer.from('MZ'), {
+        filename: 'kotu.exe',
+        contentType: 'application/octet-stream',
+      });
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+    expect(res.body.error.message).toBe('Bu işlemi yapma yetkiniz yok.');
+  });
+
+  it('sıra kanıtı: yanlış rol + 10 MB üstü dosya, gövde tüketilmeden reddedilir', async () => {
+    const big = Buffer.alloc(10 * 1024 * 1024 + 1024); // ~10 MB + 1 KB
+    try {
+      const res = await request(app)
+        .post('/api/v1/student/homeworks/s-hw-w1/submit')
+        .set(auth(guardianToken))
+        .attach('files', big, { filename: 'buyuk.jpg', contentType: 'image/jpeg' });
+      // Bazı ortamlarda yanıt tam döner:
+      expect(res.status).toBe(403);
+    } catch (err) {
+      // Çoğu ortamda sunucu gövdeyi OKUMADAN erken kapatır (rol kapısı multer'dan
+      // önce). Bu ECONNRESET/EPIPE, dosyanın belleğe alınmadığının kanıtıdır.
+      expect(String(err)).toMatch(/ECONNRESET|EPIPE|socket hang up/);
+    }
+  });
+
   it('görsel yükler, küçültülerek saklanır, submission oluşur', async () => {
     const res = await request(app)
       .post('/api/v1/student/homeworks/s-hw-w1/submit')

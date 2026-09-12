@@ -294,3 +294,25 @@ describe('rate limit — pahalı içe aktarma (Bulgu #7)', () => {
     expect(blocked.body.error.message).toContain('içe aktarma');
   });
 });
+
+describe('rol kapısı multer’dan önce (Bulgu #8)', () => {
+  it('admin olmayan (öğretmen) + geçersiz dosya → 403 (adminOnly, multer 400 değil)', async () => {
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: 'teacher@test.local', password: TEST_PASSWORD });
+    const teacherToken = login.body.token as string;
+
+    const res = await request(app)
+      .post('/api/v1/admin/students/import?dry_run=true')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .field('password', TEST_PASSWORD)
+      .attach('file', Buffer.from('MZ'), {
+        filename: 'kotu.exe',
+        contentType: 'application/octet-stream',
+      });
+    // adminOnly router seviyesinde multer'dan önce → 403 (403 alınması, csvMulter'ın
+    // fileFilter'ının çalışmadığını kanıtlar; çalışsaydı 400 dönerdi).
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+});

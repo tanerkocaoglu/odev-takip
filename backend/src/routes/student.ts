@@ -12,7 +12,7 @@
  * `student` rolü; sorgular `req.user.student_id` ile filtrelidir.
  */
 
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
@@ -35,6 +35,20 @@ function assertStudent(user: AuthUser): string {
   }
   return user.student_id;
 }
+
+/**
+ * Rol kapısı — dosya yükleme (multer) middleware'inden ÖNCE çalışır (Bulgu #8).
+ * Yanlış rollü bir istek (veli/öğretmen/admin), multer `memoryStorage`'ına hiç
+ * dosya baytı almadan burada 403 ile kesilir.
+ */
+const requireStudent: RequestHandler = (req, _res, next) => {
+  try {
+    assertStudent(req.user!);
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
 
 /** Diskten dosya kaldırır — en iyi çaba; yoksa yutulur. */
 async function removeFilesFromDisk(files: Array<{ key: string }>): Promise<void> {
@@ -192,6 +206,7 @@ const submitSchema = z.object({
 
 router.post(
   '/homeworks/:id/submit',
+  requireStudent,
   upload.array('files', MAX_FILES),
   asyncHandler<{ id: string }>(async (req, res) => {
     const studentId = assertStudent(req.user!);
