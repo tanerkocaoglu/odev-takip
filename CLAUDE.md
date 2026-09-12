@@ -36,7 +36,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
 |---|---|
 | Frontend | React 18 + TypeScript + Vite (SPA) |
 | Routing | react-router-dom |
-| UI | Tailwind CSS + shadcn/ui |
+| UI | Tailwind CSS + elle yazılmış ortak bileşenler (`src/components/admin/ui.tsx`) |
 | Animasyon | framer-motion |
 | İkon | lucide-react |
 | Backend | Node.js + Express (REST API) |
@@ -53,27 +53,59 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
 
 ```
 /project
-  package.json           → Frontend bağımlılıkları + script'ler
+  package.json           → YALNIZCA frontend bağımlılıkları + script'ler
+                           (backend paketleri backend/package.json'da)
   vite.config.ts         → dev server + /api proxy (/uploads proxy YOK)
+  vitest.config.ts       → frontend testleri (jsdom)
   tsconfig.json
+  tailwind.config.js   postcss.config.js   eslint.config.js
   index.html
+  render.yaml
   /src
-    /components          → UI bileşenleri
-    /pages               → Sayfalar (admin, teacher, guardian, student, login, r/[token])
-    /services            → API istemcileri
-    /constants           → Sabitler
-    /utils               → Yardımcı fonksiyonlar
-    /types.ts            → Global tip tanımları
+    /assets              → logo.png
+    /components
+      /admin             → AdminLayout, Modal, Pagination, ui.tsx
+                           (elle yazılmış ortak bileşenler — shadcn/ui yok)
+      /layout            → AppLayout
+      BrandLogo.tsx   ImageLightbox.tsx   ProtectedRoute.tsx
+      ReportSnapshot.tsx   SubmissionFileGrid.tsx
+    /context             → AuthContext.tsx
+    /hooks               → useList.ts
+    /pages
+      /admin             → AcademicYears, AdminDashboard, AdminReports, AdminReportView,
+                           ClassCourses, Classes, Courses, DigestSend, Guardians,
+                           Schools, Students, Teachers, Weeks (13 sayfa)
+      /guardian          → GuardianHomePage, GuardianReportDetailPage
+      /student           → HomeworkListPage
+      /teacher           → ReportEntryPage, ReportHistoryPage, SubmissionsReviewPage,
+                           TeacherDashboardPage
+      ChangePasswordPage.tsx   DashboardPage.tsx   LoginPage.tsx
+      TokenReportPage.tsx      (public /r/{token} — düz dosya, klasör değil)
+    /services            → api.ts (API istemcisi)
+    /test                → setup.ts (vitest kurulumu)
+    App.tsx   main.tsx   index.css   types.ts   vite-env.d.ts
+    *.test.tsx           → sayfa/bileşen testleri (kaynağa bitişik; ayrı test/ klasörü yok)
   /backend
-    package.json
+    package.json         → backend bağımlılıkları (express, zod, multer, sharp, ...)
+    tsconfig.json   vitest.config.ts   .env.example
     /src
-      /db                → veritabanı bağlantısı + şema kurulumu
-      /middleware        → auth, adminOnly, rateLimit
-      /routes            → REST rotaları
-      /services          → iş mantığı (storage.ts dahil — dosya yolu/key üretimi)
-      /utils             → hash, token vb.
+      app.ts   index.ts  → Express uygulaması + sunucu başlatma
+      constants.ts   types.ts   errors.ts   heic-convert.d.ts
+      /db                → bağlantı (index.ts) + migration runner + şema + seed
+      /middleware        → auth, adminOnly, rateLimit, upload
+      /routes
+        /admin           → 15 konu router'ı + index.ts (toplayıcı; requireAuth+adminOnly) + shared.ts
+        index.ts   auth.ts   teacher.ts   student.ts   guardian.ts   files.ts   public.ts
+      /services          → audit, backup, backupCli, csvExport, dashboard, digests,
+                           storage, studentImport, submissionFiles (iş mantığı)
+      /utils             → asyncHandler, csv, env, fileSignature, hash, pagination,
+                           password, phone, text, time, token, username, weeks
+      /test              → helpers.ts + fixtures/ (örnek jpg/png/pdf/heic)
+      *.test.ts          → API entegrasyon testleri (supertest; kaynağa bitişik)
+    /scripts             → audit-admin-routes.ts (envanter doğrulama), backup.ts, reset.ts
     /db                  → app.db (git'e girmez)
     /uploads             → yüklenen dosyalar (git'e girmez)
+    /backups             → yedek .zip çıktıları (git'e girmez)
 spec.md
 CLAUDE.md
 PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)

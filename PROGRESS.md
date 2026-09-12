@@ -5,11 +5,51 @@
 
 ---
 
+## Denetim turu kapandı — Grup 1–4 + tüm bulgular ✅
+
+Denetim raporundaki maddelerin tamamı kapatıldı; **açık bulgu kalmadı.**
+
+**Bağımlılık grupları**
+- **Grup 1** — backend patch/minor: `sharp 0.35.4`, `multer 2.3.0`,
+  `adm-zip 0.6.1`; backend `npm audit` → **0**.
+- **Grup 2** — kök lock: `sharp`/`multer`/`qs` (aralık içi) güncellendi.
+- **Grup 3** — `react-router-dom` 6 → **7.18.3** + `returnTo` open-redirect
+  düzeltmesi.
+- **Grup 4 / 4b** — kök `package.json` artık **yalnızca frontend**
+  bağımlılıklarını taşır; backend kendi `package.json`'unda bağımsızdır (bkz.
+  "Bağımlılık ayrımı" kaydı).
+
+**Bulgu düzeltmeleri**
+- **#3** seed'de per-user hash (salt tekrarı giderildi).
+- **#6** admin `sent` raporu düzenleyebilir (spec §2).
+- **#7** change-password / import / backup için kullanıcı bazlı rate limit.
+- **#8** rol kontrolü (`requireStudent`) multer'dan önce.
+- **#9** magic-byte içerik doğrulaması + CSV metin kontrolü + `nosniff`.
+- **DB NOT NULL borcu** — migration #9: `password_hash` / `whatsapp_phone`
+  NOT NULL + boş string CHECK.
+- **Son bulgu** — `routes/admin.ts` (2842 satır, 55 endpoint) konu bazlı alt
+  router'lara bölündü + iş mantığı servislere taşındı; envanter **statik +
+  runtime 55/55 birebir** (bkz. bir üstteki kayıt, commit `cba255a`).
+
+**Ayrıca kapatılanlar**
+- Yedekte düzenli dosya hiyerarşisi (`db:backup`).
+- Mekanik bakım: kod tekrarı birleştirme + ölü kod temizliği + login limit
+  sertleştirme (`envPositiveInt`).
+- Dokümantasyon: `CLAUDE.md` "Klasör yapısı" gerçek repo yapısıyla hizalandı
+  (routes/admin/ klasörü, frontend context/hooks/test/assets, düz
+  LoginPage/TokenReportPage, backend kök dosyaları ve scripts/, shadcn/ui →
+  elle yazılmış `components/admin/ui.tsx`, kök package.json = yalnız frontend).
+
+**Doğrulama durumu (son tur):** backend **293/293**, frontend **111/111**;
+`typecheck` + `lint` + `build` yeşil; canlı smoke **28/28**.
+
+---
+
 ## Denetim son bulgusu — `routes/admin.ts` alt router'lara bölündü + iş mantığı servislere taşındı ✅
 
 ### Süreç özeti
 
-2842 satırlık tek dosya (`routes/admin.ts`) konu bazlı **16 alt router** +
+2842 satırlık tek dosya (`routes/admin.ts`) konu bazlı **15 konu router'ı** +
 toplayıcı + paylaşılan yardımcılara bölündü. **Hiçbir davranış değişmedi:**
 path/metot/yanıt/audit/transaction birebir korundu; yetki **tek noktada**
 (toplayıcıda bir kez `router.use(requireAuth, adminOnly)`) kaldı — alt
