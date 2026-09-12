@@ -595,6 +595,21 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
 4. Son tarih geçtikten sonra da yükleyebilir; `is_late = true` işaretlenir ve
    öğretmen ekranında "geç teslim" rozeti çıkar.
 5. Geçmiş ödevler listesi: hangi ödevi yüklemiş, hangisini yüklememiş.
+6. **İçerik doğrulaması (magic-byte):** İstemcinin bildirdiği mime/uzantıya
+   güvenilmez; dosyanın **gerçek içeriği** imzasından tanınır — JPEG
+   (`FF D8 FF`), PNG (8 baytlık imza), PDF (`%PDF-`, ilk 1024 baytta),
+   HEIC/HEIF (`ftyp` + marka kümesi). Tanınamayan içerik ya da beyan edilen
+   uzantı/mime ile gerçek formatın uyuşmaması durumunda dosya **diske hiç
+   yazılmadan** ve **hiçbir DB kaydı oluşturulmadan** `400 VALIDATION_ERROR`
+   ile reddedilir; hata Türkçedir:
+   - Tanınamayan içerik → "Dosya içeriği tanınamadı; yalnızca geçerli JPEG,
+     PNG, HEIC veya PDF yükleyebilirsiniz."
+   - Uyuşmazlık → "Dosyanın içeriği uzantısıyla uyuşmuyor. Lütfen dosyayı
+     kontrol edip yeniden yükleyin."
+7. **Dosya yanıtı başlıkları:** `GET /api/v1/files/:key` ve
+   `GET /api/v1/files/:key/thumb` yanıtları `X-Content-Type-Options: nosniff`
+   taşır; tarayıcının içeriği farklı bir tipe yorumlaması (MIME sniffing)
+   engellenir.
 
 ### 5.4 Veliye haftalık gönderim (birleştirilmiş)
 
