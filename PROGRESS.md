@@ -5,6 +5,97 @@
 
 ---
 
+## Mekanik bakım — kod tekrarı birleştirme + ölü kod + login limit sertleştirme ✅
+
+### Süreç özeti
+
+Denetimden kalan düşük riskli, mekanik kalemler tek turda kapatıldı; **hiçbir
+davranış değişmedi** (yalnızca kod organizasyonu + savunma sağlamlaştırması).
+
+**1) Kod tekrarı birleştirme**
+- `localTodayISO()` + `isOverdue()` → `utils/time.ts`. admin.ts ve teacher.ts'te
+  birebir iki kopyaydı; admin/teacher artık import eder. Makine-yerel
+  `localTodayISO` mantığı **aynen** taşındı (Europe/Istanbul'a çevrilmedi —
+  davranış korunur; hizalama ayrı bir iyileştirme olarak bırakıldı).
+- Yeni `services/submissionFiles.ts`: `groupSubmissionFiles` (saf) +
+  `loadSubmissionFiles` (sorgu). teacher.ts `loadFilesBySubmission`,
+  student.ts `loadSubmissionFiles` ve guardian.ts'teki inline sorgu+gruplama
+  bu tek yardımcıya yönlendirildi. Veli yanıtı tarihsel **4 alan** şeklini
+  korur (`ext` ortak yardımcıdan gelir, yanıta yazılmaz → API sözleşmesi
+  genişlemedi).
+- `GRADE_LEVELS` → `constants.ts` (admin.ts + studentImport.ts kopyaları
+  kaldırıldı).
+- CSV boyut sabiti tek isimde birleşti: `constants.ts`'te `MAX_CSV_BYTES`;
+  `upload.ts`'teki `MAX_CSV_SIZE` kaldırıldı, studentImport'taki kullanılmayan
+  kopya/export silindi.
+
+**2) Ölü kod**
+- `services/audit.ts` `isUniqueViolation` kaldırıldı (grep: kod tabanında
+  hiçbir çağrı yok; kullanılacak bir UNIQUE çakışma yolu da bulunmadı).
+- `backend/scripts/check-backfill.ts` silindi (script/import referansı yok).
+- Boş kök `scripts/` klasörü silindi.
+
+**3) Login rate limit sertleştirme**
+- `routes/auth.ts`: `Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 5)` →
+  `envPositiveInt('LOGIN_RATE_LIMIT_MAX', 5)`. Geçerli değer davranışı aynı;
+  boş/`NaN`/0/negatif bir env değeri artık limiti sessizce kaldıramaz.
+
+### Yapılanlar
+
+- `backend/src/utils/time.ts`: `localTodayISO` + `isOverdue` eklendi.
+- `backend/src/services/submissionFiles.ts` (yeni): ortak gruplama yardımcısı.
+- `backend/src/routes/{teacher,student,guardian}.ts`: tekrarlar kaldırıldı.
+- `backend/src/routes/{admin,teacher}.ts`: fonksiyonlar `utils/time`'dan geliyor.
+- `backend/src/constants.ts`: `GRADE_LEVELS` + `MAX_CSV_BYTES`.
+- `backend/src/middleware/upload.ts`: `MAX_CSV_SIZE` → `MAX_CSV_BYTES`.
+- `backend/src/services/studentImport.ts`: tekil sabitler import ediliyor.
+- `backend/src/services/audit.ts`: `isUniqueViolation` silindi.
+- `backend/src/routes/auth.ts`: login limiti `envPositiveInt`.
+- Silinen: `backend/scripts/check-backfill.ts`, boş kök `scripts/`.
+- Yeni testler: `backend/src/utils/time.test.ts`,
+  `backend/src/services/submissionFiles.test.ts`.
+
+### Doğrulamalar
+
+**Statik** — backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅.
+
+**Testler (baseline → sonuç):**
+- Baseline: backend **285/285** (24 dosya), frontend **111/111** (18 dosya).
+- Sonuç: backend **293/293** (26 dosya), frontend **111/111** (18 dosya).
+- Yani **mevcut testlerin tümü aynı sonuçla geçti**; artış yalnızca eklenen
+  **+8 birim testi** (3 `groupSubmissionFiles` + 5 `time`) ve **+2 dosya**.
+- `groupSubmissionFiles`: boş girdi, çoklu submission gruplama/sıra, görülmeyen
+  ID; `time`: `localTodayISO` format/sıfır-dolgu + `isOverdue` geçmiş/bugün/
+  gelecek (fake timer).
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/time.ts               (+localTodayISO, +isOverdue)
+backend/src/utils/time.test.ts          (yeni)
+backend/src/services/submissionFiles.ts (yeni)
+backend/src/services/submissionFiles.test.ts (yeni)
+backend/src/routes/teacher.ts
+backend/src/routes/student.ts
+backend/src/routes/guardian.ts
+backend/src/routes/admin.ts
+backend/src/routes/auth.ts
+backend/src/services/audit.ts           (isUniqueViolation silindi)
+backend/src/services/studentImport.ts
+backend/src/middleware/upload.ts
+backend/src/constants.ts
+backend/scripts/check-backfill.ts       (silindi)
+scripts/                                (boş klasör silindi)
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — mekanik bakım: yardımcı fonksiyon birleştirme, ölü kod temizliği ve
+login rate limit'in `envPositiveInt` ile sertleştirilmesi.
+
+---
+
 ## Bulgu #9 düzeltildi — içerik (magic-byte) doğrulaması + `nosniff` ✅
 
 ### Süreç özeti

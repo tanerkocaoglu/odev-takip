@@ -18,6 +18,7 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { classIdForStudentAtWeek, firstActiveWeekNoForClass, isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
+import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import type { WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
@@ -240,26 +241,9 @@ router.get('/reports/:id', (req, res) => {
         status: string;
         reviewed_at: string | null;
       }>;
-      const files = db
-        .prepare(
-          `SELECT sf.submission_id, sf.key, sf.filename, sf.size, sf.mime
-           FROM submission_files sf
-           JOIN submissions s ON s.id = sf.submission_id
-           WHERE s.student_id = ?`,
-        )
-        .all(digest.student_id) as Array<{
-        submission_id: string;
-        key: string;
-        filename: string;
-        size: number;
-        mime: string;
-      }>;
-      const filesBySub = new Map<string, unknown[]>();
-      for (const f of files) {
-        const list = filesBySub.get(f.submission_id) ?? [];
-        list.push({ key: f.key, filename: f.filename, size: f.size, mime: f.mime });
-        filesBySub.set(f.submission_id, list);
-      }
+      // Veli yanıtı tarihsel olarak yalnızca 4 alan döner (`ext` yok) — API
+      // sözleşmesi korunur; ortak yardımcı daha zengin meta döndürür.
+      const filesBySub = loadSubmissionFiles(subRows.map((r) => r.id));
 
       submissions = homeworks.map((h) => {
         const sub = subRows.find((s) => s.homework_id === h.id);
@@ -275,7 +259,12 @@ router.get('/reports/:id', (req, res) => {
                 is_late: sub.is_late === 1,
                 status: sub.status,
                 reviewed_at: sub.reviewed_at,
-                files: filesBySub.get(sub.id) ?? [],
+                files: (filesBySub.get(sub.id) ?? []).map((f) => ({
+                  key: f.key,
+                  filename: f.filename,
+                  size: f.size,
+                  mime: f.mime,
+                })),
               }
             : null,
         };

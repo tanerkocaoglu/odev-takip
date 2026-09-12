@@ -30,6 +30,7 @@ import { nextUsername } from '../utils/username.js';
 import { writeAuditLog } from '../services/audit.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
+import { isOverdue, localTodayISO } from '../utils/time.js';
 import { csvUploadSingle } from '../middleware/upload.js';
 import {
   commitImport,
@@ -47,7 +48,7 @@ import {
   maybeCascadeSent,
   newDigestToken,
 } from '../services/digests.js';
-import { RISK, RISK_FLAGS } from '../constants.js';
+import { GRADE_LEVELS, RISK, RISK_FLAGS } from '../constants.js';
 
 /** Backup CLI çıktısının yazıldığı dizin (script ile aynı kural). */
 const BACKUPS_DIR = path.join(import.meta.dirname, '..', '..', 'backups');
@@ -1476,11 +1477,6 @@ router.delete('/guardians/:id', (req, res) => {
 
 // ---------- Öğrenci ----------
 
-/** Sınıf seviyesi sabit kümesi (spec §3.1) — trend grafikleri için normalize edilmiş veri. */
-const GRADE_LEVELS = [
-  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'Hazırlık', 'Mezun',
-] as const;
-
 const gradeLevelSchema = z.enum(GRADE_LEVELS, { message: 'Geçersiz sınıf seviyesi.' });
 
 const studentSchema = z.object({
@@ -1908,14 +1904,6 @@ router.delete('/students/:id', (req, res) => {
 // Haftalık gönderim — weekly_digests (spec.md §5.4, §6 Admin)
 // ===========================================================================
 
-/** Yerel takvimde bugün (YYYY-MM-DD) — UTC üzerinden gün çıkarımı yapılmaz. */
-function localTodayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
-}
-
 /** Aktif eğitim yılının "şu anki" haftası; yıl henüz başlamadıysa en erken hafta. */
 function currentDigestWeek(): WeekRecord | undefined {
   const today = localTodayISO();
@@ -2224,16 +2212,6 @@ router.post('/digests/:id/revoke', (req, res) => {
 // ===========================================================================
 // Admin panel — özet + eksik rapor listesi + tam matris (spec.md §5.5)
 // ===========================================================================
-
-/** Ders günü bu haftada geçti mi? (spec §5.1 — vurgu için). */
-function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
-  const [y, m, d] = week.start_date.split('-').map(Number);
-  const classDay = new Date(y, m - 1, d);
-  classDay.setDate(classDay.getDate() + (dayOfWeek - 1));
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return classDay < today;
-}
 
 /**
  * GET /admin/dashboard — admin panelinin tek veri kaynağı (spec §5.5):

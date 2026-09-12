@@ -114,7 +114,8 @@ const DUMMY_HASH = hashPasswordSync('timing-equality-dummy');
 
 // LOGIN_RATE_LIMIT_MAX env'den okunur; varsayılan 5 (production güvenli).
 // Demo ortamında .env'e LOGIN_RATE_LIMIT_MAX=10 yazarak gevşetilebilir.
-const LOGIN_RATE_LIMIT_MAX = Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 5);
+// `envPositiveInt`: boş/geçersiz/0 değer limiti sessizce kaldıramaz.
+const LOGIN_RATE_LIMIT_MAX = envPositiveInt('LOGIN_RATE_LIMIT_MAX', 5);
 
 router.post(
   '/login',

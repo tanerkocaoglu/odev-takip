@@ -7,6 +7,7 @@
 import multer, { MulterError } from 'multer';
 import type { RequestHandler } from 'express';
 import { AppError } from '../errors.js';
+import { MAX_CSV_BYTES } from '../constants.js';
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 export const MAX_FILES = 30;
@@ -45,8 +46,6 @@ export const upload = multer({
 
 // ---------- CSV (toplu öğrenci içe aktarma) ----------
 
-export const MAX_CSV_SIZE = 2 * 1024 * 1024; // 2 MB
-
 const CSV_MIMES = new Set([
   'text/csv',
   'application/csv',
@@ -58,7 +57,7 @@ const CSV_MIMES = new Set([
 const csvMulter = multer({
   storage: multer.memoryStorage(),
   defParamCharset: 'utf8',
-  limits: { fileSize: MAX_CSV_SIZE, files: 1 },
+  limits: { fileSize: MAX_CSV_BYTES, files: 1 },
   fileFilter: (_req, file, cb) => {
     const ext = file.originalname.toLowerCase().split('.').pop() ?? '';
     if (ext === 'csv' || CSV_MIMES.has(file.mimetype.toLowerCase())) {

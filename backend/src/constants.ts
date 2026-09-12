@@ -25,3 +25,11 @@ export const RISK_FLAGS = {
   MISSING_SUBMISSION: 'missing_submission',
   CONSECUTIVE_ABSENCE: 'consecutive_absence',
 } as const;
+
+/** Sınıf seviyesi sabit kümesi (spec §3.1) — tek doğru kaynak. */
+export const GRADE_LEVELS = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'Hazırlık', 'Mezun',
+] as const;
+
+/** Toplu öğrenci içe aktarma (CSV) için üst boyut: 2 MB. */
+export const MAX_CSV_BYTES = 2 * 1024 * 1024;

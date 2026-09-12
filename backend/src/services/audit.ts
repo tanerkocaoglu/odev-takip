@@ -29,12 +29,3 @@ export function writeAuditLog(input: AuditLogInput): void {
     new Date().toISOString(),
   );
 }
-
-/**
- * SQLite UNIQUE ihlali mi? (node:sqlite hata kodu SQLITE_CONSTRAINT_*)
- * Admin CRUD'da çakışmaları 409 CONFLICT'e çevirmek için kullanılır.
- */
-export function isUniqueViolation(err: unknown): boolean {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT');
-}

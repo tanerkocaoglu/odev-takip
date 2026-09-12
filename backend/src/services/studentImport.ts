@@ -21,6 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
+import { GRADE_LEVELS } from '../constants.js';
 import { csvToRecords, toCsv } from '../utils/csv.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { normalizePhone } from '../utils/phone.js';
@@ -42,14 +43,7 @@ const REQUIRED_HEADERS = [
   'veli_whatsapp',
 ] as const;
 
-const GRADE_LEVELS = [
-  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'Hazırlık', 'Mezun',
-] as const;
-
 const MAX_ROWS = 500;
-const MAX_CSV_BYTES = 2 * 1024 * 1024;
-
-export { MAX_CSV_BYTES };
 
 export interface ImportError {
   row: number;

@@ -21,35 +21,16 @@ import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import { ensurePendingDigests, maybeReadyDigests } from '../services/digests.js';
+import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
+import { isOverdue, localTodayISO } from '../utils/time.js';
 import type { AuthUser } from '../types.js';
 
 const router = Router();
 
 router.use(requireAuth);
-
-/** Yerel saatte bugün (YYYY-MM-DD) — UTC üzerinden gün çıkarımı yapılmaz. */
-function localTodayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
-}
-
-/**
- * Ders günü bu haftada geçti mi? (spec.md §5.1: "ders günü geçtiği halde
- * draft olanlar üstte ve vurgulu görünür"). Hafta tamamen bittiyse de geçmiş.
- */
-function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
-  const [y, m, d] = week.start_date.split('-').map(Number);
-  const classDay = new Date(y, m - 1, d);
-  classDay.setDate(classDay.getDate() + (dayOfWeek - 1));
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return classDay < today;
-}
 
 /** Rol + sahiplik kontrolü — rapor doldurma izni (spec.md §2). */
 function assertCanFill(user: AuthUser, cc: { teacher_id: string }): void {
@@ -1026,7 +1007,7 @@ router.get('/submissions', (req, res) => {
       student_name: string;
     }>;
 
-    const filesBySubmission = loadFilesBySubmission(rows.map((r) => r.id));
+    const filesBySubmission = loadSubmissionFiles(rows.map((r) => r.id));
     res.json({
       items: rows.map((r) => ({
         id: r.id,
@@ -1097,38 +1078,6 @@ router.get('/submissions', (req, res) => {
 
   res.json({ items: rows });
 });
-
-/** Teslim dosyalarını submission_id'ye göre gruplar. */
-function loadFilesBySubmission(submissionIds: string[]): Map<string, unknown[]> {
-  const map = new Map<string, unknown[]>();
-  if (submissionIds.length === 0) return map;
-  const placeholders = submissionIds.map(() => '?').join(',');
-  const rows = db
-    .prepare(
-      `SELECT submission_id, key, filename, size, mime, ext
-       FROM submission_files WHERE submission_id IN (${placeholders})`,
-    )
-    .all(...submissionIds) as Array<{
-    submission_id: string;
-    key: string;
-    filename: string;
-    size: number;
-    mime: string;
-    ext: string;
-  }>;
-  for (const row of rows) {
-    const list = map.get(row.submission_id) ?? [];
-    list.push({
-      key: row.key,
-      filename: row.filename,
-      size: row.size,
-      mime: row.mime,
-      ext: row.ext,
-    });
-    map.set(row.submission_id, list);
-  }
-  return map;
-}
 
 const patchSubmissionSchema = z.object({
   status: z.literal('reviewed', { message: 'Yalnızca "reviewed" durumu işaretlenebilir.' }),

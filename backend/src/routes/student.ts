@@ -21,6 +21,7 @@ import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { upload, MAX_FILES } from '../middleware/upload.js';
 import { saveUpload, localPathFor, type StoredFile } from '../services/storage.js';
+import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { isLateSubmission } from '../utils/time.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthUser } from '../types.js';
@@ -148,38 +149,6 @@ function buildHomeworkItem(row: HomeworkRow, filesBySubmission: Map<string, unkn
         }
       : null,
   };
-}
-
-/** Aynı listedeki teslim dosyalarını submission_id'ye göre gruplar. */
-function loadSubmissionFiles(submissionIds: string[]): Map<string, unknown[]> {
-  const map = new Map<string, unknown[]>();
-  if (submissionIds.length === 0) return map;
-  const placeholders = submissionIds.map(() => '?').join(',');
-  const rows = db
-    .prepare(
-      `SELECT submission_id, key, filename, size, mime, ext
-       FROM submission_files WHERE submission_id IN (${placeholders})`,
-    )
-    .all(...submissionIds) as Array<{
-    submission_id: string;
-    key: string;
-    filename: string;
-    size: number;
-    mime: string;
-    ext: string;
-  }>;
-  for (const row of rows) {
-    const list = map.get(row.submission_id) ?? [];
-    list.push({
-      key: row.key,
-      filename: row.filename,
-      size: row.size,
-      mime: row.mime,
-      ext: row.ext,
-    });
-    map.set(row.submission_id, list);
-  }
-  return map;
 }
 
 // ---------- GET /student/homeworks ----------
