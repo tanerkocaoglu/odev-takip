@@ -45,7 +45,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`158afe7` — veli WhatsApp linki `localhost` yerine `BASE_URL`/`RENDER_EXTERNAL_URL`.
 
 ---
 
