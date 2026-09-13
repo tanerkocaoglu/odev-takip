@@ -476,6 +476,7 @@ CREATE TABLE weekly_digests (
   student_id      TEXT NOT NULL REFERENCES students(id),
   week_id         TEXT NOT NULL REFERENCES weeks(id),
   guardian_id     TEXT NOT NULL REFERENCES guardians(id),
+  class_id        TEXT REFERENCES classes(id),  -- migration #11; digest'in sınıfı
   token           TEXT NOT NULL,   -- crypto.randomBytes(32).base64url; UUID DEĞİL
   status          TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending','ready','sent')),
@@ -491,7 +492,16 @@ CREATE TABLE weekly_digests (
 
 CREATE UNIQUE INDEX idx_digests_token ON weekly_digests(token);
 CREATE INDEX idx_digests_week ON weekly_digests(week_id, status);
+CREATE INDEX idx_digests_class_week ON weekly_digests(class_id, week_id);  -- #11
 ```
+> **`class_id` (migration #11):** Digest hangi sınıf-haftaya aitse onu satırda
+> saklar. Önizleme (`previewDigest`), gönderim (`sendDigest`), liste ve kaskad
+> artık sınıfı `enrollments` üzerinden **yeniden türetmez**; böylece rapor
+> ekranının bir dönem kaçırdığı öğrenciler için sonradan açılan "telafi"
+> digest'leri de (`start_date` hafta başından sonra olsa bile) 409 vermeden
+> önizlenir/gönderilir. Alan nullable'dır; migration mevcut satırları o günkü
+> geçerli kuralla (`start_date <= hafta başı`) doldurur, çözülemeyen satırlarda
+> okuma yolu eski türetmeye düşer.
 > `snapshot` daima **son gönderimin** içeriğini tutar (üzerine yazılır).
 > Gönderim geçmişi `audit_logs`'ta saklanır (`digest.send` / `digest.resend`).
 >
@@ -676,6 +686,11 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
 > o sınıf+hafta için fiilen puanlanmış ve velisi olan öğrencilere digest satırı
 > açar. Kalıcı ürün akışı değildir; dry-run varsayılan, `--execute` öncesi tam
 > yedek alır.
+>
+> **Önizleme/gönderim sınıfı yeniden türetmez (migration #11):** `weekly_digests.class_id`
+> satırda saklandığından `preview`/`send` artık `enrollments`'a bakmaz; telafi
+> digest'leri (`start_date` hafta başından sonra olsa bile) 409 vermeden
+> önizlenir/gönderilir ve gönderim sonrası kaskad bu satırları da kapsar.
 
 1. Admin "Haftalık gönderim" ekranı `ready` **ve** `pending` kayıtların ikisini
    listeler:

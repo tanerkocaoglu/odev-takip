@@ -15,6 +15,7 @@ import path from 'node:path';
 import { db } from '../db/index.js';
 import { resetDb, insertTestUsers } from '../test/helpers.js';
 import { planBackfill, runBackfill } from './digestBackfill.js';
+import { previewDigest, sendDigest } from './digests.js';
 
 const NOW = '2026-01-15T10:00:00.000Z';
 let backupDir: string;
@@ -167,15 +168,17 @@ describe('runBackfill', () => {
     expect(digestCount()).toBe(1);
 
     const row = db
-      .prepare(`SELECT status, guardian_id, token, send_count FROM weekly_digests WHERE student_id = ?`)
+      .prepare(`SELECT status, guardian_id, class_id, token, send_count FROM weekly_digests WHERE student_id = ?`)
       .get('test-student-rec') as {
       status: string;
       guardian_id: string;
+      class_id: string | null;
       token: string;
       send_count: number;
     };
     expect(row.status).toBe('ready');
     expect(row.guardian_id).toBe('test-guardian-rec');
+    expect(row.class_id).toBe('c1');
     expect(row.token.length).toBeGreaterThan(16);
     expect(row.send_count).toBe(0);
 
@@ -198,5 +201,39 @@ describe('runBackfill', () => {
     expect(again.inserted).toBe(0);
     expect(again.backupPath).toBeNull();
     expect(digestCount()).toBe(1);
+  });
+
+  it('telafi sonrası önizleme ve gönderim 409 vermez; kaskad raporları sent yapar', () => {
+    // Öğrencinin enrollment'ı hafta başından SONRA (orijinal hata koşulu);
+    // sınıfın tüm dersleri tamam. Backfill class_id ile ready satır açar.
+    insertGraph({ secondCourseDone: true });
+    const result = runBackfill(
+      { className: 'ÖKLİD', weekNo: 1 },
+      { execute: true, backupOutDir: backupDir },
+    );
+    expect(result.inserted).toBe(1);
+
+    const digest = db
+      .prepare(`SELECT id FROM weekly_digests WHERE student_id = 'test-student-rec'`)
+      .get() as { id: string };
+
+    // Eski davranış: classIdForStudentAtWeek null → preview/send 409.
+    // Yeni davranış: satırdaki class_id kullanılır.
+    const preview = previewDigest(digest.id);
+    expect(preview.class.id).toBe('c1');
+    expect(preview.student.id).toBe('test-student-rec');
+    expect(preview.courses.length).toBe(2);
+
+    const sent = sendDigest(digest.id, 'test-admin');
+    expect(sent.status).toBe('sent');
+    expect(sent.send_count).toBe(1);
+    expect(sent.token.length).toBeGreaterThan(16);
+
+    // Kaskad: sınıf+haftanın tüm digest'leri sent olduğu için completed
+    // raporlar sent'e geçer (spec §5.4).
+    const statuses = db
+      .prepare(`SELECT status FROM reports WHERE week_id = 'w1'`)
+      .all() as Array<{ status: string }>;
+    expect(statuses.every((r) => r.status === 'sent')).toBe(true);
   });
 });

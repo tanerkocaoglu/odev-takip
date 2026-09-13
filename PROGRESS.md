@@ -5,6 +5,75 @@
 
 ---
 
+## `weekly_digests.class_id` (migration #11) — önizleme/gönderim artık sınıfı yeniden türetmiyor ✅
+
+### Sorun
+
+`previewDigest` ve `sendDigest`, sınıfı `classIdForStudentAtWeek` (katı kural:
+`start_date <= hafta başı`) ile **her okumada yeniden** türetiyordu. B script'inin
+telafi için açtığı digest'lerde öğrencinin `start_date`'i hafta başından sonra
+olduğundan bu türetme `null` dönüyor ve hem önizleme hem gönderim **409** veriyordu
+(üstelik `buildSnapshot` sınıfı zorunlu kılıyor). `maybeCascadeSent` de öğrenci
+kümesini aynı katı kuralla kurduğundan telafi satırını yok sayıyordu.
+
+### Çözüm — sınıf-hafta bağı digest satırında saklanır
+
+- **Migration #11 (`digest_class_id`):** `weekly_digests.class_id TEXT REFERENCES
+  classes(id)` + `idx_digests_class_week`. Mevcut satırlar o günkü geçerli kuralla
+  (`start_date <= hafta başı`) doldurulur; çözülemeyen satırda `NULL` kalır
+  (okuma yolu geçici fallback yapar) ve migration bloke olmaz.
+- **Yazma:** `ensurePendingDigests` ve `digestBackfill` `class_id`'yi doğrudan yazar.
+- **Okuma:** `previewDigest`/`sendDigest` → `digest.class_id ?? classIdForStudentAtWeek`;
+  `listDigests` → `COALESCE(d.class_id, <eski subquery>)`.
+- **Kaskad/hazır:** `maybeCascadeSent` ve `maybeReadyDigests` artık öğrenci
+  kümesini `activeStudentsWithGuardian` yerine "bu sınıf+haftanın **tüm digest
+  satırları**" (yeni satırlarda `class_id`, eskilerde enrollment) üzerinden kurar;
+  telafi satırları da doğru sayılır.
+
+### Migration güvenlik disiplini (#9/#10 ile aynı)
+
+- **Önce yedek:** `npm run db:migrate` bekleyen migration varsa `createBackup()`
+  alır; yedek başarısızsa migration başlamaz (CLI; runner'ın kendisi yedek almaz).
+- **Transaction + rollback:** runner `BEGIN/COMMIT/ROLLBACK`; hata → tam rollback.
+- **Rewind testi:** `migration-backfill.test.ts` 10↔11 yeniden kurulumu (`class_id`
+  düşür → tekrar koş) + normal satır çözülür / geç başlayan satır `NULL` kalır
+  doğrulaması. #7/#9/#10 rewind helper'ları da #11'i geri alacak şekilde güncellendi.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **347/347** (31 dosya; +2: `digestBackfill` class_id +
+  preview/send/kaskad regresyonu ve `migration #11` rewind), frontend **129/129**.
+- **Gerçek `app.db` kopyasında migration (#11):** `VACUUM INTO` kopyası
+  (`user_version=9`) → `npm run db:migrate` (yedek + 9→11) → **8 digest, `class_id`
+  NULL = 0, beklenen ile uyuşmazlık = 0, `foreign_key_check` temiz**, indeks var.
+  (Not: bu, yerel seed `app.db`'dir — üretim FİBONACCİ verisi bu ortamdan
+  erişilemez; aynı komut üretimde de çalıştırılmalı.)
+- **Canlı uçtan uca (izole kopya + gerçek sunucu):** FİBONACCİ eşdeğeri fixture
+  (5 öğrenci, enrollment başı `2026-09-16` > hafta başı `2026-09-14`, 3 ders
+  completed) → backfill **5 ready** digest → HTTP: **önizleme 200 ×5**,
+  **gönderim 200 ×5**, **kaskad: 3 rapor `sent`**, 5 digest `sent` — **6/6 PASS**.
+  Gerçek `app.db` değişmedi (v9, mtime `22:25:51`); temp/sunucu temizlendi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts                 (migration #11 + latestMigrationVersion)
+backend/src/db/migrate.ts                    (bekleyen migration varsa createBackup)
+backend/src/db/migration-backfill.test.ts    (#11 rewind + rebuild helper; sürüm beklentileri)
+backend/src/services/digests.ts              (class_id: yaz/oku/kaskad/hazır/liste)
+backend/src/services/digestBackfill.ts       (class_id yaz)
+backend/src/services/digestBackfill.test.ts  (+class_id + preview/send/kaskad)
+spec.md                                      (§3.3 DDL + not; §5.4 not)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Henüz başlamamış enrollment rapora/digest'e sızmasın + digest telafisi ✅
 
 ### Sorun

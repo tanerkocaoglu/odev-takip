@@ -632,6 +632,50 @@ registerMigration(
   { foreignKeysOff: true },
 );
 
+/**
+ * Migration #11 — `weekly_digests.class_id`.
+ *
+ * Sorun: `weekly_digests` hangi sınıfa ait olduğunu saklamıyordu; sınıf her
+ * okumada (preview/send/list/kaskad) `enrollments` üzerinden yeniden türetiliyordu
+ * (`start_date <= hafta başı`). Rapor ekranı bir dönem bu şartı uygulamadığı için
+ * rapora girip puanlanan ama digest'i olmayan öğrenciler için sonradan açılan
+ * digest satırları bu türetmeden geçemiyordu (önizleme/gönderim `409`).
+ * Çözüm: sınıf-hafta bağı **digest satırında** saklanır; okuma yolu enrollment'a
+ * bakmaz (yalnızca eski `class_id IS NULL` satırlar için geçici fallback yapar).
+ *
+ * Backfill: mevcut satırlar, o günkü geçerli kural — `start_date <= hafta başı
+ * AND (end_date IS NULL OR end_date >= hafta başı)` — ile doldurulur. Normal
+ * veride hepsi çözülür; çözülemeyen satırda `NULL` kalır (uygulama fallback'i
+ * devreye girer) ve migration bloke olmaz (NULL burada bütünlük ihlali değildir).
+ *
+ * Yedek: `npm run db:migrate` bekleyen migration varsa önce `createBackup()`
+ * alır (CLI'da; runner'ın kendisi yedek almaz). Transaction + hata→ROLLBACK
+ * garantisi runner'dadır; tablo yeniden kurulmadığı için `foreignKeysOff` gerekmez.
+ */
+registerMigration(11, 'digest_class_id', () => {
+  db.exec(`ALTER TABLE weekly_digests ADD COLUMN class_id TEXT REFERENCES classes(id)`);
+  db.exec(`
+    UPDATE weekly_digests
+    SET class_id = (
+      SELECT e.class_id
+      FROM enrollments e
+      JOIN weeks w ON w.id = weekly_digests.week_id
+      WHERE e.student_id = weekly_digests.student_id
+        AND e.start_date <= w.start_date
+        AND (e.end_date IS NULL OR e.end_date >= w.start_date)
+      ORDER BY e.start_date DESC
+      LIMIT 1
+    )
+    WHERE class_id IS NULL
+  `);
+  db.exec(`CREATE INDEX idx_digests_class_week ON weekly_digests(class_id, week_id)`);
+});
+
+/** Bilinen en yüksek migration sürümü (CLI'ın bekleyen iş olup olmadığını anlaması için). */
+export function latestMigrationVersion(): number {
+  return migrations.reduce((max, m) => (m.version > max ? m.version : max), 0);
+}
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

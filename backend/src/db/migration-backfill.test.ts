@@ -35,6 +35,9 @@ beforeAll(() => {
   resetDb();
 
   // ---- Şemayı #2 durumuna geri sar ----
+  // #11 (digest class_id) geri alınır (aksi halde runMigrations yeniden
+  // ADD COLUMN class_id dener ve "duplicate column" ile patlar).
+  rebuildDigestsWithoutClassId();
   // Migration #3 (name_normalized) geri alınır.
   db.exec(`DROP INDEX idx_classes_name`);
   db.exec(`DROP INDEX idx_courses_name`);
@@ -128,10 +131,10 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4..#10 (submission_files, username_login, schools_grade_view,
+    // #3 backfill + #4..#11 (submission_files, username_login, schools_grade_view,
     // must_change_password, submission_file_thumb, not_null_password_phone,
-    // entry_score_check) koşar.
-    expect(version.user_version).toBe(10);
+    // entry_score_check, digest_class_id) koşar.
+    expect(version.user_version).toBe(11);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -154,9 +157,11 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
 
     // #7'yi geri sar: kolon YOK, sürüm 6 (eski migration turlarındaki desen).
     // #8 (thumb_key) de #7'den sonra geldiği için burada geri alınır; böylece
-    // runMigrations #7 ve #8'i birlikte koşar.
+    // runMigrations #7 ve #8'i birlikte koşar. #11 (class_id) de geri alınır —
+    // sonraki runMigrations yeniden ADD COLUMN denemesin.
     db.exec(`ALTER TABLE submission_files DROP COLUMN thumb_key`);
     db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
+    rebuildDigestsWithoutClassId();
     db.exec(`PRAGMA user_version = 6`);
 
     const before = db
@@ -184,7 +189,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     const after = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(after.user_version).toBe(10);
+    expect(after.user_version).toBe(11);
 
     const row = db
       .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
@@ -260,6 +265,7 @@ function revertNotnullToV8(): void {
   } finally {
     if (wasOn) db.exec('PRAGMA foreign_keys = ON');
   }
+  rebuildDigestsWithoutClassId();
   db.exec('PRAGMA user_version = 8');
 }
 
@@ -309,7 +315,7 @@ describe('migration #9 — password_hash / whatsapp_phone NOT NULL rewind (9↔8
 
     runMigrations();
 
-    expect(userVersion()).toBe(10);
+    expect(userVersion()).toBe(11);
     expect(columnInfo('users', 'password_hash').notnull).toBe(1);
     expect(columnInfo('guardians', 'whatsapp_phone').notnull).toBe(1);
     expect(db.prepare(`SELECT password_hash FROM users WHERE id = 'm9-student'`).get()).toEqual({
@@ -446,6 +452,7 @@ function revertEntryCheckToV9(withCheck = true): void {
   } finally {
     if (wasOn) db.exec('PRAGMA foreign_keys = ON');
   }
+  rebuildDigestsWithoutClassId();
   db.exec('PRAGMA user_version = 9');
 }
 
@@ -501,7 +508,7 @@ describe('migration #10 — report_entries puan CHECK rewind (10↔9)', () => {
 
     expect(userVersion()).toBe(9);
     runMigrations();
-    expect(userVersion()).toBe(10);
+    expect(userVersion()).toBe(11);
 
     // Veri korundu.
     expect(
@@ -540,5 +547,155 @@ describe('migration #10 — report_entries puan CHECK rewind (10↔9)', () => {
     expect(
       db.prepare(`SELECT interest_score FROM report_entries WHERE id = 'm10-bad'`).get(),
     ).toEqual({ interest_score: 9 });
+  });
+});
+
+// ===========================================================================
+// Migration #11 — `weekly_digests.class_id` backfill + rewind (11↔10)
+// ===========================================================================
+
+/**
+ * `weekly_digests`'ten `class_id` kolonunu (ve #11 indeksini) düşürür; diğer
+ * kolonları ve veriyi korur. Tablo düzeyinde yeniden kurulur çünkü kolon
+ * düşürme FK/indeks kısıtlarına takılır. #10'daki 12 adımlı desenin birebiridir.
+ * `class_id` yoksa no-op. `user_version`'a dokunmaz (çağıran ayarlar).
+ */
+function rebuildDigestsWithoutClassId(): void {
+  const cols = (
+    db.prepare(`PRAGMA table_info('weekly_digests')`).all() as Array<{ name: string }>
+  ).map((c) => c.name);
+  if (!cols.includes('class_id')) return;
+
+  const fk = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number };
+  const wasOn = fk.foreign_keys === 1;
+  if (wasOn) db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE weekly_digests_old (
+        id              TEXT PRIMARY KEY,
+        student_id      TEXT NOT NULL REFERENCES students(id),
+        week_id         TEXT NOT NULL REFERENCES weeks(id),
+        guardian_id     TEXT NOT NULL REFERENCES guardians(id),
+        token           TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','ready','sent')),
+        send_count      INTEGER NOT NULL DEFAULT 0,
+        sent_at         TEXT,
+        sent_by         TEXT REFERENCES users(id),
+        snapshot        TEXT,
+        is_revoked      INTEGER NOT NULL DEFAULT 0 CHECK (is_revoked IN (0,1)),
+        first_viewed_at TEXT,
+        last_viewed_at  TEXT,
+        UNIQUE (student_id, week_id)
+      ) STRICT;
+    `);
+    db.exec(`
+      INSERT INTO weekly_digests_old
+        (id, student_id, week_id, guardian_id, token, status, send_count, sent_at,
+         sent_by, snapshot, is_revoked, first_viewed_at, last_viewed_at)
+      SELECT id, student_id, week_id, guardian_id, token, status, send_count, sent_at,
+             sent_by, snapshot, is_revoked, first_viewed_at, last_viewed_at
+      FROM weekly_digests;
+    `);
+    db.exec(`DROP TABLE weekly_digests`);
+    db.exec(`ALTER TABLE weekly_digests_old RENAME TO weekly_digests`);
+    db.exec(`CREATE UNIQUE INDEX idx_digests_token ON weekly_digests(token)`);
+    db.exec(`CREATE INDEX idx_digests_week ON weekly_digests(week_id, status)`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    if (wasOn) db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+/** Şemayı #11 öncesine geri sarar (class_id yok, sürüm 10). */
+function revertDigestClassIdToV10(): void {
+  rebuildDigestsWithoutClassId();
+  db.exec('PRAGMA user_version = 10');
+}
+
+/** #11 testi için: yıl → hafta → sınıf, normal + "geç başlayan" iki öğrenci. */
+function insertM11Fixture(): void {
+  db.prepare(
+    `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+     VALUES ('m11-year', '2026-2027', '2026-09-01', '2027-06-30', 1)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+     VALUES ('m11-week', 'm11-year', 1, '2026-09-07', '2026-09-13', '07.09 - 13.09.2026')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES ('m11-class', 'm11-year', 'M11 Sınıf', 'm11 sinif', NULL)`,
+  ).run();
+
+  // Normal öğrenci: enrollment hafta başından ÖNCE → class_id çözülür.
+  db.prepare(
+    `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+     VALUES ('m11-enr-1', 'test-student-rec', 'm11-class', '2026-09-01', NULL)`,
+  ).run();
+
+  // Geç başlayan öğrenci: start_date hafta başından SONRA → çözülemez (NULL).
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO users (id, full_name, full_name_normalized, username, email, password_hash,
+       role, is_active, token_version, deleted_at, created_at)
+     VALUES ('m11-student2', 'M11 Student2', 'm11 student2', 'm11-student2', NULL, 'x',
+       'student', 1, 1, NULL, ?)`,
+  ).run(now);
+  db.prepare(
+    `INSERT INTO students (id, user_id, guardian_id, deleted_at)
+     VALUES ('m11-student-rec2', 'm11-student2', 'test-guardian-rec', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+     VALUES ('m11-enr-2', 'm11-student-rec2', 'm11-class', '2026-09-10', NULL)`,
+  ).run();
+
+  const insertDigest = db.prepare(
+    `INSERT INTO weekly_digests (id, student_id, week_id, guardian_id, token, status)
+     VALUES (?, ?, 'm11-week', 'test-guardian-rec', ?, 'ready')`,
+  );
+  insertDigest.run('m11-digest-1', 'test-student-rec', 'm11-token-normal');
+  insertDigest.run('m11-digest-2', 'm11-student-rec2', 'm11-token-late');
+}
+
+describe('migration #11 — weekly_digests.class_id backfill + rewind (11↔10)', () => {
+  afterEach(() => {
+    db.exec(`DELETE FROM weekly_digests WHERE id LIKE 'm11-%'`);
+    db.exec(`DELETE FROM enrollments WHERE id LIKE 'm11-%'`);
+    db.exec(`DELETE FROM students WHERE id = 'm11-student-rec2'`);
+    db.exec(`DELETE FROM users WHERE id = 'm11-student2'`);
+    if (userVersion() === 10) runMigrations();
+  });
+
+  it('v10 şemasından koşunca normal satırların class_id\'sini doldurur; veriyi korur', () => {
+    resetDb();
+    revertDigestClassIdToV10();
+    insertTestUsers();
+    insertM11Fixture();
+
+    expect(userVersion()).toBe(10);
+    runMigrations();
+    expect(userVersion()).toBe(11);
+
+    const normal = db
+      .prepare(`SELECT class_id, token, status FROM weekly_digests WHERE id = 'm11-digest-1'`)
+      .get() as { class_id: string | null; token: string; status: string };
+    expect(normal.class_id).toBe('m11-class');
+    expect(normal.token).toBe('m11-token-normal');
+    expect(normal.status).toBe('ready');
+
+    // Geç başlayan öğrenci: migration bloke olmaz, NULL kalır (okuma yolu fallback).
+    const late = db
+      .prepare(`SELECT class_id FROM weekly_digests WHERE id = 'm11-digest-2'`)
+      .get() as { class_id: string | null };
+    expect(late.class_id).toBeNull();
+
+    // FK bütünlüğü korunur.
+    expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
   });
 });

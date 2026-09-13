@@ -262,9 +262,9 @@ export function runBackfill(target: BackfillTarget, options: BackfillOptions = {
   try {
     const insert = db.prepare(
       `INSERT OR IGNORE INTO weekly_digests
-         (id, student_id, week_id, guardian_id, token, status, send_count,
+         (id, student_id, week_id, guardian_id, class_id, token, status, send_count,
           sent_at, sent_by, snapshot, is_revoked)
-       VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, 0)`,
     );
     let inserted = 0;
     for (const item of plan.items) {
@@ -274,6 +274,7 @@ export function runBackfill(target: BackfillTarget, options: BackfillOptions = {
         item.studentId,
         plan.weekId,
         item.guardianId,
+        plan.classId,
         token(),
         item.status,
       );

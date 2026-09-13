@@ -56,6 +56,8 @@ export interface DigestRecord {
   student_id: string;
   week_id: string;
   guardian_id: string;
+  /** Digest'in ait olduğu sınıf (migration #11). Eski satırlarda NULL olabilir. */
+  class_id: string | null;
   status: string;
   send_count: number;
   is_revoked: number;
@@ -69,7 +71,8 @@ export interface DigestRecord {
 export function loadDigest(digestId: string): DigestRecord {
   const row = db
     .prepare(
-      `SELECT d.id, d.student_id, d.week_id, d.guardian_id, d.status, d.send_count, d.is_revoked,
+      `SELECT d.id, d.student_id, d.week_id, d.guardian_id, d.class_id,
+              d.status, d.send_count, d.is_revoked,
               g.whatsapp_phone AS guardian_phone, g.consent_at,
               u_g.full_name AS guardian_name, u_s.full_name AS student_name
        FROM weekly_digests d
@@ -217,8 +220,37 @@ function activeStudentsWithGuardian(
 }
 
 /**
+ * Bu sınıf+haftaya ait digest satırlarının öğrenci kümesi (migration #11).
+ * Yeni satırlarda depolanan `class_id`; eski (`class_id IS NULL`) satırlarda ise
+ * aktif enrollment kullanılır. Böylece rapor ekranının bir dönem kaçırdığı
+ * (start_date hafta başından sonra) telafi digest'leri de doğru kümeye girer.
+ */
+function digestStudentIdsForClassWeek(classId: string, week: WeekRecord): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT d.student_id FROM weekly_digests d
+         WHERE d.week_id = ?
+           AND (
+             d.class_id = ?
+             OR (d.class_id IS NULL AND EXISTS (
+                   SELECT 1 FROM enrollments e
+                   WHERE e.student_id = d.student_id AND e.class_id = ?
+                     AND e.start_date <= ?
+                     AND (e.end_date IS NULL OR e.end_date >= ?)))
+           )`,
+      )
+      .all(week.id, classId, classId, week.start_date, week.start_date) as Array<{
+      student_id: string;
+    }>
+  ).map((r) => r.student_id);
+}
+
+/**
  * İlk rapor tamamlandığında `pending` digest'leri açar (spec §5.4).
  * Velisi olmayan öğrenciye digest açılmaz (guardian_id NOT NULL — kural).
+ * `class_id` satırda saklanır (migration #11): preview/send artık enrollment'a
+ * göre sınıf türetmez.
  */
 export function ensurePendingDigests(classId: string, weekId: string): void {
   const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(weekId) as
@@ -230,12 +262,12 @@ export function ensurePendingDigests(classId: string, weekId: string): void {
 
   const insert = db.prepare(
     `INSERT OR IGNORE INTO weekly_digests
-       (id, student_id, week_id, guardian_id, token, status, send_count,
+       (id, student_id, week_id, guardian_id, class_id, token, status, send_count,
         sent_at, sent_by, snapshot, is_revoked)
-     VALUES (?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL, 0)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, NULL, NULL, 0)`,
   );
   for (const s of students) {
-    insert.run(randomUUID(), s.student_id, weekId, s.guardian_id, newDigestToken());
+    insert.run(randomUUID(), s.student_id, weekId, s.guardian_id, classId, newDigestToken());
   }
 }
 
@@ -262,9 +294,8 @@ export function maybeReadyDigests(classId: string, weekId: string): void {
     | WeekRecord
     | undefined;
   if (!week) return;
-  const studentIds = activeStudentsWithGuardian(classId, week.start_date).map(
-    (s) => s.student_id,
-  );
+  // Sınıf+haftanın tüm digest satırları (telafi satırları dahil) ready olur.
+  const studentIds = digestStudentIdsForClassWeek(classId, week);
   if (studentIds.length === 0) return;
 
   const sp = studentIds.map(() => '?').join(',');
@@ -465,9 +496,7 @@ export function maybeCascadeSent(classId: string, weekId: string): void {
     | undefined;
   if (!week) return;
 
-  const studentIds = activeStudentsWithGuardian(classId, week.start_date).map(
-    (s) => s.student_id,
-  );
+  const studentIds = digestStudentIdsForClassWeek(classId, week);
   if (studentIds.length === 0) return;
 
   const sp = studentIds.map(() => '?').join(',');
@@ -584,12 +613,13 @@ export function listDigests(params: {
        JOIN guardians g ON g.id = d.guardian_id
        JOIN users u_g ON u_g.id = g.user_id
        JOIN weeks w ON w.id = d.week_id
-       LEFT JOIN classes c ON c.id = (
-         SELECT e.class_id FROM enrollments e
-         WHERE e.student_id = d.student_id
-           AND e.start_date <= w.start_date
-           AND (e.end_date IS NULL OR e.end_date >= w.start_date)
-         ORDER BY e.start_date DESC LIMIT 1
+       LEFT JOIN classes c ON c.id = COALESCE(
+         d.class_id,
+         (SELECT e.class_id FROM enrollments e
+          WHERE e.student_id = d.student_id
+            AND e.start_date <= w.start_date
+            AND (e.end_date IS NULL OR e.end_date >= w.start_date)
+          ORDER BY e.start_date DESC LIMIT 1)
        )
        ${where.length > 0 ? 'WHERE ' + where.join(' AND ') : ''}
        ORDER BY w.start_date DESC, c.name, u_s.full_name_normalized`,
@@ -650,7 +680,10 @@ export function previewDigest(digestId: string): DigestSnapshot {
   if (!week) {
     throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
   }
-  const classId = classIdForStudentAtWeek(digest.student_id, week);
+  // Sınıf önce satırda saklanandan (migration #11); yalnızca eski NULL satırlarda
+  // enrollment'tan türetilir. Böylece telafi digest'leri (start_date hafta
+  // başından sonra) önizlemede 409 vermez.
+  const classId = digest.class_id ?? classIdForStudentAtWeek(digest.student_id, week);
   if (!classId) {
     throw new AppError('CONFLICT', 409, 'Bu öğrencinin haftada aktif sınıfı yok.');
   }
@@ -693,7 +726,7 @@ export function sendDigest(digestId: string, actorId: string): SendDigestResult 
   if (!week) {
     throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
   }
-  const classId = classIdForStudentAtWeek(digest.student_id, week);
+  const classId = digest.class_id ?? classIdForStudentAtWeek(digest.student_id, week);
   if (!classId) {
     throw new AppError('CONFLICT', 409, 'Bu öğrencinin haftada aktif sınıfı yok.');
   }
