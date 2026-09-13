@@ -1,45 +1,29 @@
 /**
  * Veli paneli — rapor detayı (spec.md §6 Veli).
- * `snapshot` (haftalık derslerin raporu, salt-okunur) + ödev teslim geçmişi.
- * Teslim dosyaları korumalı rotadan (Bearer token) açılır.
+ *
+ * Ortak `GuardianReportView` (haftanın dört dersi, hepsi açık) + girişli veliye
+ * özel **ödev teslim geçmişi**. Teslim/önceki-ödev dosyaları korumalı rotadan
+ * (Bearer token) açılır. Aynı rapor gövdesi public `/r/{token}` ile ortaktır;
+ * bu sayfa yalnızca teslim geçmişini ve canlı `prev_submissions` verisini ekler.
  */
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { BookOpen, FileText } from 'lucide-react';
 import type { GuardianReportDetail } from '../../types';
 import { guardianApi, openProtectedFile, ApiClientError } from '../../services/api';
-import ReportSnapshot from '../../components/ReportSnapshot';
+import GuardianReportView from '../../components/customer/GuardianReportView';
+import SubmissionHistory from '../../components/customer/SubmissionHistory';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
-import {
-  LoadingState,
-  EmptyState,
-  FormError,
-  PageTitle,
-  Badge,
-  type BadgeTone,
-} from '../../components/admin/ui';
 
-type SubmissionItem = GuardianReportDetail['submissions'][number];
-type SubState = 'uploaded' | 'late' | 'missing';
-
-/** Sol kenar şeridi — teslim durumundan türetilir (mevcut token'lar). */
-const SUB_STRIPE: Record<SubState, string> = {
-  uploaded: 'border-l-sub-uploaded',
-  late: 'border-l-sub-late',
-  missing: 'border-l-sub-missing',
-};
-
-function subState(sub: SubmissionItem): SubState {
-  if (!sub.submission) return 'missing';
-  return sub.submission.is_late ? 'late' : 'uploaded';
-}
-
-function subBadge(sub: SubmissionItem): { tone: BadgeTone; label: string } {
-  if (!sub.submission) return { tone: 'danger', label: 'Yüklenmedi' };
-  if (sub.submission.is_late) return { tone: 'warning', label: 'Geç yüklendi' };
-  if (sub.submission.status === 'reviewed') return { tone: 'info', label: 'İncelendi' };
-  return { tone: 'positive', label: 'Yüklendi' };
+function DetailSkeleton() {
+  return (
+    <div className="customer-face space-y-4" aria-hidden="true">
+      <div className="shimmer h-32 w-full rounded-3xl" />
+      <div className="shimmer h-12 w-full rounded-2xl" />
+      <div className="shimmer h-64 w-full rounded-2xl" />
+      <div className="shimmer h-64 w-full rounded-2xl" />
+    </div>
+  );
 }
 
 export default function GuardianReportDetailPage() {
@@ -79,40 +63,43 @@ export default function GuardianReportDetailPage() {
     }
   }
 
-  if (loading) return <LoadingState />;
+  if (loading) return <DetailSkeleton />;
 
-  if (error) return <FormError message={error} />;
+  if (error) {
+    return (
+      <p role="alert" className="text-sm font-medium text-sub-missing">
+        {error}
+      </p>
+    );
+  }
 
   if (!data) {
-    return <EmptyState message="Rapor bulunamadı." />;
+    return (
+      <div className="rounded-3xl border border-dashed border-border bg-surface/60 py-14 text-center">
+        <p className="text-sm font-medium text-text">Rapor bulunamadı</p>
+      </div>
+    );
   }
 
   // Bu haftanın puanladığı önceki haftanın ödevi (canlı veri) — sınıf-ders
-  // bazında eşlenir; snapshot'taki "Verilmiş ödev" satırının altında gösterilir.
+  // bazında eşlenir; "Verilmiş ödev" satırının altında dosyaları gösterilir.
   const prevByClassCourse = new Map(
     (data.prev_submissions ?? []).map((p) => [p.class_course_id, p]),
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <PageTitle icon={FileText}>{data.digest.week.label} haftalık rapor</PageTitle>
-        <span className="tabular text-sm text-muted">
-          {new Date(data.digest.sent_at).toLocaleDateString('tr-TR')} tarihinde
-          gönderildi
-        </span>
-      </div>
-
-      <ReportSnapshot
+    <div className="space-y-10">
+      <GuardianReportView
         snapshot={data.snapshot}
-        showStudent
+        variant="guardian"
+        sentAt={data.digest.sent_at}
         renderPrevHomework={(course) => {
           const prev = prevByClassCourse.get(course.class_course_id);
           const files = prev?.submission?.files ?? [];
           if (files.length === 0) return null;
           return (
             <div className="mt-2">
-              <p className="text-[13px] text-muted">
+              <p className="text-xs text-muted">
                 Öğrencinin bu ödeve yüklediği dosyalar
               </p>
               <SubmissionFileGrid
@@ -126,47 +113,10 @@ export default function GuardianReportDetailPage() {
         }}
       />
 
-      <section>
-        <h2 className="text-base font-semibold text-text">Ödev teslim geçmişi</h2>
-        <div className="mt-3 space-y-3">
-          {data.submissions.map((sub) => {
-            const state = subState(sub);
-            const badge = subBadge(sub);
-            return (
-              <div
-                key={sub.course_name}
-                data-status={state}
-                className={
-                  'elevation-1 rounded-md border border-border border-l-4 bg-surface p-4 ' +
-                  SUB_STRIPE[state]
-                }
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-text">
-                    <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
-                    {sub.course_name}
-                  </h3>
-                  <Badge tone={badge.tone}>{badge.label}</Badge>
-                </div>
-                <p className="mt-1 text-sm text-muted">
-                  Ödev: {sub.description || '—'}
-                  <span className="tabular"> · son tarih: {sub.due_date}</span>
-                </p>
-                {sub.submission && (
-                  <div className="mt-3">
-                    <SubmissionFileGrid
-                      variant="server"
-                      files={sub.submission.files}
-                      collapsible
-                      onOpenPdf={(key) => void openFile(key)}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <SubmissionHistory
+        submissions={data.submissions}
+        onOpenFile={(key) => void openFile(key)}
+      />
     </div>
   );
 }

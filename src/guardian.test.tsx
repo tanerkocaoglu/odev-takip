@@ -323,7 +323,7 @@ describe('GuardianReportDetailPage', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('heading', { level: 1, name: '05 - 11 Ocak haftalık rapor' }),
+        screen.getByRole('heading', { level: 1, name: 'Örnek Kişi 6' }),
       ).toBeInTheDocument();
     });
     expect(screen.getAllByText('Matematik').length).toBeGreaterThan(0);
@@ -410,7 +410,7 @@ describe('GuardianReportDetailPage', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('heading', { level: 1, name: '05 - 11 Ocak haftalık rapor' }),
+        screen.getByRole('heading', { level: 1, name: 'Örnek Kişi 6' }),
       ).toBeInTheDocument();
     });
 

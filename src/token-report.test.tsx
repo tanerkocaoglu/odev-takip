@@ -82,21 +82,22 @@ describe('TokenReportPage', () => {
     const { container } = renderTokenPage('tok');
 
     await waitFor(() => {
-      expect(screen.getByText('05 - 11 Ocak haftalık rapor')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'Örnek Kişi 6' })).toBeInTheDocument();
     });
     // Marka logosu public sayfada görünür.
     expect(
       screen.getByRole('img', { name: 'Ödev Takip' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Örnek Kişi 6')).toBeInTheDocument();
-    expect(screen.getByText('Matematik')).toBeInTheDocument();
+    // Ders adı hem hızlı-atlama çipinde hem kart başlığında geçer.
+    expect(screen.getAllByText('Matematik').length).toBeGreaterThan(0);
     expect(screen.getByText('ÖKLİD')).toBeInTheDocument();
     // Puanlar ham 1–10: 8 ve 9 aynen basılır, özet/yüzdelik yok.
     expect(screen.getByText('8')).toBeInTheDocument();
     expect(screen.getByText('9')).toBeInTheDocument();
     expect(screen.getByText('Gayretli.')).toBeInTheDocument();
     expect(screen.getByText('Bu hafta rapor girilmedi')).toBeInTheDocument();
-    expect(screen.getByText('Fizik')).toBeInTheDocument();
+    expect(screen.getAllByText('Fizik').length).toBeGreaterThan(0);
     // Durum şeritleri: entry present → "present", rapor girilmemiş → "missing".
     const statuses = Array.from(container.querySelectorAll('[data-status]')).map((el) =>
       el.getAttribute('data-status'),

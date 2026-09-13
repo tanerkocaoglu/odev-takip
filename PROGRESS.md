@@ -150,6 +150,79 @@ Henüz commit edilmedi.
 
 ---
 
+## Veli rapor detayı + public `/r/{token}` — ortak `GuardianReportView` ✅
+
+### Süreç özeti
+
+Tek haftanın raporunu gösteren iki ekran **aynı** bileşeni paylaşacak şekilde
+yeniden tasarlandı: girişli veli detayı (`GuardianReportDetailPage`) ve public
+`/r/{token}` (`TokenReportPage`, `variant="public"`). `ReportSnapshot`'a
+dokunulmadı — yalnızca admin digest önizlemesinde kalır.
+
+**Dört dersi organize etme kararı:** sekmeler/akordiyon/kaydırmalı kart **değil**
+— hepsi **açık dikey istif** (hiçbiri gizlenmez), üstte **sticky ders
+hızlı-atlama çipleri**. Mobil 1 sütun, masaüstü 2 sütun. Ders çipi sayısı sabit
+(4) olduğu için öğrenci turundaki nokta-göstergesi sıkışması riski yok; yine de
+şerit dar ekranda yatay kaydırılabilir ve taşma denetlendi.
+
+### Yapılanlar
+
+- **Yeni `src/components/customer/`:**
+  - `ScoreScale` — **ham 1–10** büyük sayı + değeri 1:1 temsil eden 10 adımlı
+    gösterge; `null` (devamsız/izinli) ise "Puan girilmedi" (0 gibi gösterilmez).
+    Yüzde/ortalama/normalizasyon **yok** (kırmızı çizgi).
+  - `AttendanceChip` — semantik devamsızlık renkleri (metinle birlikte).
+  - `ReportCover` — öğrenci (h1) + hafta + sınıf + gönderim tarihi; `variant`.
+  - `CourseReportCard` — ders başlığı (öğretmen + gün/saat + durum) → iki puan →
+    devamsızlık → öğretmen notu (alıntı) → işlenen konu / verilmiş ödev /
+    yapılacak ödev + değerlendirme haftası notu; eksik ders sönük.
+  - `GuardianReportView` — kapak + sticky hızlı-atlama + 2/1 sütun ızgara.
+  - `SubmissionHistory` — girişli detayda ödev teslim geçmişi (salt-okunur).
+- **`GuardianReportDetailPage`:** ortak görünüm + teslim geçmişi + canlı
+  `prev_submissions` (önceki haftanın ödevi ve öğrencinin yüklediği dosyalar —
+  kullanıcı commit'inin özelliği korundu). Yükleme/hata/boş durumları customer
+  diline taşındı.
+- **`TokenReportPage`:** aynı görünüm `variant="public"` ile, tam sayfa marka
+  başlığı (logo beyaz chip + marka adı, koyu marka üzerinde beyaz metin); 410 ve
+  hata yolları korundu. Public'te dosya/teslim bölümü yok (snapshot'ta dosya yok).
+- **`CourseReportCard`**: `data-status` eklendi (durum şeridi + test sözleşmesi).
+
+### Doğrulamalar
+
+- Statik: kök `typecheck` ✅, `lint` ✅, `build` ✅.
+- Testler: frontend **117/117** (19 dosya; `guardian` 9, `token-report` 3 güncellendi).
+- Canlı (headless Chrome + gerçek seed verisi): hem girişli detay hem public —
+  `courseCards: 4`, **`allVisible: true`**, **`tablist: 0`, `accordion: 0`**;
+  çip şeridi `navClient == navScroll` (mobil 390, masaüstü 1024 → taşma yok);
+  public'te `hasSubmissionSection: false`. Mobil + masaüstü karelerle doğrulandı.
+- Ekran görüntüsü için seed snapshot'ı geçici çeşitlendirildi (farklı puanlar,
+  `late`/`excused`, not) ve **geri alındı**; görüntülenme kaydı bot UA ile
+  kirletilmedi.
+
+### Etkilenen dosyalar
+
+```
+src/components/customer/ScoreScale.tsx        (yeni)
+src/components/customer/AttendanceChip.tsx    (yeni)
+src/components/customer/ReportCover.tsx       (yeni)
+src/components/customer/CourseReportCard.tsx  (yeni)
+src/components/customer/GuardianReportView.tsx (yeni)
+src/components/customer/SubmissionHistory.tsx (yeni)
+src/pages/guardian/GuardianReportDetailPage.tsx
+src/pages/TokenReportPage.tsx
+src/guardian.test.tsx
+src/token-report.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — veli rapor detayı + public `/r/{token}` müşteri tasarımı: ortak
+`GuardianReportView` (hepsi açık dikey istif + sticky ders çipleri, ham 1–10
+puan göstergesi), `ReportSnapshot` yalnızca admin önizlemesinde.
+
+---
+
 ## Giriş ekranı (LoginPage) marka yeniden tasarımı — hibrit hero + kart ✅
 
 ### Süreç özeti
