@@ -52,7 +52,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`5e0d143` — favicon + admin sidebar süreç sırası + rapor "son tarih" formatı.
 
 ---
 
