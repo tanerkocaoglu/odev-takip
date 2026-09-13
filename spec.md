@@ -548,7 +548,11 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
      raporundaki `homeworks.description`. Bulunamazsa (yılın ilk haftası,
      **sınıfın ilk aktif haftası**, geçen hafta rapor girilmemiş vb.) alan
      **boş ve serbest metin** olarak açılır → `prev_homework_text`.
-   - **Öğrenci listesi:** o tarihte sınıfta aktif `enrollments`.
+   - **Öğrenci listesi:** o tarihte sınıfta aktif `enrollments` —
+     `start_date <= hafta başı` **ve** (`end_date IS NULL` **veya**
+     `end_date >= hafta başı`). Henüz başlamamış (ileri/orta hafta tarihli) bir
+     enrollment rapora **girmez**, puanlanamaz. Bu tanım digest/panel/risk
+     sorgularıyla birebir aynıdır.
    - **Teslim durumu:** her öğrenci satırında geçen haftanın ödevine
      `submission` var mı rozeti + tıklayınca dosyaları önizleme.
 3. Öğretmen doldurur: işlenen konu, yapılacak ödev, ve her satır için
@@ -660,6 +664,18 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
 - Her rapor tamamlandığında sunucu, o `class_course`'un haftasındaki **tüm**
   raporları kontrol eder. Hepsi `completed`'sa aynı kayıtlar `status = 'ready'`
   yapılır. Admin ekranı açıldığında yeniden hesaplama yapılmaz.
+
+> **"Aktif öğrenci" tanımı tektir (spec §5.1):** digest üretimi de rapor giriş
+> listesi de `enrollments.start_date <= hafta başı` şartını kullanır. Henüz
+> başlamamış (ileri/orta hafta tarihli) bir enrollment ne rapora girer ne de
+> digest alır.
+>
+> **Tek seferlik telafi aracı:** Bir dönem, rapor listesinin bu şartı
+> uygulamaması nedeniyle rapora girip puanlanmış ama digest'i açılmamış
+> öğrenciler oluşmuşsa, `npm run digest-backfill` (bkz. `scripts/backfill-digests.ts`)
+> o sınıf+hafta için fiilen puanlanmış ve velisi olan öğrencilere digest satırı
+> açar. Kalıcı ürün akışı değildir; dry-run varsayılan, `--execute` öncesi tam
+> yedek alır.
 
 1. Admin "Haftalık gönderim" ekranı `ready` **ve** `pending` kayıtların ikisini
    listeler:

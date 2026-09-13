@@ -201,6 +201,19 @@ beforeAll(async () => {
   insertStudentRec.run('t-stu-rec-first', 't-stu-first');
   insertEnrollment.run('t-enr-first', 't-stu-rec-first', 't-class-first', WEEK1.start, null);
 
+  // --- Henüz başlamamış enrollment (spec §5.1): start_date (2026-08-05) hafta
+  // 2'nin başından (08-03) SONRA, hafta 3'ün başından (08-10) ÖNCE. Hafta 2
+  // raporuna girmemeli, hafta 3 raporuna girmeli. ---
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES (?, ?, ?, ?, NULL)`,
+  ).run('t-class-future', 't-year', 'Gelecek Sınıf', 'gelecek sinif');
+  insertCourse.run('t-course-future', 'Gelecek Ders', 'gelecek ders');
+  insertCc.run('t-cc-future', 't-class-future', 't-course-future', 'test-teacher', 6, '17:00');
+  insertStudent.run('t-stu-future', 'Öğrenci t-stu-future', 'ogrenci t-stu-future', 'ogrenci-t-future', now);
+  insertStudentRec.run('t-stu-rec-future', 't-stu-future');
+  insertEnrollment.run('t-enr-future', 't-stu-rec-future', 't-class-future', '2026-08-05', null);
+
   adminToken = await login('admin@test.local');
   teacherToken = await login('teacher@test.local');
 });
@@ -916,5 +929,28 @@ describe('İlk aktif hafta (spec §5.1) — puan zorunluluğu istisnası', () =>
     expect(missing.status).toBe(400);
     expect(missing.body.error.code).toBe('VALIDATION_ERROR');
     expect(missing.body.error.fields[studentIds[0]]).toBeDefined();
+  });
+});
+
+describe('Rapor öğrenci listesi — henüz başlamamış enrollment (spec §5.1)', () => {
+  it('start_date rapor haftasının başından sonraysa öğrenci rapora girmez; sonraki haftada girer', async () => {
+    // Hafta 2 başı 2026-08-03 < enrollment başı 2026-08-05 → henüz aktif değil.
+    const w2 = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-future', week_id: WEEK2.id });
+    expect(w2.status).toBe(201);
+    const ids2 = (w2.body.entries as Array<{ student_id: string }>).map((e) => e.student_id);
+    expect(ids2).not.toContain('t-stu-rec-future');
+    expect(ids2).toHaveLength(0);
+
+    // Hafta 3 başı 2026-08-10 >= enrollment başı 2026-08-05 → artık aktif.
+    const w3 = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-future', week_id: WEEK3.id });
+    expect(w3.status).toBe(201);
+    const ids3 = (w3.body.entries as Array<{ student_id: string }>).map((e) => e.student_id);
+    expect(ids3).toContain('t-stu-rec-future');
   });
 });

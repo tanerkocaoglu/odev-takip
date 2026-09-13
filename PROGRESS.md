@@ -5,6 +5,91 @@
 
 ---
 
+## Henüz başlamamış enrollment rapora/digest'e sızmasın + digest telafisi ✅
+
+### Sorun
+
+Rapor giriş ekranının öğrenci listesi (`routes/teacher.ts` get-or-create)
+`enrollments.start_date`'i **yok sayıyor**, yalnızca `end_date`'e bakıyordu.
+Digest üretimi ve panel/risk sorguları ise `start_date <= hafta başı` şartını
+uyguluyordu. Sonuç: henüz başlamamış (ileri/orta hafta tarihli) bir öğrenci
+rapora girip **puanlanabiliyor** ama `weekly_digests` satırı hiç açılmadığı için
+veliye gönderim ekranında **hiç görünmüyordu**. Üretimde 5 öğrenci bu durumdaydı
+(hafta başı 12.09, enrollment başı 14.09).
+
+### A — Kalıcı kod düzeltmesi
+
+- `routes/teacher.ts` get-or-create öğrenci sorgusuna `AND e.start_date <= ?`
+  (`week.start_date`) eklendi → "haftada aktif" tanımı digest/panel/risk ile
+  birebir aynı. Henüz başlamamış öğrenci rapora girmez, puanlanamaz.
+- Kapsam bilinçli olarak **yeni oluşturulan** raporlarla sınırlı; mevcut
+  `report_entries` satırları (bu hafta puanlanmış 5 öğrenci) korunur — telafi B.
+- `spec.md §5.1` ve `§5.4`'e ortak "aktif öğrenci" tanımı yazıldı.
+
+### B — Bu haftaya özel telafi (tek seferlik araç)
+
+`services/digestBackfill.ts` (çekirdek) + `scripts/backfill-digests.ts` (CLI) +
+`npm run digest-backfill`. Yeni HTTP endpoint **eklenmedi** (kalıcı yazma yüzeyi
+istemendi): mevcut `cleanup-submissions` deseni kullanıldı.
+
+- Kaynak: o sınıf+haftada `report_entries`'te **fiilen puanlanmış** öğrenciler
+  (öğretmenin gördüğü küme). Veli bağı olmayanlar atlanır ve listelenir.
+- Satır yoksa açılır; o hafta sınıfın tüm dersleri completed/sent ise `ready`,
+  değilse `pending`. İdempotent (`INSERT OR IGNORE` + ön kontrol).
+- **Varsayılan dry-run**; `--execute` önce `createBackup()` ile tam yedek alır
+  (proje kuralı — iş küçük olsa da geri dönüşsüz yazma öncesi yedek zorunlu).
+- `--class` zorunlu; `--week` week_no veya `YYYY-MM-DD`; yoksa aktif hafta.
+
+**Runbook (Render Shell):**
+```
+cd backend
+npm run digest-backfill -- --class FİBONACCİ --week 2026-09-12            # dry-run
+npm run digest-backfill -- --class FİBONACCİ --week 2026-09-12 --execute
+```
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **345/345** (31 dosya; +1 `teacher` gelecek-enrollment
+  testi, +7 `digestBackfill`), frontend **129/129** (22 dosya) — değişmedi.
+- **CLI canlı kanıt (izole `VACUUM INTO` kopyası, gerçek `npm run`):** dry-run
+  yazmadı; `--execute` `createBackup()` alıp **1 satır** yazdı
+  (`status=ready`); ikinci `--execute` **0 satır**, **yeni yedek yok**
+  (idempotent). Gerçek `backend/db/app.db` değişmedi; temp temizlendi.
+- Gerçek hata mekanizması ayrıca izole API kanıtıyla doğrulanmıştı: hafta başı
+  2026-09-07, enrollment başı 2026-09-14 olan velili öğrenci raporda **vardı**,
+  digest'te **yoktu** (tek neden `start_date` uyumsuzluğu).
+
+### ⚠️ Teknik borç (açık)
+
+**A4 — öğrenci ödev ekranı enrollment tarih filtresi kullanmıyor.**
+`routes/student.ts` (`GET /student/homeworks` ve ödev erişim doğrulaması)
+`enrollments` join'inde `start_date`/`end_date` tarih filtresi uygulamıyor
+(satır ~82 ve ~126). Yani A ile rapor ekranında düzeltilen aynı sınıftan hata,
+öğrenci tarafında hâlâ açık olabilir: henüz başlamamış (veya bitmiş) bir
+kaydın ödevleri öğrenciye görünebilir. Ayrı ve kalıcı bir düzeltme gerektirir;
+bu iş kapsamına **bilinçli olarak alınmadı**, unutulmasın diye burada kayıtlı.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts                     (start_date filtresi)
+backend/src/teacher.test.ts                       (+1 gelecek-enrollment testi)
+backend/src/services/digestBackfill.ts            (yeni)
+backend/src/services/digestBackfill.test.ts       (yeni, 7 test)
+backend/scripts/backfill-digests.ts               (yeni)
+backend/package.json                              (digest-backfill script'i)
+spec.md                                           (§5.1, §5.4)
+CLAUDE.md                                         (komut + /scripts listesi)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Rapor tamamlama — "sınıfın ilk aktif haftası" istisnası ✅
 
 ### Sorun

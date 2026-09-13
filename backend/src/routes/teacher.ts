@@ -421,15 +421,20 @@ router.post('/reports', (req, res) => {
     ).run(reportId, cc.id, week.id, prevHomeworkId, user.id, now);
 
     // Öğrenci listesi: hafta başında sınıfta aktif enrollment'lar (spec §5.1).
+    // "Aktif" tanımı digest/panel/risk ile birebir aynıdır: enrollment hafta
+    // başında BAŞLAMIŞ olmalı (`start_date <= hafta_başı`). İleri/orta hafta
+    // tarihli bir kayıt (henüz başlamamış öğrenci) rapora ve puana girmez.
     const students = db
       .prepare(
         `SELECT s.id AS student_id
          FROM enrollments e
          JOIN students s ON s.id = e.student_id AND s.deleted_at IS NULL
          JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
-         WHERE e.class_id = ? AND (e.end_date IS NULL OR e.end_date >= ?)`,
+         WHERE e.class_id = ?
+           AND e.start_date <= ?
+           AND (e.end_date IS NULL OR e.end_date >= ?)`,
       )
-      .all(cc.class_id, week.start_date) as { student_id: string }[];
+      .all(cc.class_id, week.start_date, week.start_date) as { student_id: string }[];
 
     // Yeni satırlar 'absent' başlar (spec §5.1): öğretmen yoklama almadan
     // bırakırsa sessizce "herkes geldi" varsayılmaz; rapor "herkes yok" gibi
