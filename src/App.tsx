@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
+import CustomerShell from './components/layout/CustomerShell';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/admin/AdminLayout';
 import LoginPage from './pages/LoginPage';
@@ -82,7 +83,7 @@ export default function App() {
         path="/student"
         element={
           <ProtectedRoute roles={['student']}>
-            <AppLayout />
+            <CustomerShell />
           </ProtectedRoute>
         }
       >
@@ -92,7 +93,7 @@ export default function App() {
         path="/guardian"
         element={
           <ProtectedRoute roles={['guardian']}>
-            <AppLayout />
+            <CustomerShell />
           </ProtectedRoute>
         }
       >

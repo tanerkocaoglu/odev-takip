@@ -41,6 +41,12 @@
   /* Yıkıcı eylemler (sil, iptal et) — attendance.absent ile aynı kırmızı */
   --danger: 180 35 24;
 
+  /* Müşteri yüzü (öğrenci / veli / public) — marka mavisi.
+     Admin ve öğretmen teal `--accent` kimliğini korur; marka mavisi yalnızca
+     `.customer-face` kapsayıcısı içinde geçerlidir. */
+  --brand: 10 120 163; /* metin / buton / link — WCAG 4.5:1 */
+  --brand-deco: 21 156 212; /* yalnızca dekoratif: gradyan ve düşük opaklık zemin */
+
   /* Elevation (gölge) — CLAUDE.md "Elevation" */
   --elevation-1: 0 1px 2px 0 rgba(22, 32, 42, 0.04);
   --elevation-2: 0 4px 12px 0 rgba(10, 120, 163, 0.08);
@@ -150,6 +156,23 @@ td :focus-visible {
 .card-interactive:focus-within {
   border-color: rgb(var(--accent));
   box-shadow: var(--elevation-2);
+}
+
+/* Müşteri yüzü (öğrenci / veli / public): bu kapsayıcı içindeki tüm
+   etkileşimli öğeler (buton, link, aktif sekme, odak halkası) marka mavisine
+   döner. Global `--accent` değişkeni yerel olarak ezildiği için admin ve
+   öğretmen teal'i etkilenmez. */
+.customer-face {
+  --accent: 10 120 163;
+  --accent-fg: 255 255 255;
+}
+
+/* Dekoratif marka gradyanı — yalnızca müşteri yüzü başlıklarında. Metin
+   taşımaz; renk tek başına anlam üretmez. */
+.brand-hero {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgb(var(--brand-deco) / 0.18), transparent 55%),
+    linear-gradient(180deg, rgb(var(--brand-deco) / 0.07), transparent 70%);
 }
 
 /* Admin veri satırları: hover'da hafif zemin + solda ince accent şeridi */

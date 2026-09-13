@@ -5,6 +5,101 @@
 
 ---
 
+## Öğrenci "müşteri yüzü" yeniden tasarımı — CustomerShell + capture carousel ✅
+
+### Süreç özeti
+
+Öğrenci ekranı (ve sonraki turlarda veli/public) için admin/öğretmen tasarım
+dilinden **bilinçli olarak ayrı bir "müşteri yüzü"** kuruldu. Amaç renk
+değişikliği değil, gerçek bir yapı/layout farkıydı:
+
+- **Kabuk ayrıldı:** `AppLayout` (öğretmen/admin) değişmedi; öğrenci/veli
+  rotaları yeni `CustomerShell`'e bağlandı.
+- **Navbar terk edildi:** üstte yalnızca ortada marka logosu (saydam başlar,
+  kaydırınca blur + kenarlık, aşağı kaydırınca gizlenir, **yalnızca en üste
+  yaklaşınca** geri gelir); altta sabit **dock** (gezinme + Hesap). İsim ve
+  çıkış, hesap alt-sheet'inin arkasında.
+- **Ödev listesi yeniden kuruldu:** dropdown filtre kutusu yerine **durum
+  sekmeleri + yatay çip şeritleri**; mobilde **tek-kart snap carousel**
+  (yükleme alanı kartın baskını), masaüstünde **çok sütunlu ızgara**.
+
+### Yapılanlar
+
+- **`src/index.css`:** `--brand` (10 120 163), `--brand-deco` (21 156 212);
+  `.customer-face` (kapsayıcı içinde `--accent`'i marka mavisine ezer, admin
+  teal'i etkilenmez); `.brand-hero` dekoratif gradyanı.
+- **`tailwind.config.js`:** `brand`, `brand-deco` renkleri.
+- **`src/components/layout/CustomerShell.tsx` (yeni):**
+  - Ortada `h-16` logo; şerit `h-20`; saydam → kaydırınca blur + kenarlık.
+  - Aşağı kaydırınca gizle / üste yaklaşınca (≤96px) göster; histerezis
+    (gizle >140) ile sınırda zıplama yok. Hesap paneli açıkken gizlenmez.
+  - Alt dock (Ödevlerim + Hesap), büyük dokunma hedefleri.
+  - Hesap alt-sheet: `100dvh` overlay, `max-h-[85dvh] overflow-y-auto`,
+    `env(safe-area-inset-bottom)` boşluğu, tutma çubuğu; Escape/backdrop kapatır.
+  - `lg`'de başlık/içerik kolonu `max-w-2xl → max-w-5xl` (masaüstü ızgarası için).
+- **`src/App.tsx`:** öğrenci/veli rotaları `CustomerShell` kullanır.
+- **`src/pages/student/HomeworkListPage.tsx` (baştan yazıldı):**
+  - Durum sekmeleri (Bekleyen/Tamamlanan, sayaçlı).
+  - Hafta + ders **yatay çip şeritleri** (kutu içi dropdown yok).
+  - **Bekleyen:** mobilde snap carousel; kartta yükleme alanı baskın (dev
+    kamera + kesikli bölge), ders·öğretmen/son tarih ikincil. **≥lg:** carousel
+    yok, `grid-cols-2 xl:grid-cols-3` ızgara.
+  - **Nokta göstergeleri kaldırıldı** (ödev sayısıyla 1:1 büyüyüp sıkışıyordu)
+    → mobilde `N / M` sayacı (`aria-live`) + ince ilerleme çubuğu.
+  - **Tamamlanan:** teslim fotoğraflarını öne çıkaran ızgara + yeniden yükleme.
+  - Filtre veya sekme değişince carousel her zaman başa döner.
+  - Klavye: `role="group"`, `aria-roledescription="karusel"`, ←/→ + Home/End;
+    `prefers-reduced-motion`'da smooth yerine anlık kaydırma.
+  - Yükleme mantığı (10 MB / 30 dosya / magic-byte mesajları) ve kırmızı
+    çizgiler (puan/not yok) korundu; hero metni düzeltildi.
+- **`src/student.test.tsx` (yeniden):** sekmeler/çipler/carousel/ızgara + klavye
+  sayacı — 16 test.
+- **`src/customer-shell.test.tsx` (yeni):** dock, hesap paneli + Escape, çıkış,
+  gizle-göster — 4 test.
+
+### Doğrulamalar
+
+- Statik: kök `typecheck` ✅, `lint` ✅, `build` ✅.
+- Testler: frontend **117/117** (19 dosya).
+- Canlı (headless Chrome + gerçek Vite/backend): mobil carousel snap/peek ve
+  `N / M` sayacı; masaüstü **1280px** çok sütunlu ızgara (kırpılma yok); üst
+  şerit gizle/göster; hesap paneli; Tamamlanan ızgarası. Geçici test teslimleri
+  ve dosyaları temizlendi.
+
+### Çözülen sorunlar
+
+- `sr-only` ipucu carousel çocuk sırasını kaydırıp nokta↔kart senkronunu bozdu
+  → kartlar `[data-slide]` ile seçilir.
+- Masaüstünde carousel aynen ölçeklenince kartlar kırpılıyor ve 12 nokta
+  sıkışıyordu → masaüstü ızgaraya geçti, noktalar sayaç + çubuğa indi, içerik
+  kolonu genişletildi.
+- Hesap sheet mobilde alt kenara yapışıyordu → `100dvh` + `safe-area-inset-bottom`
+  + gerekirse kaydırma.
+
+### Etkilenen dosyalar
+
+```
+src/index.css
+tailwind.config.js
+src/App.tsx
+src/components/layout/CustomerShell.tsx   (yeni)
+src/pages/student/HomeworkListPage.tsx
+src/student.test.tsx
+src/customer-shell.test.tsx               (yeni)
+PROGRESS.md
+```
+
+### Commit
+
+Bu commit — öğrenci (müşteri yüzü) yeniden tasarımı: CustomerShell (blur navbar
++ alt dock + hesap sheet), sekmeli/çipli ödev listesi, yükleme-baskın capture
+carousel (mobil) / çok sütunlu ızgara (masaüstü), carousel erişilebilirliği.
+
+> Veli ekranları + public `/r/{token}` ve `GuardianReportView` bu turda kapsam
+> dışı bırakıldı (karar onaylı, uygulama sonraki turda).
+
+---
+
 ## Denetim turu kapandı — Grup 1–4 + tüm bulgular ✅
 
 Denetim raporundaki maddelerin tamamı kapatıldı; **açık bulgu kalmadı.**

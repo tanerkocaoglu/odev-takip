@@ -1,6 +1,7 @@
 /**
- * Öğrenci ödev frontend testleri — Aşama 4.
- * studentApi istemcisi (birim) + HomeworkListPage (liste, rozetler, yükleme).
+ * Öğrenci ödev frontend testleri — Aşama 4 (redesign sonrası).
+ * studentApi istemcisi (birim) + HomeworkListPage: durum sekmeleri, çip
+ * filtreleri, yükleme-baskın capture kartları, teslim durumları.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -11,9 +12,6 @@ import HomeworkListPage from './pages/student/HomeworkListPage';
 
 const BASE_URL = '/api/v1';
 
-// Dosya açma davranışı openProtectedFile'ın kendi birim testlerinde kapsanır;
-// sayfa testinde görsellerin lightbox'ı, PDF'lerin yeni sekmeyi kullandığını
-// doğruluyoruz.
 vi.mock('./services/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./services/api')>();
   return {
@@ -65,66 +63,69 @@ describe('studentApi', () => {
     expect(url).toBe(`${BASE_URL}/student/homeworks/h1/submit`);
     expect(init.method).toBe('POST');
     expect(init.body).toBeInstanceOf(FormData);
-    // FormData iken Content-Type header'ı set edilmez (boundary bozulmasın).
     const headers = init.headers as Record<string, string>;
     expect(headers['Content-Type']).toBeUndefined();
   });
 });
 
-const HOMEWORKS = {
-  items: [
-    {
-      id: 'h1',
-      description: 'Problemler çözülecek.',
-      due_date: '2026-01-12',
-      course_name: 'Matematik',
-      teacher_name: 'Örnek Kişi 5',
-      class_name: 'ÖKLİD',
-      week: { week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
-      submission: null,
-    },
-    {
-      id: 'h2',
-      description: 'Fizik deney raporu.',
-      due_date: '2026-01-10',
-      course_name: 'Fizik',
-      teacher_name: 'Örnek Kişi 4',
-      class_name: 'SEVA',
-      week: { week_no: 4, start_date: '2025-12-29', end_date: '2026-01-04', label: '29 Ara - 04 Oca' },
-      submission: {
-        id: 'sub2',
-        submitted_at: '2026-01-09T18:00:00.000Z',
-        is_late: false,
-        status: 'submitted',
-        files: [{ key: '1234567890-0123456789abcdef.jpg', filename: 'rapor.jpg', size: 1024, mime: 'image/jpeg', ext: 'jpg' }],
-      },
-    },
-  ],
+const PENDING = {
+  id: 'h1',
+  description: 'Problemler çözülecek.',
+  due_date: '2026-01-12',
+  course_name: 'Matematik',
+  teacher_name: 'Örnek Kişi 5',
+  class_name: 'ÖKLİD',
+  week: { week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
+  submission: null,
 };
 
+const SUBMITTED = {
+  id: 'h2',
+  description: 'Fizik deney raporu.',
+  due_date: '2026-01-10',
+  course_name: 'Fizik',
+  teacher_name: 'Örnek Kişi 4',
+  class_name: 'SEVA',
+  week: { week_no: 4, start_date: '2025-12-29', end_date: '2026-01-04', label: '29 Ara - 04 Oca' },
+  submission: {
+    id: 'sub2',
+    submitted_at: '2026-01-09T18:00:00.000Z',
+    is_late: false,
+    status: 'submitted',
+    files: [{ key: '1234567890-0123456789abcdef.jpg', filename: 'rapor.jpg', size: 1024, mime: 'image/jpeg', ext: 'jpg' }],
+  },
+};
+
+const HOMEWORKS = { items: [PENDING, SUBMITTED] };
+
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <HomeworkListPage />
+    </MemoryRouter>,
+  );
+}
+
 describe('HomeworkListPage', () => {
-  it('ödevleri listeler; teslim rozetleri ve dosya butonu gösterilir; puan yok', async () => {
+  it('varsayılan olarak bekleyenleri gösterir; tamamlananlar sekmede; puan yok', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
 
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
-    expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
     expect(screen.getByText('Yüklenmedi')).toBeInTheDocument();
-    expect(screen.getByText('Yüklendi')).toBeInTheDocument();
     expect(screen.getByText('Matematik · Örnek Kişi 5')).toBeInTheDocument();
-    expect(screen.getByText('Fizik · Örnek Kişi 4')).toBeInTheDocument();
+    // Tamamlanan ödev varsayılan sekmede görünmez.
+    expect(screen.queryByText('Fizik deney raporu.')).not.toBeInTheDocument();
 
-    // Dosya korumalı olduğu için `<a href>` Authorization header gönderemezdi;
-    // artık Bearer token'lı fetch'i çağıran butonla açılır (bkz. openProtectedFile).
-    expect(
-      screen.getByRole('button', { name: /rapor\.jpg/ }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Tamamlanan/ }));
+    await waitFor(() => {
+      expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Yüklendi')).toBeInTheDocument();
+    expect(screen.getByText('Fizik · Örnek Kişi 4')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /rapor\.jpg/ })).toBeInTheDocument();
 
     // Öğrenci ekranında puan/değerlendirme süreci asla görünmez.
     expect(screen.queryByText(/puan/i)).not.toBeInTheDocument();
@@ -136,13 +137,14 @@ describe('HomeworkListPage', () => {
     openMock.mockReset();
     openMock.mockResolvedValue(undefined);
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: /Tamamlanan/ }));
+    await waitFor(() => {
+      expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: /rapor\.jpg/ }));
@@ -158,7 +160,7 @@ describe('HomeworkListPage', () => {
     const data = {
       items: [
         {
-          ...HOMEWORKS.items[0],
+          ...PENDING,
           submission: {
             id: 'sub-pdf',
             submitted_at: '2026-01-09T18:00:00.000Z',
@@ -178,78 +180,121 @@ describe('HomeworkListPage', () => {
       ],
     };
     vi.stubGlobal('fetch', mockFetch(200, data));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: /cozum\.pdf/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /Tamamlanan/ })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /Tamamlanan/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /cozum\.pdf/ })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /cozum\.pdf/ }));
     expect(openMock).toHaveBeenCalledWith('1234567890-ffffffffffffffff.pdf');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('boş listede boş durum gösterilir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, { items: [] }));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Sana verilmiş ödev yok.')).toBeInTheDocument();
     });
   });
 
-  it('hafta + ders filtreleri birlikte süzer; sonuç boşsa boş durum gösterir', async () => {
-    vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+  it('hafta + ders çipleri birlikte süzer; sonuç boşsa boş durum gösterir', async () => {
+    const data = {
+      items: [
+        { ...PENDING, id: 'h1' },
+        { ...SUBMITTED, id: 'h2', submission: null, course_name: 'Fizik' },
+      ],
+    };
+    vi.stubGlobal('fetch', mockFetch(200, data));
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
     expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
 
-    // Hafta seçenekleri en yakından geriye (azalan) sıralanır.
-    const weekSelect = screen.getByLabelText('Hafta') as HTMLSelectElement;
-    expect([...weekSelect.options].map((o) => o.textContent)).toEqual([
-      'Tümü',
-      'Hafta 5',
-      'Hafta 4',
-    ]);
-
-    // Hafta 5 → yalnızca Matematik (h1).
-    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '5' } });
-    expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
-    expect(screen.queryByText('Fizik deney raporu.')).not.toBeInTheDocument();
-
-    // Hafta Tümü + Ders Fizik → yalnızca Fizik (h2).
-    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: 'Fizik' } });
+    // Hafta 4 → yalnızca Fizik.
+    fireEvent.click(screen.getByRole('button', { name: 'Hafta 4' }));
     expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
     expect(screen.queryByText('Problemler çözülecek.')).not.toBeInTheDocument();
 
-    // Kombinasyon: Hafta 5 + Ders Fizik → kesişim boş.
-    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '5' } });
+    // Hafta 4 + Ders Fizik → Fizik kalır.
+    fireEvent.click(screen.getByRole('button', { name: 'Fizik' }));
+    expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+
+    // Hafta 5 + Ders Fizik → kesişim boş.
+    fireEvent.click(screen.getByRole('button', { name: 'Hafta 5' }));
     expect(screen.getByText('Bu filtrelerle ödev bulunamadı.')).toBeInTheDocument();
-    expect(screen.queryByText('Problemler çözülecek.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Fizik deney raporu.')).not.toBeInTheDocument();
 
-    // Tümü'ye dönünce liste geri gelir.
-    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '' } });
+    // Sıfırla: ders Tümü (index 1) + hafta Tümü (index 0).
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tümü' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tümü' })[0]);
     expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+  });
+
+  it('filtre değişince carousel her zaman başa döner', async () => {
+    const data = {
+      items: [
+        { ...PENDING, id: 'h1' },
+        { ...SUBMITTED, id: 'h2', submission: null, course_name: 'Fizik' },
+      ],
+    };
+    vi.stubGlobal('fetch', mockFetch(200, data));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    const rail = screen.getByTestId('pending-rail');
+    rail.scrollLeft = 320;
+    expect(rail.scrollLeft).toBe(320);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hafta 5' }));
+    expect(screen.getByTestId('pending-rail').scrollLeft).toBe(0);
+  });
+
+  it('carousel klavyeyle gezilir ve konum sayacı güncellenir', async () => {
+    const data = {
+      items: [
+        { ...PENDING, id: 'h1' },
+        { ...SUBMITTED, id: 'h2', submission: null, course_name: 'Fizik' },
+      ],
+    };
+    vi.stubGlobal('fetch', mockFetch(200, data));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
+    });
+
+    const rail = screen.getByTestId('pending-rail');
+    expect(rail).toHaveAttribute('role', 'group');
+    expect(rail).toHaveAttribute('aria-roledescription', 'karusel');
+
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+
+    fireEvent.keyDown(rail, { key: 'ArrowRight' });
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+
+    fireEvent.keyDown(rail, { key: 'Home' });
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+
+    fireEvent.keyDown(rail, { key: 'End' });
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+
+    // Son karttan ileri gidilemez.
+    fireEvent.keyDown(rail, { key: 'ArrowRight' });
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
   });
 
   it('geç yüklendi rozeti ayrı gösterilir', async () => {
     const data = {
       items: [
         {
-          ...HOMEWORKS.items[0],
+          ...PENDING,
           submission: {
             id: 'sub-late',
             submitted_at: '2026-01-13T18:00:00.000Z',
@@ -261,18 +306,15 @@ describe('HomeworkListPage', () => {
       ],
     };
     vi.stubGlobal('fetch', mockFetch(200, data));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
+    fireEvent.click(await screen.findByRole('tab', { name: /Tamamlanan/ }));
     await waitFor(() => {
       expect(screen.getByText('Geç yüklendi')).toBeInTheDocument();
     });
   });
 
-  it('teslim durumuna göre kart durumu (data-status) doğru türetilir', async () => {
-    const base = HOMEWORKS.items[0];
+  it('teslim durumuna göre kart durumu (data-status) sekme bazında türetilir', async () => {
+    const base = PENDING;
     const data = {
       items: [
         { ...base, id: 'p1', due_date: '2999-01-01', submission: null },
@@ -281,47 +323,39 @@ describe('HomeworkListPage', () => {
           ...base,
           id: 'p3',
           due_date: '2000-01-01',
-          submission: {
-            id: 's3',
-            submitted_at: '2000-01-02T10:00:00.000Z',
-            is_late: false,
-            status: 'submitted',
-            files: [],
-          },
+          submission: { id: 's3', submitted_at: '2000-01-02T10:00:00.000Z', is_late: false, status: 'submitted', files: [] },
         },
         {
           ...base,
           id: 'p4',
           due_date: '2000-01-01',
-          submission: {
-            id: 's4',
-            submitted_at: '2000-01-03T10:00:00.000Z',
-            is_late: true,
-            status: 'submitted',
-            files: [],
-          },
+          submission: { id: 's4', submitted_at: '2000-01-03T10:00:00.000Z', is_late: true, status: 'submitted', files: [] },
         },
       ],
     };
     vi.stubGlobal('fetch', mockFetch(200, data));
-    const { container } = render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    const { container } = renderPage();
+
     await waitFor(() => {
-      expect(container.querySelectorAll('[data-status]')).toHaveLength(4);
+      expect(container.querySelectorAll('[data-status]')).toHaveLength(2);
     });
-    const statuses = Array.from(container.querySelectorAll('[data-status]')).map((el) =>
-      el.getAttribute('data-status'),
-    );
-    expect(statuses).toEqual(['pending', 'overdue', 'submitted', 'late']);
+    expect(
+      Array.from(container.querySelectorAll('[data-status]')).map((el) => el.getAttribute('data-status')),
+    ).toEqual(['pending', 'overdue']);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Tamamlanan/ }));
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-status]')).toHaveLength(2);
+    });
+    expect(
+      Array.from(container.querySelectorAll('[data-status]')).map((el) => el.getAttribute('data-status')),
+    ).toEqual(['submitted', 'late']);
   });
 
-  it('dosya seçip Gönder\'e basınca submit atılır ve liste yenilenir', async () => {
+  it('dosya seçip Gönder\'e basınca submit atılır, sekme Tamamlanan\'a geçer', async () => {
     const submitted = {
       item: {
-        ...HOMEWORKS.items[0],
+        ...PENDING,
         submission: {
           id: 'sub-new',
           submitted_at: '2026-01-14T10:00:00.000Z',
@@ -331,7 +365,7 @@ describe('HomeworkListPage', () => {
         },
       },
     };
-    const updatedList = { items: [submitted.item, HOMEWORKS.items[1]] };
+    const updatedList = { items: [submitted.item, SUBMITTED] };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => HOMEWORKS })
@@ -339,11 +373,7 @@ describe('HomeworkListPage', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => updatedList });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
@@ -352,15 +382,13 @@ describe('HomeworkListPage', () => {
     const file = new File(['img'], 'odev.png', { type: 'image/png' });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    // h1'in Gönder butonu etkinleşir (h2'nin hâlâ kapalıdır) — ilki h1'e ait.
-    const submitButton = (await screen.findAllByRole('button', { name: 'Gönder' }))[0];
-    fireEvent.click(submitButton);
+    fireEvent.click(await screen.findByRole('button', { name: 'Gönder' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Yüklendi')).toBeInTheDocument();
+      expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
+    expect(screen.getAllByText('Yüklendi').length).toBeGreaterThanOrEqual(1);
 
-    // GET (liste) + POST (submit) + GET (yeniden yükleme)
     expect(fetchMock.mock.calls[1][1].method).toBe('POST');
     const body = fetchMock.mock.calls[1][1].body as FormData;
     expect(body.getAll('files')).toHaveLength(1);
@@ -368,11 +396,7 @@ describe('HomeworkListPage', () => {
 
   it('30 dosyadan fazlası seçilince "30" hatası gösterilir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
@@ -389,11 +413,7 @@ describe('HomeworkListPage', () => {
 
   it('seçilen dosya gönder öncesi tek tek kaldırılabilir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
@@ -414,13 +434,9 @@ describe('HomeworkListPage', () => {
     expect(screen.getByRole('button', { name: /sayfa-b\.png dosyasını kaldır/ })).toBeInTheDocument();
   });
 
-  it('Kamerayla çek arka kamera inputunu tetikler; fotoğraf aynı listeye eklenir', async () => {
+  it('büyük dokunma alanı arka kamera inputunu tetikler; fotoğraf aynı akışa eklenir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
@@ -430,10 +446,9 @@ describe('HomeworkListPage', () => {
     expect(cameraInput).toHaveAttribute('capture', 'environment');
 
     const clickSpy = vi.spyOn(cameraInput, 'click');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Kamerayla çek' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /fotoğrafla çek/i })[0]);
     expect(clickSpy).toHaveBeenCalledTimes(1);
 
-    // Çekilen fotoğraf mevcut grid'e/kaldır akışına girer.
     fireEvent.change(cameraInput, {
       target: { files: [new File(['img'], 'ekran.jpg', { type: 'image/jpeg' })] },
     });
@@ -444,11 +459,7 @@ describe('HomeworkListPage', () => {
 
   it('kamera girişi de 10 MB ve 30 dosya sınırına tabidir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
-    render(
-      <MemoryRouter>
-        <HomeworkListPage />
-      </MemoryRouter>,
-    );
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('Problemler çözülecek.')).toBeInTheDocument();
     });
@@ -456,12 +467,10 @@ describe('HomeworkListPage', () => {
     const fileInput = screen.getAllByLabelText('Ödev dosyalarını seç')[0] as HTMLInputElement;
     const cameraInput = screen.getAllByLabelText('Kamerayla fotoğraf çek')[0] as HTMLInputElement;
 
-    // Önce boyut: 10 MB üstü fotoğraf reddedilir.
     const big = new File([new Uint8Array(11 * 1024 * 1024)], 'buyuk.jpg', { type: 'image/jpeg' });
     fireEvent.change(cameraInput, { target: { files: [big] } });
     expect(screen.getByText('Her dosya en fazla 10 MB olabilir.')).toBeInTheDocument();
 
-    // Sonra toplam sayı: dosya seçici 30 ekledikten sonra kamera 1 daha ekleyemez.
     fireEvent.change(fileInput, {
       target: {
         files: Array.from({ length: 30 }, (_, i) => new File(['x'], `s-${i}.png`, { type: 'image/png' })),

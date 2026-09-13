@@ -11,6 +11,9 @@ export default {
         muted: 'rgb(var(--text-muted) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)',
         'accent-fg': 'rgb(var(--accent-fg) / <alpha-value>)',
+        // Müşteri yüzü marka mavisi (dekoratif `brand-deco` yalnızca zemin/gradyan)
+        brand: 'rgb(var(--brand) / <alpha-value>)',
+        'brand-deco': 'rgb(var(--brand-deco) / <alpha-value>)',
         // Devamsızlık
         present: 'rgb(var(--attendance-present) / <alpha-value>)',
         'att-late': 'rgb(var(--attendance-late) / <alpha-value>)',
