@@ -20,6 +20,7 @@ import type {
   GuardianChild,
   GuardianReportDetail,
   GuardianReportItem,
+  HomeworkSummary,
   LoginRequest,
   Paged,
   PublicDigestResponse,
@@ -403,6 +404,9 @@ export const adminApi = {
         method: 'POST',
       }),
   },
+  /** Haftalık ödev özeti — sınıf + haftanın tüm derslerinin yapılacak ödevleri (spec §5.8). */
+  homeworkSummary: (params: { class_id: string; week_id?: string }) =>
+    apiFetch<HomeworkSummary>(`/admin/homework-summary${query(params)}`),
 };
 
 // ---------- Öğretmen raporları (Aşama 3) ----------

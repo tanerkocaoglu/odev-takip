@@ -505,6 +505,33 @@ export interface AdminDigestList {
   items: AdminDigestItem[];
 }
 
+/** Admin haftalık ödev özeti satırı — GET /admin/homework-summary (spec §5.8). */
+export interface HomeworkSummaryRow {
+  class_course_id: string;
+  course_name: string;
+  teacher_name: string;
+  day_of_week: number;
+  lesson_time: string | null;
+  status: 'completed' | 'sent' | 'missing';
+  /** Yapılacak ödev metni; `missing` satırda `null`. */
+  homework_description: string | null;
+}
+
+/** GET /admin/homework-summary — WhatsApp grubuna paylaşılacak tablo verisi. */
+export interface HomeworkSummary {
+  week: {
+    id: string;
+    week_no: number;
+    label: string;
+    start_date: string;
+    end_date: string;
+  };
+  class: { id: string; name: string };
+  /** Sınıfın ilk aktif haftasına göre "N. hafta" gösterim etiketi. */
+  relative_week_no: number;
+  rows: HomeworkSummaryRow[];
+}
+
 /** POST /admin/digests/:id/send yanıtı — wa.me linki "gönder ve sonraki" akışını besler. */
 export interface DigestSendResponse {
   id: string;

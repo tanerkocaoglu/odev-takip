@@ -11,6 +11,7 @@ import {
   BookOpen,
   CalendarDays,
   CalendarRange,
+  ClipboardList,
   FileText,
   GraduationCap,
   LayoutDashboard,
@@ -50,6 +51,7 @@ const TABS: { to: string; label: string; end?: boolean; icon: LucideIcon }[] = [
   { to: '/admin/students', label: 'Öğrenciler', icon: GraduationCap },
   { to: '/admin/reports', label: 'Raporlar', icon: FileText },
   { to: '/admin/digests', label: 'Gönderim', icon: Send },
+  { to: '/admin/homework-summary', label: 'Ödev özeti', icon: ClipboardList },
 ];
 
 export default function AdminLayout() {

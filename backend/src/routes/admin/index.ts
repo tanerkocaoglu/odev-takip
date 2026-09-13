@@ -29,6 +29,7 @@ import dashboardRouter from './dashboard.js';
 import backupRouter from './backup.js';
 import studentImportRouter from './studentImport.js';
 import reportsRouter from './reports.js';
+import homeworkSummaryRouter from './homeworkSummary.js';
 
 const router = Router();
 
@@ -50,5 +51,6 @@ router.use(dashboardRouter);
 router.use(backupRouter);
 router.use(studentImportRouter);
 router.use(reportsRouter);
+router.use(homeworkSummaryRouter);
 
 export default router;

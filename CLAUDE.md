@@ -44,6 +44,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
 | Auth | JWT (jsonwebtoken) + RBAC |
 | Doğrulama | zod (tüm girdi doğrulaması) |
 | Dosya | multer (memory) + heic-convert (HEIC→JPEG) + sharp |
+| Görsel çıktı (frontend) | html-to-image (haftalık ödev özeti → PNG) |
 | Test | Vitest (birim, frontend + backend) + supertest (API entegrasyon) |
 | Dağıtım | Tek sunucu: Express statik + API (SPA fallback) |
 
@@ -64,7 +65,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
   /src
     /assets              → logo.png
     /components
-      /admin             → AdminLayout, Modal, Pagination, ui.tsx
+      /admin             → AdminLayout, HomeworkSummarySheet, Modal, Pagination, ui.tsx
                            (elle yazılmış ortak bileşenler — shadcn/ui yok)
       /layout            → AppLayout
       BrandLogo.tsx   ImageLightbox.tsx   ProtectedRoute.tsx
@@ -74,7 +75,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
     /pages
       /admin             → AcademicYears, AdminDashboard, AdminReports, AdminReportView,
                            ClassCourses, Classes, Courses, DigestSend, Guardians,
-                           Schools, Students, Teachers, Weeks (13 sayfa)
+                           HomeworkSummary, Schools, Students, Teachers, Weeks (14 sayfa)
       /guardian          → GuardianHomePage, GuardianReportDetailPage
       /student           → HomeworkListPage
       /teacher           → ReportEntryPage, ReportHistoryPage, SubmissionsReviewPage,

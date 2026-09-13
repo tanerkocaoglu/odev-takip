@@ -5,6 +5,79 @@
 
 ---
 
+## Admin "Haftalık Ödev Özeti" — WhatsApp görseli (spec §5.8) ✅
+
+### Süreç özeti
+
+Öğretmenlerin haftalık ödevleri elle (Excel/Word tablosu fotoğrafı) WhatsApp
+grubuna atmasının yerine, sistemin aynı belgeyi tutarlı ve indirilebilir
+üretmesi. **Sınıf + hafta** seçilir; o sınıfın o haftaki **tüm** derslerinin
+"yapılacak ödev"i (`homeworks.description`) tablo hâlinde gösterilir, **eksik
+ders atlanmaz** ("Rapor girilmedi"). Otomatik gönderim yoktur — yalnızca doğru
+görsel üretilip indirilir.
+
+- **Yeni şema/migration yok.** Veri mevcut `class_courses`+`reports`+`homeworks`
+  tablolarından gelir.
+- **"Tüm raporlar tamam" kısıtı bu ekrana uygulanmaz** (o kısıt yalnızca digest
+  gönderimindeydi, §5.4); hazır olmayan sınıf da eksikleri işaretlenerek
+  gösterilir.
+- Başlık `{sınıf} — {N}. Haftanın Ödevleri`; `N`, sınıfın ilk aktif haftasına
+  göre **görece** etikettir (veli ekranı + `resolveGradedInWeek` ile aynı
+  `firstActiveWeekNoForClass` mantığı).
+- Görsel dışa dönük olduğu için **marka mavisi** (`.brand-scope`) + kurum logosu
+  kullanır; admin arayüzünün teal kimliği taşınmaz (kullanıcı kararı).
+- Yalnızca **admin** erişir.
+
+### Teknik kararlar (onaylı)
+
+- **Görsel üretimi:** görünür önizleme bileşeni (`HomeworkSummarySheet`) →
+  `html-to-image` `toBlob({ pixelRatio: 2, cacheBust: true })` ile PNG. Tek
+  yeni bağımlılık (frontend). `document.fonts.ready` beklenir → IBM Plex Sans
+  Türkçe gliflerle gömülür.
+- Backend `GET /api/v1/admin/homework-summary` (`class_id` zorunlu, `week_id`
+  opsiyonel → aktif hafta); admin guard toplayıcıda (yeni route korumasız değil).
+- Sidebar'a **"Ödev özeti"** sekmesi + `/admin/homework-summary` rotası.
+
+### Doğrulamalar
+
+- **Statik:** kök + backend `typecheck` ✅, kök `lint` ✅, kök `build` ✅.
+- **Testler:** backend **332/332** (30 dosya; +6 `homework-summary`), frontend
+  **129/129** (22 dosya; +3). Mevcut testler değişmedi.
+- **Canlı kanıt (gerçek sunucular + headless Chrome/CDP, gerçek seed verisi):**
+  - API: A Şubesi + hafta 20 → 4 satır; 1 dolu ders (`Matematik` → ödev metni),
+    3 `missing`.
+  - UI'de tıklama ile **PNG indirildi**: `a-subesi-20-hafta-odevleri.png`,
+    **158 927 bayt, geçerli PNG, 1440×958** (720 × pixelRatio 2), başlık
+    "20. Haftanın Ödevleri", eksik satırlar "Rapor girilmedi".
+  - İndirilen görsel müşteri yüzü marka mavisi + logo + IBM Plex Sans Türkçe
+    gliflerle (`Çığlık`, `Öğüt`, `Türkçe`, `İngilizce`) doğru render edildi.
+  - Kanıt sonrası sunucular/Chrome/temp temizlendi; `backend/db/app.db`'ye
+    yazılmadı (uç salt-okunur).
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/homeworkSummary.ts        (yeni)
+backend/src/routes/admin/homeworkSummary.ts     (yeni)
+backend/src/routes/admin/index.ts               (mount)
+backend/src/homework-summary.test.ts            (yeni)
+src/pages/admin/HomeworkSummaryPage.tsx         (yeni)
+src/components/admin/HomeworkSummarySheet.tsx   (yeni)
+src/homework-summary.test.tsx                   (yeni)
+src/components/admin/AdminLayout.tsx            ("Ödev özeti" sekmesi)
+src/App.tsx                                     (/admin/homework-summary)
+src/services/api.ts                             (homeworkSummary)
+src/types.ts                                    (HomeworkSummary tipleri)
+package.json / package-lock.json                (html-to-image)
+spec.md   CLAUDE.md   PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Yedek konumu kalıcı diske alındı (`BACKUPS_DIR`) + yaşlandırma ✅
 
 ### Sorun

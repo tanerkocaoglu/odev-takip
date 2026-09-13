@@ -22,6 +22,7 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminReportViewPage from './pages/admin/AdminReportViewPage';
 import DigestSendPage from './pages/admin/DigestSendPage';
+import HomeworkSummaryPage from './pages/admin/HomeworkSummaryPage';
 import TeacherDashboardPage from './pages/teacher/TeacherDashboardPage';
 import ReportEntryPage from './pages/teacher/ReportEntryPage';
 import ReportHistoryPage from './pages/teacher/ReportHistoryPage';
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="reports" element={<AdminReportsPage />} />
         <Route path="reports/:id" element={<AdminReportViewPage />} />
         <Route path="digests" element={<DigestSendPage />} />
+        <Route path="homework-summary" element={<HomeworkSummaryPage />} />
       </Route>
       <Route
         path="/teacher"

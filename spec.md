@@ -847,6 +847,35 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
   - **Öğrenciler:** ad, veli, sınıf, okul, sınıf seviyesi, kullanıcı adı.
   - **Veliler:** ad, kullanıcı adı, WhatsApp, çocuk sayısı, KVKK onayı.
 
+### 5.8 Admin — haftalık ödev özeti (WhatsApp görseli)
+
+Öğretmenler haftalık ödevleri bugüne kadar Excel/Word'de tablo çizip
+fotoğraflayarak sınıfın veli WhatsApp grubuna atıyordu. Bu ekran aynı belgeyi
+sistemden üretir: **sınıf + hafta** seçilir, o sınıfın o haftadaki **tüm**
+derslerinin "yapılacak ödev"i (`homeworks.description`) listelenir ve ekranda
+görünen belge tarayıcı tarafında PNG'ye çevrilip indirilir.
+
+- **Yeni şema/migration yok.** Veri mevcut `class_courses` + `reports` +
+  `homeworks` tablolarından gelir.
+- **Gönderim otomatik değildir** (WhatsApp grup API'si kapsam dışı). Admin
+  yalnızca doğru, tutarlı görseli indirir; paylaşımı kendi eliyle yapar.
+- **Kapsam:** yalnızca admin — `GET /api/v1/admin/homework-summary`
+  (`class_id` zorunlu, `week_id` opsiyonel → aktif hafta).
+- Satırlar: **öğretmen adı | ders adı | yapılacak ödev**; sıra `day_of_week`,
+  `lesson_time`.
+- **Eksik ders atlanmaz:** raporu `completed`/`sent` olmayan (ya da ödevi
+  bulunmayan) ders satırı **"Rapor girilmedi"** olarak listelenir. "Tüm raporlar
+  tamam" kısıtı bu ekranda **uygulanmaz** — o kısıt yalnızca digest
+  gönderimindeydi (§5.4); hazır olmayan sınıf da gösterilir.
+- Başlık: `{sınıf adı} — {N}. Haftanın Ödevleri`; `N`, sınıfın ilk aktif
+  haftasına göre **görece** hafta numarasıdır (§6 Veli ile aynı etiketleme).
+- Görsel, müşteri yüzü kimliğini (marka mavisi, `.brand-scope`) ve kurum
+  logosunu taşır — dışa dönük bir belgedir; admin arayüzünün teal kimliği
+  kullanılmaz.
+- Teknik: ekrandaki önizleme bileşeni `html-to-image` ile `pixelRatio: 2`
+  PNG'ye çevrilir; dosya adı `{sinif}-{N}-hafta-odevleri.png`. Web font
+  yüklenmesi (`document.fonts.ready`) yakalama öncesi beklenir.
+
 ---
 
 ## 6. Ekranlar
@@ -874,6 +903,9 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
 - Haftalık gönderim ekranı (sınıf filtreli; digest görüntülenme bilgisi;
   önizlemede gönderilmemiş kayıtlarda `completed` ders başına **"Düzenle"** —
   §5.4 madde 3)
+- **Haftalık ödev özeti** (§5.8): sınıf + hafta; tüm derslerin "yapılacak
+  ödev"leri, eksik ders "Rapor girilmedi", WhatsApp grubuna paylaşılmak üzere
+  **PNG indir**
 - **Riskli öğrenci listesi** (panel sekmesi): son 3 hafta, üç kriter — herhangi
   biri tetiklerse riskli (OR); nedenler ayrı rozet ("Düşük ortalama" /
   "Teslim etmeme" / "Devamsızlık"). Tanım: ortalama(ödev+ders içi performans) ≤ 4; verilen
