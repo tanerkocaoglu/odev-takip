@@ -383,11 +383,12 @@ function DoneCard({
       )}
 
       <div className="mt-3 border-t border-border px-4 py-3">
+        {/* Ekleme: 30 sınırı sunucudaki dosyalar + yeni seçilenler toplamıdır. */}
         <HiddenFileInputs
           fileInputRef={handlers.fileInputRef}
           cameraInputRef={handlers.cameraInputRef}
           onFiles={handlers.onFiles}
-          currentCount={handlers.pending.files.length}
+          currentCount={(item.submission?.files.length ?? 0) + handlers.pending.files.length}
         />
         {!hasSelected ? (
           <div className="flex flex-wrap gap-2">
@@ -445,7 +446,7 @@ function DoneCard({
               disabled={handlers.uploading}
               className="mt-3 flex min-h-12 w-full items-center justify-center rounded-xl bg-accent text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {handlers.uploading ? 'Gönderiliyor…' : 'Gönder'}
+              {handlers.uploading ? 'Ekleniyor…' : 'Dosyaları ekle'}
             </button>
           </div>
         )}

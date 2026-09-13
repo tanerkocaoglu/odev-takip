@@ -411,6 +411,38 @@ describe('HomeworkListPage', () => {
     expect(screen.getByText('En fazla 30 dosya seçebilirsiniz.')).toBeInTheDocument();
   });
 
+  it('tamamlanan kartta mevcut sunucu dosyaları 30 limitine katılır (ekleme)', async () => {
+    const serverFiles = Array.from({ length: 30 }, (_, i) => ({
+      key: `1234567890-0123456789abc${String(i).padStart(3, '0')}.jpg`,
+      filename: `sayfa-${i + 1}.jpg`,
+      size: 1024,
+      mime: 'image/jpeg',
+      ext: 'jpg',
+    }));
+    const data = {
+      items: [
+        {
+          ...SUBMITTED,
+          submission: { ...SUBMITTED.submission, files: serverFiles },
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', mockFetch(200, data));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Tamamlanan/ }));
+    await waitFor(() => {
+      expect(screen.getByText('Fizik deney raporu.')).toBeInTheDocument();
+    });
+
+    const doneInput = screen.getAllByLabelText('Ödev dosyalarını seç')[0] as HTMLInputElement;
+    fireEvent.change(doneInput, {
+      target: { files: [new File(['x'], 'ek.png', { type: 'image/png' })] },
+    });
+
+    expect(await screen.findByText('En fazla 30 dosya seçebilirsiniz.')).toBeInTheDocument();
+  });
+
   it('seçilen dosya gönder öncesi tek tek kaldırılabilir', async () => {
     vi.stubGlobal('fetch', mockFetch(200, HOMEWORKS));
     renderPage();

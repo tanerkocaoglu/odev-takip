@@ -336,20 +336,105 @@ describe('POST /api/v1/student/homeworks/:id/submit', () => {
     expect(res.body.item.submission.is_late).toBe(true);
   });
 
-  it('yeniden yüklemede eski dosyalar değiştirilir', async () => {
-    const first = await request(app)
+  it('ikinci yükleme ekler; mevcut dosyalar DB ve diskte korunur', async () => {
+    const before = db
+      .prepare(
+        'SELECT key FROM submission_files sf JOIN submissions s ON s.id = sf.submission_id WHERE s.homework_id = ? AND s.student_id = ?',
+      )
+      .all('s-hw-w1', 'test-student-rec') as Array<{ key: string }>;
+    expect(before.length).toBeGreaterThan(0);
+
+    const res = await request(app)
       .post('/api/v1/student/homeworks/s-hw-w1/submit')
       .set(auth(studentToken))
-      .attach('files', PNG_BUFFER, { filename: 'v2.png', contentType: 'image/png' });
-    const newKey = first.body.item.submission.files[0].key;
-    trackKey(newKey);
+      .attach('files', PNG_BUFFER, { filename: 'ek-sayfa.png', contentType: 'image/png' });
+    expect(res.status).toBe(200);
+
+    const files = res.body.item.submission.files as Array<{ key: string }>;
+    expect(files).toHaveLength(before.length + 1);
+    for (const f of files) trackKey(f.key);
+
+    // Önceki dosyaların hiçbiri kaybolmadı: hem yanıtta hem diskte.
+    for (const b of before) {
+      expect(files.some((f) => f.key === b.key)).toBe(true);
+      expect(fs.existsSync(localPathFor(b.key))).toBe(true);
+    }
+  });
+
+  it('incelendikten sonra ek yükleme review durumunu sıfırlar', async () => {
+    const sub = db
+      .prepare('SELECT id FROM submissions WHERE homework_id = ? AND student_id = ?')
+      .get('s-hw-w1', 'test-student-rec') as { id: string };
+    db.prepare(
+      `UPDATE submissions SET status = 'reviewed', reviewed_by = ?, reviewed_at = ? WHERE id = ?`,
+    ).run('test-teacher', new Date().toISOString(), sub.id);
+
+    const res = await request(app)
+      .post('/api/v1/student/homeworks/s-hw-w1/submit')
+      .set(auth(studentToken))
+      .attach('files', PNG_BUFFER, { filename: 'yeni-sayfa.png', contentType: 'image/png' });
+    expect(res.status).toBe(200);
+    expect(res.body.item.submission.status).toBe('submitted');
+    for (const f of res.body.item.submission.files as Array<{ key: string }>) trackKey(f.key);
 
     const row = db
+      .prepare('SELECT status, reviewed_by, reviewed_at FROM submissions WHERE id = ?')
+      .get(sub.id) as { status: string; reviewed_by: string | null; reviewed_at: string | null };
+    expect(row.status).toBe('submitted');
+    expect(row.reviewed_by).toBeNull();
+    expect(row.reviewed_at).toBeNull();
+  });
+
+  it('teslim başına toplam 30 dosya sınırı iki ayrı yükleme arasında uygulanır', async () => {
+    // Mevcut dosya sayısını 20'ye tamamla (ilk dosya "geçmiş due_date" testinden).
+    const startRow = db
       .prepare(
         'SELECT COUNT(*) AS n FROM submission_files sf JOIN submissions s ON s.id = sf.submission_id WHERE s.homework_id = ? AND s.student_id = ?',
       )
-      .get('s-hw-w1', 'test-student-rec') as { n: number };
-    expect(row.n).toBe(1);
+      .get('s-hw-w0', 'test-student-rec') as { n: number };
+    const toAdd = Math.max(0, 20 - startRow.n);
+    if (toAdd > 0) {
+      const fill = request(app)
+        .post('/api/v1/student/homeworks/s-hw-w0/submit')
+        .set(auth(studentToken));
+      for (let i = 0; i < toAdd; i += 1) {
+        fill.attach('files', PDF_BUFFER, {
+          filename: `doldur-${i}.pdf`,
+          contentType: 'application/pdf',
+        });
+      }
+      const fillRes = await fill;
+      expect(fillRes.status).toBe(200);
+      for (const f of fillRes.body.item.submission.files as Array<{ key: string }>) {
+        trackKey(f.key);
+      }
+    }
+
+    const count = (): number =>
+      (
+        db
+          .prepare(
+            'SELECT COUNT(*) AS n FROM submission_files sf JOIN submissions s ON s.id = sf.submission_id WHERE s.homework_id = ? AND s.student_id = ?',
+          )
+          .get('s-hw-w0', 'test-student-rec') as { n: number }
+      ).n;
+    expect(count()).toBe(20);
+
+    // 20 + 15 = 35 > 30 → ikinci istek reddedilmeli; hiçbir dosya eklenmemeli.
+    const over = request(app)
+      .post('/api/v1/student/homeworks/s-hw-w0/submit')
+      .set(auth(studentToken));
+    for (let i = 0; i < 15; i += 1) {
+      over.attach('files', PDF_BUFFER, {
+        filename: `fazla-${i}.pdf`,
+        contentType: 'application/pdf',
+      });
+    }
+    const overRes = await over;
+    expect(overRes.status).toBe(400);
+    expect(overRes.body.error.code).toBe('VALIDATION_ERROR');
+    expect(overRes.body.error.message).toContain('30 dosya');
+    expect(count()).toBe(20);
   });
 
   it('dosya yüklenmezse 400', async () => {

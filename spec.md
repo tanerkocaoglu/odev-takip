@@ -588,12 +588,20 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
    (yüklendi / yüklenmedi / geç yüklendi). **Puan, öğretmen notu, ders içi performans
    ve rapor içeriği bu ekranda yoktur.**
 2. Yükleme: çoklu dosya, izin verilen tipler `jpg/jpeg/png/heic/pdf`,
-   dosya başına max 10 MB, teslim başına max 30 dosya.
+   dosya başına max 10 MB. **Teslim başına toplam max 30 dosya** uygulanır.
+   Bir ödeve yapılan her yükleme mevcut dosyaların üzerine yazmaz; **ekler**
+   (teslim, tek seferlik bir "gönderim" değil, birikimli bir dosya havuzudur).
+   Toplam sınır tek bir isteğin sayısı değil, mevcut dosyalar + yeni gelen
+   dosyalar toplamıdır (örn. 20 yüklüyken 15'lik istek → 35 > 30 → reddedilir).
+   Ekleme sırasında önceki dosyalar **hiçbir koşulda silinmez**.
 3. **Görsel küçültme zorunludur** — yüklenen görseller uzun kenarı max 2000px
    olacak şekilde yeniden boyutlandırılır ve JPEG q80 olarak saklanır.
    Ham telefon fotoğrafı olduğu gibi saklanmaz (§8 hacim hesabı).
-4. Son tarih geçtikten sonra da yükleyebilir; `is_late = true` işaretlenir ve
-   öğretmen ekranında "geç teslim" rozeti çıkar.
+4. Son tarih geçtikten sonra da yükleyebilir. `submitted_at` **ilk teslim**
+   zamanı, `is_late` ise **ilk teslimdeki** gecikme durumudur; sonraki
+   eklemeler bu iki alanı değiştirmez (zamanında ilk teslim + sonradan geç
+   ekleme teslimi geç yapmaz — kabul edilen esneklik). İlk teslim geç ise
+   `is_late = true` kalır ve öğretmen ekranında "geç teslim" rozeti çıkar.
 5. Geçmiş ödevler listesi: hangi ödevi yüklemiş, hangisini yüklememiş.
 6. **İçerik doğrulaması (magic-byte):** İstemcinin bildirdiği mime/uzantıya
    güvenilmez; dosyanın **gerçek içeriği** imzasından tanınır — JPEG
@@ -610,6 +618,13 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
    `GET /api/v1/files/:key/thumb` yanıtları `X-Content-Type-Options: nosniff`
    taşır; tarayıcının içeriği farklı bir tipe yorumlaması (MIME sniffing)
    engellenir.
+
+> **Ekleme sonrası incelme durumu:** Teslim öğretmen tarafından `reviewed`
+> işaretliyken öğrenci yeni dosya eklerse `status` yeniden `submitted` olur ve
+> `reviewed_by` / `reviewed_at` `NULL`'a çekilir; yeni içerik yeniden
+> incelenmelidir. `submission_files` tablosunda dosya bazlı ekleme tarihi
+> tutulmaz; öğretmen ekranı eklenen dosyaları tek teslim olarak gösterir ve
+> yeniden incelenme gereğini durum rozeti ("İncelenmedi") ile bildirir.
 
 ### 5.4 Veliye haftalık gönderim (birleştirilmiş)
 

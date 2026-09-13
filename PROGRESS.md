@@ -5,6 +5,80 @@
 
 ---
 
+## Öğrenci ödev teslimi — ekleme (append) davranışı ✅
+
+### Sorun
+
+`POST /student/homeworks/:id/submit` bir ödeve **ikinci** kez dosya yüklendiğinde
+mevcut `submission_files` satırlarını **siliyor** ve `submissions` kaydını üzerine
+yazıyordu (commit sonrası eski dosyalar diskten de siliniyordu). Öğrenci "bir
+sayfa daha ekliyorum" niyetiyle yüklüyor, önceki tüm dosyalarını **sessizce**
+kaybediyordu — çok sayfalı çözümlerde gerçek veri kaybı.
+
+### Çözüm — birikimli dosya havuzu
+
+- Ekleme (append): yeni dosyalar mevcut dosyaların **yanına** eklenir; hiçbir
+  eski satır/dosya silinmez. Teslim tek seferlik "gönderim" değil, havuzdur.
+- **Toplam** 30 dosya sınırı: tek isteğin sayısı değil, `mevcut + yeni` toplamı
+  (`assertFileQuota`). Diske yazmadan **önce** reddedilir; transaction içinde
+  yarışa karşı yeniden doğrulanır (ihlalde rollback + yazılan dosya temizliği).
+- **Kararlar (kullanıcı onaylı):** silme yok (yalnızca ekleme); `is_late` ve
+  `submitted_at` **ilk teslimde sabitlenir**, append değiştirmez; `submission_files`'a
+  dosya bazlı tarih eklenmedi (migration yok); öğretmen ekranı eklenen dosyaları
+  **tek teslim** olarak gösterir.
+- **Yeniden inceleme:** append, `status='submitted'` yapar ve `reviewed_by` /
+  `reviewed_at`'i NULL'a çeker; öğretmen ekranındaki durum rozeti bunu "Yeni"
+  olarak gösterir. `note` yalnızca istekte gönderilirse güncellenir.
+- **Değişmeyenler:** magic-byte/uzantı/10 MB/30-dosya kontrolleri, yedek
+  klasörleme (`Ad_Soyad/Ders/Hafta_N`) + `_2/_3` çakışma çözümü, yetki zinciri.
+
+### Yapılanlar
+
+- `backend/src/routes/student.ts`: handler append'e çevrildi; `DELETE FROM
+  submission_files` + üzerine yazma kaldırıldı; `assertFileQuota` eklendi.
+- `src/pages/student/HomeworkListPage.tsx`: tamamlanan kartta 30 limiti
+  `sunucudaki dosyalar + seçilenler` toplamına göre; buton "Dosyaları ekle".
+- `spec.md` §5.3: ekleme + toplam 30 + ilk-teslim `is_late`/`submitted_at` +
+  ekleme sonrası incelme sıfırlama kuralı.
+- Testler: `student.test.ts` — "eski dosyalar değiştirilir" → **"ikinci yükleme
+  ekler; mevcut dosyalar DB ve diskte korunur"**; +"ek yükleme review'ı
+  sıfırlar"; +"20 + 15 → 400". `student.test.tsx` — sunucu dosyalarının limite
+  katıldığı test.
+
+### Doğrulamalar
+
+- **Statik:** kök + backend `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **295/295** (26 dosya; +3), frontend **118/118** (19 dosya; +1).
+- **Canlı (izole DB + izole uploads + gerçek sunucu, headless Chrome/CDP):**
+  - **Append:** ilk yükleme (1 dosya) → ikinci yükleme → toplam **2**; ilk
+    `key` hem DB yanıtında hem **diskte** korunuyor (`key0 diskte=true`).
+  - **İncelme sıfırlama (UI kanıtı):** öğretmen "İncelendi" işaretledi → UI'de
+    **"İncelendi" rozeti=true, "Yeni"=false**; öğrenci ek dosya yükledi → UI'de
+    **"İncelendi"=false, "Yeni"=true, "İncelendi olarak işaretle" butonu=true**;
+    API `status=submitted, reviewed_at=null`.
+  - **30 limiti (20 + 15):** 17 dosya eklendi → toplam **20** (HTTP 200); 15'lik
+    istek → **HTTP 400** `"Bu ödeve teslim başına en fazla 30 dosya
+    yükleyebilirsiniz."`; nihai toplam **20**, ilk `key` hâlâ var.
+  - Kanıt sonrası izole ortam temizlendi (0 teslim, 0 dosya); test dışı hiçbir
+    veriye dokunulmadı.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/student.ts
+backend/src/student.test.ts
+src/pages/student/HomeworkListPage.tsx
+src/student.test.tsx
+spec.md
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğrenci "müşteri yüzü" yeniden tasarımı — CustomerShell + capture carousel ✅
 
 ### Süreç özeti

@@ -5,8 +5,12 @@
  * - `GET /student/homeworks` — "Ödevlerim": yalnızca `completed`/`sent`
  *   raporların ödevleri görünür (karar noktası 1); puan/not/rapor asla
  *   dönmez. Teslim durumu: yüklendi / geç yüklendi / yüklenmedi.
- * - `POST /student/homeworks/:id/submit` — çoklu dosya (10 MB × 30),
- *   görsel küçültme, `is_late` (Europe/Istanbul yerel günü > due_date).
+ * - `POST /student/homeworks/:id/submit` — çoklu dosya (10 MB × teslim başına
+ *   toplam 30), görsel küçültme. **Ekleme (append) davranışı:** bir ödeve
+ *   tekrar yükleme mevcut dosyaların üzerine yazmaz, yanına ekler; hiçbir
+ *   dosya silinmez. Toplam 30 sınırı tüm yüklemeler üzerinden uygulanır.
+ *   `is_late` ve `submitted_at` ilk yüklemede sabitlenir; sonraki eklemeler
+ *   teslimi yeniden incelemeye açar (`submitted`, review sıfırlanır).
  *
  * Yetki (CLAUDE.md): her handler ilk satırında kontrol eder — yalnızca
  * `student` rolü; sorgular `req.user.student_id` ile filtrelidir.
@@ -173,6 +177,21 @@ const submitSchema = z.object({
   note: z.string().trim().max(1000, 'Not en fazla 1000 karakter olabilir.').optional(),
 });
 
+/**
+ * Teslim başına **toplam** 30 dosya sınırı. Yalnızca bu isteğin dosya sayısı
+ * değil, mevcut dosyalarla birlikte toplam değerlendirilir (append davranışı):
+ * 20 yüklüyken 15'lik istek → 35 > 30 → reddedilir.
+ */
+function assertFileQuota(existingCount: number, incomingCount: number): void {
+  if (existingCount + incomingCount > MAX_FILES) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Bu ödeve teslim başına en fazla 30 dosya yükleyebilirsiniz.',
+    );
+  }
+}
+
 router.post(
   '/homeworks/:id/submit',
   requireStudent,
@@ -188,6 +207,18 @@ router.post(
       throw new AppError('VALIDATION_ERROR', 400, 'En az bir dosya yükleyin.');
     }
 
+    const existing = db
+      .prepare('SELECT id FROM submissions WHERE homework_id = ? AND student_id = ?')
+      .get(homework.id, studentId) as { id: string } | undefined;
+
+    // Toplam (teslim başına) 30 dosya sınırı — diske yazmadan ÖNCE.
+    const existingCount = existing
+      ? (db
+          .prepare('SELECT COUNT(*) AS n FROM submission_files WHERE submission_id = ?')
+          .get(existing.id) as { n: number }).n
+      : 0;
+    assertFileQuota(existingCount, files.length);
+
     // 1) Görsel küçültme + saklama (async). Hata olursa yazılanları sil.
     const stored: StoredFile[] = [];
     try {
@@ -200,28 +231,36 @@ router.post(
     }
 
     const now = new Date().toISOString();
-    const late = isLateSubmission(now, homework.due_date);
-    const existing = db
-      .prepare('SELECT id FROM submissions WHERE homework_id = ? AND student_id = ?')
-      .get(homework.id, studentId) as { id: string } | undefined;
     const subId = existing?.id ?? randomUUID();
 
-    let oldKeys: string[] = [];
     try {
       db.exec('BEGIN');
       if (existing) {
-        const oldRows = db
-          .prepare('SELECT key, thumb_key FROM submission_files WHERE submission_id = ?')
-          .all(existing.id) as Array<{ key: string; thumb_key: string | null }>;
-        oldKeys = oldRows.flatMap((r) => (r.thumb_key ? [r.key, r.thumb_key] : [r.key]));
-        db.prepare('DELETE FROM submission_files WHERE submission_id = ?').run(existing.id);
-        db.prepare(
-          `UPDATE submissions
-           SET note = ?, submitted_at = ?, is_late = ?, status = 'submitted',
-               reviewed_by = NULL, reviewed_at = NULL
-           WHERE id = ?`,
-        ).run(input.note ?? null, now, late ? 1 : 0, existing.id);
+        // Append: mevcut dosyalar SİLİNMEZ; yeni dosyalar yanına eklenir.
+        // `submitted_at` (ilk teslim) ve `is_late` (ilk teslimdeki gecikme)
+        // append'te DEĞİŞMEZ.
+        // Yeni içerik yeniden incelenmeli → `submitted`'a dön, review'ı sıfırla.
+        if (input.note !== undefined) {
+          db.prepare(
+            `UPDATE submissions
+             SET note = ?, status = 'submitted', reviewed_by = NULL, reviewed_at = NULL
+             WHERE id = ?`,
+          ).run(input.note ?? null, existing.id);
+        } else {
+          db.prepare(
+            `UPDATE submissions
+             SET status = 'submitted', reviewed_by = NULL, reviewed_at = NULL
+             WHERE id = ?`,
+          ).run(existing.id);
+        }
+
+        // Yarış güvencesi: transaction içinde toplamı yeniden doğrula.
+        const totalNow = (db
+          .prepare('SELECT COUNT(*) AS n FROM submission_files WHERE submission_id = ?')
+          .get(existing.id) as { n: number }).n;
+        assertFileQuota(totalNow, stored.length);
       } else {
+        const late = isLateSubmission(now, homework.due_date);
         db.prepare(
           `INSERT INTO submissions (id, homework_id, student_id, note, submitted_at, is_late, status)
            VALUES (?, ?, ?, ?, ?, ?, 'submitted')`,
@@ -241,9 +280,6 @@ router.post(
       await removeFilesFromDisk(stored);
       throw err;
     }
-
-    // Eski dosyalar diskten kaldırılır (commit sonrası — rollback'te kayıp olmaz).
-    await removeFilesFromDisk(oldKeys.map((key) => ({ key })));
 
     const item = db
       .prepare(HOMEWORK_SQL + ' AND h.id = ?')
