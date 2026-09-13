@@ -54,7 +54,7 @@ CLAUDE.md   spec.md   PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`cc643d6` — yedekler kalıcı diske (`BACKUPS_DIR`) + prune.
 
 ---
 
