@@ -209,10 +209,9 @@ export default function GuardianHomePage() {
                     aria-hidden="true"
                   />
                   <Link
-                    id={`guardian-report-${r.id}`}
                     to={`/guardian/reports/${r.id}`}
                     aria-label={`${r.relative_week_no}. hafta raporunu aç`}
-                    className="card-interactive block scroll-mt-24 rounded-2xl border border-border bg-surface p-4 elevation-1"
+                    className="card-interactive block rounded-2xl border border-border bg-surface p-4 elevation-1"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
