@@ -52,7 +52,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`891629a` — `db:wipe` (seed'siz boş DB) + `reset.ts` `DB_PATH` düzeltmesi.
 
 ---
 
