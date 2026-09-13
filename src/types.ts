@@ -378,8 +378,27 @@ export interface DigestSnapshotCourse {
   lesson_time: string | null;
   status: 'completed' | 'sent' | 'missing';
   topic_covered: string | null;
+  /**
+   * Bu haftanın puanladığı önceki haftanın ödevi. Yeni snapshot'larda bulunur;
+   * gönderilmiş eski snapshot'larda yoktur (opsiyonel — geriye dönük uyum).
+   */
+  prev_homework_id?: string | null;
   prev_homework_text: string | null;
-  homework: { description: string; due_date: string } | null;
+  homework: {
+    /** Yeni snapshot'larda bulunur; eski snapshot'larda yoktur. */
+    id?: string;
+    description: string;
+    due_date: string;
+    /**
+     * Bu ödevin değerlendirmesinin görüneceği hafta (bir sonraki ders haftası).
+     * `null` yalnızca yılın son haftası; eski snapshot'larda alan yoktur.
+     */
+    graded_in_week?: {
+      week_no: number;
+      label: string;
+      relative_week_no: number;
+    } | null;
+  } | null;
   entry: DigestSnapshotEntry | null;
 }
 
@@ -520,6 +539,17 @@ export interface GuardianReportItem {
   course_count: number;
 }
 
+/** Veli paneli — ödev teslimi (detay ekranı). */
+export interface GuardianReportSubmission {
+  id: string;
+  note: string | null;
+  submitted_at: string;
+  is_late: boolean;
+  status: 'submitted' | 'reviewed';
+  reviewed_at: string | null;
+  files: SubmissionFile[];
+}
+
 /** Veli paneli — GET /guardian/reports/:id. */
 export interface GuardianReportDetail {
   digest: {
@@ -533,15 +563,20 @@ export interface GuardianReportDetail {
     course_name: string;
     description: string;
     due_date: string;
-    submission: {
-      id: string;
-      note: string | null;
-      submitted_at: string;
-      is_late: boolean;
-      status: 'submitted' | 'reviewed';
-      reviewed_at: string | null;
-      files: SubmissionFile[];
-    } | null;
+    submission: GuardianReportSubmission | null;
+  }>;
+  /**
+   * Bu haftanın puanladığı önceki haftanın ödevi (raporun `prev_homework_id`'si)
+   * ve öğrencinin ona yüklediği dosyalar. Canlı DB'den gelir; snapshot'a dosya
+   * gömülmez (Bearer kısıtı). Eski API yanıtlarında bulunmayabilir.
+   */
+  prev_submissions?: Array<{
+    class_course_id: string;
+    homework_id: string;
+    course_name: string;
+    description: string;
+    due_date: string;
+    submission: GuardianReportSubmission | null;
   }>;
 }
 

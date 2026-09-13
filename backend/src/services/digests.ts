@@ -121,6 +121,55 @@ export function firstActiveWeekNoForClass(classId: string): number | null {
   return week?.week_no ?? null;
 }
 
+/**
+ * Bu haftanın "Yapılacak ödev"inin değerlendirileceği (puanının görüneceği)
+ * hafta — bir sonraki ders haftası. Gösterim için mutlak `week_no` yanında
+ * sınıfın ilk aktif haftasına göre **görece** numara da döner.
+ *
+ * `null` **yalnızca** "gerçekten eğitim yılının son haftası" (sonraki `weeks`
+ * kaydı yok) durumunda döner. Sorgu/veri tutarsızlıkları (sonraki hafta
+ * sırasının geriye gitmesi, akademik yıl referansının boş olması) sessizce
+ * `null`'a — yani "son hafta" görüntüsüne — çevrilmez; hata fırlatılır ki
+ * gerçek bir hata beklenen durumdan ayırt edilebilsin.
+ */
+export interface GradedInWeek {
+  week_no: number;
+  label: string;
+  relative_week_no: number;
+}
+
+export function resolveGradedInWeek(
+  week: WeekRecord,
+  classId: string,
+): GradedInWeek | null {
+  if (!week || !week.academic_year_id) {
+    throw new Error('graded_in_week: geçerli hafta/akademik yıl referansı yok (veri tutarsızlığı).');
+  }
+
+  const nextWeek = db
+    .prepare(
+      `SELECT * FROM weeks
+       WHERE academic_year_id = ? AND start_date > ?
+       ORDER BY start_date ASC LIMIT 1`,
+    )
+    .get(week.academic_year_id, week.start_date) as WeekRecord | undefined;
+
+  if (!nextWeek) return null; // gerçekten eğitim yılının son haftası
+
+  if (nextWeek.week_no <= week.week_no) {
+    throw new Error(
+      `graded_in_week: sonraki hafta sırası tutarsız (${week.week_no} → ${nextWeek.week_no}).`,
+    );
+  }
+
+  const firstActiveWeek = firstActiveWeekNoForClass(classId);
+  const relative =
+    firstActiveWeek === null
+      ? nextWeek.week_no
+      : Math.max(nextWeek.week_no - firstActiveWeek + 1, 1);
+  return { week_no: nextWeek.week_no, label: nextWeek.label, relative_week_no: relative };
+}
+
 /** Sınıfın silinmemiş atamaları — "o haftadaki tüm dersler" kümesi. */
 function classCourseIds(classId: string): string[] {
   return (
@@ -223,8 +272,20 @@ export interface DigestSnapshotCourse {
   lesson_time: string | null;
   status: 'completed' | 'sent' | 'missing';
   topic_covered: string | null;
+  /** Bu haftanın puanladığı önceki haftanın ödevi (varsa referansı). */
+  prev_homework_id: string | null;
   prev_homework_text: string | null;
-  homework: { description: string; due_date: string } | null;
+  homework: {
+    id: string;
+    description: string;
+    due_date: string;
+    /**
+     * Bu ödevin değerlendirmesinin görüneceği hafta (bir sonraki ders haftası).
+     * `null` yalnızca yılın son haftasında; alan yoksa (eski snapshot) da
+     * frontend notu göstermez.
+     */
+    graded_in_week: GradedInWeek | null;
+  } | null;
   entry: DigestSnapshotEntry | null;
 }
 
@@ -246,7 +307,12 @@ export function buildSnapshot(
   weekId: string,
   classId: string,
 ): DigestSnapshot {
-  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(weekId) as unknown as WeekRecord;
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(weekId) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
   const cls = db
     .prepare(`SELECT id, name FROM classes WHERE id = ?`)
     .get(classId) as { id: string; name: string };
@@ -271,7 +337,8 @@ export function buildSnapshot(
               co.name AS course_name, t.full_name AS teacher_name,
               r.id AS report_id, r.status, r.topic_covered,
               r.prev_homework_id, r.prev_homework_text,
-              hw.description AS homework_description, hw.due_date
+              hw.id AS homework_id, hw.description AS homework_description,
+              hw.due_date
        FROM class_courses cc
        JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
        JOIN users t ON t.id = cc.teacher_id
@@ -291,9 +358,14 @@ export function buildSnapshot(
     topic_covered: string | null;
     prev_homework_id: string | null;
     prev_homework_text: string | null;
+    homework_id: string | null;
     homework_description: string | null;
     due_date: string | null;
   }>;
+
+  // Sonraki ders haftası snapshot başına bir kez çözülür; `null` yalnızca
+  // gerçek son hafta içindir, tutarsızlık fırlatır (bkz. resolveGradedInWeek).
+  const gradedInWeek = resolveGradedInWeek(week, classId);
 
   const courses: DigestSnapshotCourse[] = rows.map((row) => {
     const isFilled = row.report_id !== null && (row.status === 'completed' || row.status === 'sent');
@@ -332,10 +404,16 @@ export function buildSnapshot(
       lesson_time: row.lesson_time,
       status: isFilled ? (row.status as 'completed' | 'sent') : 'missing',
       topic_covered: isFilled ? row.topic_covered : null,
+      prev_homework_id: isFilled ? row.prev_homework_id : null,
       prev_homework_text: prevHomeworkText,
       homework:
-        isFilled && row.homework_description !== null && row.due_date !== null
-          ? { description: row.homework_description, due_date: row.due_date }
+        isFilled && row.homework_id !== null && row.due_date !== null
+          ? {
+              id: row.homework_id,
+              description: row.homework_description ?? '',
+              due_date: row.due_date,
+              graded_in_week: gradedInWeek,
+            }
           : null,
       entry,
     };

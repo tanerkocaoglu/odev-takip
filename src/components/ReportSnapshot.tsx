@@ -38,11 +38,18 @@ export default function ReportSnapshot({
   snapshot,
   showStudent = true,
   renderCourseAction,
+  renderPrevHomework,
 }: {
   snapshot: DigestSnapshot;
   showStudent?: boolean;
   /** Ders kartı başlığına eklenecek isteğe bağlı aksiyon (ör. admin "Düzenle"). */
   renderCourseAction?: (course: DigestSnapshotCourse) => ReactNode;
+  /**
+   * "Verilmiş ödev" satırının altına eklenecek isteğe bağlı içerik. Dosya
+   * önizlemesi Bearer gerektirdiğinden yalnızca girişli veli detayı bu prop'u
+   * geçirir; public/admin görünümlerinde hiçbir şey render edilmez.
+   */
+  renderPrevHomework?: (course: DigestSnapshotCourse) => ReactNode;
 }) {
   return (
     <div className="space-y-6">
@@ -132,12 +139,15 @@ export default function ReportSnapshot({
                   <dd className="text-text">{course.topic_covered}</dd>
                 </div>
               )}
-              {course.prev_homework_text && (
-                <div className="flex gap-2 sm:col-span-2">
-                  <dt className="font-medium text-muted">Verilmiş ödev:</dt>
-                  <dd className="text-text">{course.prev_homework_text}</dd>
+              {course.prev_homework_text || course.prev_homework_id ? (
+                <div className="sm:col-span-2">
+                  <div className="flex gap-2">
+                    <dt className="font-medium text-muted">Verilmiş ödev:</dt>
+                    <dd className="text-text">{course.prev_homework_text || '—'}</dd>
+                  </div>
+                  {renderPrevHomework?.(course)}
                 </div>
-              )}
+              ) : null}
               {course.homework && (
                 <div className="flex gap-2 sm:col-span-2">
                   <dt className="font-medium text-muted">Yapılacak ödev:</dt>
@@ -147,6 +157,15 @@ export default function ReportSnapshot({
                       {' '}
                       (son tarih: {course.homework.due_date})
                     </span>
+                    {course.homework.graded_in_week && (
+                      <span className="mt-1 block text-[13px] text-muted">
+                        Bu ödevin değerlendirmesi{' '}
+                        <span className="tabular">
+                          {course.homework.graded_in_week.relative_week_no}. hafta
+                        </span>{' '}
+                        ({course.homework.graded_in_week.label}) raporunda görünecek.
+                      </span>
+                    )}
                   </dd>
                 </div>
               )}

@@ -5,6 +5,77 @@
 
 ---
 
+## Veli rapor görünümü — "yapılacak ödev" / değerlendirme haftası köprüsü ✅
+
+### Sorun
+
+Bir haftanın raporundaki "yapılacak ödev", sonraki haftanın "verilmiş olan
+ödev"i olur; öğrencinin teslim dosyaları ödevin **verildiği** haftaya
+(`homework_id`) bağlıdır, ama puanı (`homework_score` / `interest_score`) bir
+sonraki haftanın `report_entries` satırına yazılır. Sonuç: veli bir haftada
+görselleri görüp puanı göremiyor, sonraki haftada puanı görüp hangi ödevin
+puanı olduğunu/görsellerini bulamıyordu.
+
+### Çözüm — yalnızca görsel/bilgilendirme köprüsü (veri modeli değişmedi)
+
+1. **Değerlendirme notu (her yerde, snapshot içeriği).** `buildSnapshot` her
+   dolu ders için "Yapılacak ödev"in puanının görüneceği bir sonraki ders
+   haftasını çözer (`resolveGradedInWeek`); snapshot'a
+   `homework.graded_in_week = { week_no, label, relative_week_no }`
+   (görece + tarih etiketi) ve `homework.id` + `prev_homework_id` eklenir.
+   `ReportSnapshot` "Yapılacak ödev" altında *"Bu ödevin değerlendirmesi
+   N. hafta (tarih aralığı) raporunda görünecek."* notunu render eder; bu
+   yüzden `/r/{token}` public ve admin önizlemede de görünür.
+2. **Teslim dosyası köprüsü (yalnızca girişli veli).** `GET /guardian/reports/:id`
+   canlı DB'den `prev_submissions` döner: bu haftanın puanladığı önceki
+   haftanın ödevi + öğrencinin teslimi/dosyaları. `ReportSnapshot`'a mevcut
+   `renderCourseAction` desenine paralel opsiyonel `renderPrevHomework` prop'u
+   eklendi; `GuardianReportDetailPage` `prev_submissions`'ı `class_course_id`
+   ile eşleyip "Verilmiş ödev" altında `SubmissionFileGrid` gösterir. Public/
+   admin'e dosya gömülmedi (Bearer kısıtı korunur).
+
+### `null` ayrımı (kullanıcı netleştirmesi)
+
+`graded_in_week` için iki `null` durumu bilinçli olarak ayrıldı:
+- **(1) Gerçek son hafta** (sonraki `weeks` kaydı yok) → beklenen, `null` döner.
+- **(2) Sorgu/veri tutarsızlığı** (boş akademik yıl referansı, geriye giden
+  hafta sırası) → sessizce `null`'a çevrilmez, **hata fırlatır** (500).
+  `graded-in-week.test.ts` bu iki durumu ayrı testlerle ele alır; (2)
+  gizlenmeden fark edilir.
+
+### Değişenler / değişmeyenler
+
+- **Migration yok, yeni route yok, DB şeması yok** — yalnızca sorgu/yanıt
+  genişlemesi (snapshot JSON'a opsiyonel alanlar; `prev_submissions` ek dizi).
+- Eski (gönderilmiş) snapshot'larda yeni alanlar yoktur → not render edilmez;
+  geriye dönük uyumlu.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅, kök `build` ✅.
+- **Testler:** backend **299/299** (27 dosya; +4 `graded-in-week`, +2 guardian
+  prev_submissions), frontend **117/117** (19 dosya; +1 guardian not/dosya).
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/digests.ts        (resolveGradedInWeek + snapshot alanları)
+backend/src/routes/guardian.ts         (prev_submissions)
+backend/src/graded-in-week.test.ts     (yeni)
+backend/src/guardian.test.ts
+src/types.ts
+src/components/ReportSnapshot.tsx
+src/pages/guardian/GuardianReportDetailPage.tsx
+src/guardian.test.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğrenci ödev teslimi — ekleme (append) davranışı ✅
 
 ### Sorun

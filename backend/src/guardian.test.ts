@@ -123,12 +123,25 @@ beforeAll(async () => {
   // NOT NULL — detay sorgusu yalnızca class_id+week_id kullandığı için rapor
   // satırı minimal kurulur.
   const gNow = new Date().toISOString();
+  // Hafta 1: önceki haftanın ödevi (g-hw-0) bu rapordadır.
   db.prepare(
     `INSERT INTO reports
        (id, class_course_id, week_id, topic_covered, prev_homework_id,
         prev_homework_text, status, completed_at, created_by, updated_at)
      VALUES (?, ?, ?, NULL, NULL, NULL, 'completed', ?, ?, ?)`,
-  ).run('g-report-1', 'g-cc-1', WEEK2.id, gNow, 'test-teacher', gNow);
+  ).run('g-report-0', 'g-cc-1', WEEK1.id, gNow, 'test-teacher', gNow);
+  db.prepare(
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
+     VALUES (?, ?, 'g-cc-1', ?, ?, NULL, ?)`,
+  ).run('g-hw-0', 'g-report-0', WEEK1.id, 'Önceki haftanın ödevi', '2026-08-03');
+
+  // Hafta 2 raporu bu hafta g-hw-0'ı puanlar (prev_homework_id) + yeni ödev verir.
+  db.prepare(
+    `INSERT INTO reports
+       (id, class_course_id, week_id, topic_covered, prev_homework_id,
+        prev_homework_text, status, completed_at, created_by, updated_at)
+     VALUES (?, ?, ?, NULL, ?, NULL, 'completed', ?, ?, ?)`,
+  ).run('g-report-1', 'g-cc-1', WEEK2.id, 'g-hw-0', gNow, 'test-teacher', gNow);
   db.prepare(
     `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
      VALUES (?, ?, 'g-cc-1', ?, ?, NULL, ?)`,
@@ -138,6 +151,17 @@ beforeAll(async () => {
        (id, homework_id, student_id, note, submitted_at, is_late, status, reviewed_by, reviewed_at, files_purged_at)
      VALUES (?, ?, ?, NULL, ?, 0, 'submitted', NULL, NULL, NULL)`,
   ).run('g-sub-1', 'g-hw-1', 'test-student-rec', '2026-08-08T18:00:00.000Z');
+  // Öğrencinin önceki haftanın ödevine teslimi (g-hw-0) — `prev_submissions`.
+  db.prepare(
+    `INSERT INTO submissions
+       (id, homework_id, student_id, note, submitted_at, is_late, status, reviewed_by, reviewed_at, files_purged_at)
+     VALUES (?, ?, ?, NULL, ?, 0, 'submitted', NULL, NULL, NULL)`,
+  ).run('g-sub-0', 'g-hw-0', 'test-student-rec', '2026-07-31T18:00:00.000Z');
+  db.prepare(
+    `INSERT INTO submission_files
+       (id, submission_id, key, filename, size, mime, ext, thumb_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+  ).run('g-file-0', 'g-sub-0', 'g-key-0.jpg', 'onceki-odev.jpg', 1024, 'image/jpeg', 'jpg');
 
   // Digest'ler: week2 sent (veli görür), week1 sent (geçmiş), week3 pending (görünmez).
   const insertDigest = db.prepare(
@@ -310,6 +334,32 @@ describe('GET /api/v1/guardian/reports/:id (detay)', () => {
     expect(submissions[0].course_name).toBe('Ders 1');
     expect(submissions[0].submission).not.toBeNull();
     expect(submissions[0].submission!.is_late).toBe(false);
+
+    // Bu haftanın puanladığı önceki haftanın ödevi + teslim dosyaları canlı
+    // DB'den gelir (snapshot statik olmasına rağmen).
+    const prevSubs = res.body.prev_submissions as Array<{
+      class_course_id: string;
+      homework_id: string;
+      course_name: string;
+      description: string;
+      due_date: string;
+      submission: {
+        is_late: boolean;
+        files: Array<{ key: string; filename: string; size: number; mime: string }>;
+      } | null;
+    }>;
+    expect(prevSubs).toHaveLength(1);
+    expect(prevSubs[0]).toMatchObject({
+      class_course_id: 'g-cc-1',
+      homework_id: 'g-hw-0',
+      course_name: 'Ders 1',
+      description: 'Önceki haftanın ödevi',
+    });
+    expect(prevSubs[0].submission).not.toBeNull();
+    expect(prevSubs[0].submission!.is_late).toBe(false);
+    expect(prevSubs[0].submission!.files).toEqual([
+      { key: 'g-key-0.jpg', filename: 'onceki-odev.jpg', size: 1024, mime: 'image/jpeg' },
+    ]);
   });
 
   it('başka velinin digest\'i → 404', async () => {

@@ -201,7 +201,19 @@ router.get('/reports/:id', (req, res) => {
     | undefined;
 
   // Ödev teslim geçmişi: o hafta, öğrencinin sınıfındaki ödevler + teslimleri.
+  // Ayrıca `prev_submissions`: bu haftanın puanladığı önceki haftanın ödevi
+  // (rapor.prev_homework_id) ve öğrencinin ona yüklediği dosyalar — veli puanı
+  // görürken "hangi ödevin puanı bu, ne göndermişti" sorusunu aynı ekrandan
+  // yanıtlar. Kaynak canlı DB'dir; snapshot'a dosya gömülmez (Bearer kısıtı).
   let submissions: Array<{
+    course_name: string;
+    description: string;
+    due_date: string;
+    submission: unknown;
+  }> = [];
+  let prevSubmissions: Array<{
+    class_course_id: string;
+    homework_id: string;
     course_name: string;
     description: string;
     due_date: string;
@@ -226,6 +238,29 @@ router.get('/reports/:id', (req, res) => {
         course_name: string;
       }>;
 
+      // Bu haftanın puanladığı ödevler: her dolu dersin `prev_homework_id`'si.
+      // Yalnızca snapshot'a giren (completed/sent) derslerle hizalanır.
+      const prevHomeworks = db
+        .prepare(
+          `SELECT cc.id AS class_course_id, r.prev_homework_id AS homework_id,
+                  co.name AS course_name, h.description, h.due_date
+           FROM reports r
+           JOIN class_courses cc ON cc.id = r.class_course_id AND cc.deleted_at IS NULL
+           JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
+           JOIN homeworks h ON h.id = r.prev_homework_id
+           WHERE r.week_id = ? AND cc.class_id = ?
+             AND r.prev_homework_id IS NOT NULL
+             AND r.status IN ('completed','sent')
+           ORDER BY cc.day_of_week, cc.lesson_time`,
+        )
+        .all(digest.week_id, classId) as Array<{
+        class_course_id: string;
+        homework_id: string;
+        course_name: string;
+        description: string;
+        due_date: string;
+      }>;
+
       const subRows = db
         .prepare(
           `SELECT s.id, s.homework_id, s.note, s.submitted_at, s.is_late, s.status,
@@ -245,28 +280,40 @@ router.get('/reports/:id', (req, res) => {
       // sözleşmesi korunur; ortak yardımcı daha zengin meta döndürür.
       const filesBySub = loadSubmissionFiles(subRows.map((r) => r.id));
 
+      const shapeSubmission = (sub: (typeof subRows)[number]) => ({
+        id: sub.id,
+        note: sub.note,
+        submitted_at: sub.submitted_at,
+        is_late: sub.is_late === 1,
+        status: sub.status,
+        reviewed_at: sub.reviewed_at,
+        files: (filesBySub.get(sub.id) ?? []).map((f) => ({
+          key: f.key,
+          filename: f.filename,
+          size: f.size,
+          mime: f.mime,
+        })),
+      });
+
       submissions = homeworks.map((h) => {
         const sub = subRows.find((s) => s.homework_id === h.id);
         return {
           course_name: h.course_name,
           description: h.description,
           due_date: h.due_date,
-          submission: sub
-            ? {
-                id: sub.id,
-                note: sub.note,
-                submitted_at: sub.submitted_at,
-                is_late: sub.is_late === 1,
-                status: sub.status,
-                reviewed_at: sub.reviewed_at,
-                files: (filesBySub.get(sub.id) ?? []).map((f) => ({
-                  key: f.key,
-                  filename: f.filename,
-                  size: f.size,
-                  mime: f.mime,
-                })),
-              }
-            : null,
+          submission: sub ? shapeSubmission(sub) : null,
+        };
+      });
+
+      prevSubmissions = prevHomeworks.map((h) => {
+        const sub = subRows.find((s) => s.homework_id === h.homework_id);
+        return {
+          class_course_id: h.class_course_id,
+          homework_id: h.homework_id,
+          course_name: h.course_name,
+          description: h.description,
+          due_date: h.due_date,
+          submission: sub ? shapeSubmission(sub) : null,
         };
       });
     }
@@ -286,6 +333,7 @@ router.get('/reports/:id', (req, res) => {
     },
     snapshot,
     submissions,
+    prev_submissions: prevSubmissions,
   });
 });
 

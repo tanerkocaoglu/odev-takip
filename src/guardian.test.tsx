@@ -351,4 +351,78 @@ describe('GuardianReportDetailPage', () => {
     // Veli salt-okunur: kaldırma butonu hiçbir yerde olmamalı.
     expect(screen.queryByRole('button', { name: /dosyasını kaldır/ })).not.toBeInTheDocument();
   });
+
+  it('yapılacak ödevin değerlendirme haftası notunu ve önceki ödevin teslim dosyalarını gösterir', async () => {
+    const detail = {
+      ...DETAIL,
+      snapshot: {
+        ...DETAIL.snapshot,
+        courses: [
+          {
+            ...DETAIL.snapshot.courses[0],
+            prev_homework_id: 'hw0',
+            prev_homework_text: 'Önceki haftanın ödevi',
+            homework: {
+              ...DETAIL.snapshot.courses[0].homework,
+              id: 'hw1',
+              graded_in_week: { week_no: 6, label: '12 - 18 Ocak', relative_week_no: 6 },
+            },
+          },
+        ],
+      },
+      prev_submissions: [
+        {
+          class_course_id: 'cc1',
+          homework_id: 'hw0',
+          course_name: 'Matematik',
+          description: 'Önceki haftanın ödevi',
+          due_date: '2026-01-05',
+          submission: {
+            id: 'sub0',
+            note: null,
+            submitted_at: '2026-01-04T18:00:00.000Z',
+            is_late: false,
+            status: 'submitted',
+            reviewed_at: null,
+            files: [
+              {
+                key: '3234567890-0123456789abcdef.jpg',
+                filename: 'onceki.jpg',
+                size: 1024,
+                mime: 'image/jpeg',
+                ext: 'jpg',
+              },
+            ],
+          },
+        },
+      ],
+    };
+    localStorage.setItem('ds_token', 'test-token');
+    vi.stubGlobal('fetch', mockFetch(200, detail));
+
+    render(
+      <MemoryRouter initialEntries={['/guardian/reports/d1']}>
+        <Routes>
+          <Route path="/guardian/reports/:id" element={<GuardianReportDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { level: 1, name: '05 - 11 Ocak haftalık rapor' }),
+      ).toBeInTheDocument();
+    });
+
+    // "Yapılacak ödev" altındaki bilgi notu: görece hafta + tarih etiketi.
+    expect(screen.getByText(/Bu ödevin değerlendirmesi/)).toHaveTextContent(
+      'Bu ödevin değerlendirmesi 6. hafta (12 - 18 Ocak) raporunda görünecek.',
+    );
+
+    // "Verilmiş ödev" (bu haftanın puanladığı ödev) altında teslim dosyaları.
+    expect(screen.getByText('Öğrencinin bu ödeve yüklediği dosyalar')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /onceki\.jpg görselini aç/ }),
+    ).toBeInTheDocument();
+  });
 });

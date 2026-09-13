@@ -87,6 +87,12 @@ export default function GuardianReportDetailPage() {
     return <EmptyState message="Rapor bulunamadı." />;
   }
 
+  // Bu haftanın puanladığı önceki haftanın ödevi (canlı veri) — sınıf-ders
+  // bazında eşlenir; snapshot'taki "Verilmiş ödev" satırının altında gösterilir.
+  const prevByClassCourse = new Map(
+    (data.prev_submissions ?? []).map((p) => [p.class_course_id, p]),
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -97,7 +103,28 @@ export default function GuardianReportDetailPage() {
         </span>
       </div>
 
-      <ReportSnapshot snapshot={data.snapshot} showStudent />
+      <ReportSnapshot
+        snapshot={data.snapshot}
+        showStudent
+        renderPrevHomework={(course) => {
+          const prev = prevByClassCourse.get(course.class_course_id);
+          const files = prev?.submission?.files ?? [];
+          if (files.length === 0) return null;
+          return (
+            <div className="mt-2">
+              <p className="text-[13px] text-muted">
+                Öğrencinin bu ödeve yüklediği dosyalar
+              </p>
+              <SubmissionFileGrid
+                variant="server"
+                files={files}
+                collapsible
+                onOpenPdf={(key) => void openFile(key)}
+              />
+            </div>
+          );
+        }}
+      />
 
       <section>
         <h2 className="text-base font-semibold text-text">Ödev teslim geçmişi</h2>
