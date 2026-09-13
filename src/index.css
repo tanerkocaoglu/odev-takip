@@ -175,6 +175,31 @@ td :focus-visible {
     linear-gradient(180deg, rgb(var(--brand-deco) / 0.07), transparent 70%);
 }
 
+/* Giriş / marka yüzeyi: kapsayıcı içindeki etkileşimli öğeler (buton, odak
+   halkası) marka mavisine döner. `.customer-face` ile aynı ezme; admin,
+   öğretmen ve diğer ekranları etkilemez. Giriş rol-nötr markayı temsil eder. */
+.brand-scope {
+  --accent: 10 120 163;
+  --accent-fg: 255 255 255;
+}
+
+/* Giriş tabanı: `--bg` üzerine çok hafif marka yıkaması (metin taşımaz). */
+.brand-canvas {
+  background-color: rgb(var(--bg));
+  background-image:
+    radial-gradient(120% 80% at 90% -10%, rgb(var(--brand-deco) / 0.1), transparent 60%),
+    radial-gradient(80% 60% at -10% 110%, rgb(var(--brand-deco) / 0.08), transparent 55%);
+}
+
+/* Marka paneli: koyu marka dolgusu — üzerindeki beyaz metinler WCAG 4.5:1
+   kontrast taşır. Parlak `--brand-deco` yalnızca köşe parıltısı olarak
+   dekoratiftir; hiçbir metin bu parlak tonun üzerine oturmaz. */
+.brand-panel {
+  background:
+    radial-gradient(90% 70% at 100% 0%, rgb(var(--brand-deco) / 0.28), transparent 55%),
+    rgb(var(--brand));
+}
+
 /* Admin veri satırları: hover'da hafif zemin + solda ince accent şeridi */
 .admin-content tbody tr {
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);

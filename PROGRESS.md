@@ -150,6 +150,47 @@ Henüz commit edilmedi.
 
 ---
 
+## Giriş ekranı (LoginPage) marka yeniden tasarımı — hibrit hero + kart ✅
+
+### Süreç özeti
+
+Giriş ekranı tüm rollerin ortak, **rol-nötr marka** noktası olduğu için marka
+mavisiyle yeniden ele alındı; davranış katmanına (form alanları, `returnTo`
+yönlendirmesi, hata/rate-limit mesajları) dokunulmadı.
+
+- **Mekanizma:** `.brand-scope` — kapsayıcı içinde `--accent`/`--accent-fg`'yi
+  marka mavisine ezer (buton + odak halkası). Admin/öğretmen ekranları etkilenmez.
+- **Masaüstü:** sol marka paneli (koyu marka dolgusu + beyaz metin) + sağda açık
+  `brand-canvas` üzerinde ortalanmış form kartı.
+- **Mobil:** marka tüm ekranı kaplar; logo + marka adı üstte, form kartı alt-ortada
+  — kartın altı da marka rengi kalır (beyaz boşluk yok), kaydırma yok.
+- Logo belirgin (mobil `h-24`, masaüstü `h-32`, beyaz chip), marka adı
+  "ÖDEV TAKİP" büyük punto; kart başlığı kaldırıldı.
+- Kontrast kuralı: parlak `--brand-deco` asla metin taşımaz; beyaz metin koyu
+  marka yüzeyinde (WCAG ≥4.5:1).
+
+### Etkilenen dosyalar
+
+```
+src/index.css               (.brand-scope, .brand-canvas, .brand-panel)
+src/pages/LoginPage.tsx     (yalnızca görsel katman)
+PROGRESS.md
+```
+
+### Doğrulamalar
+
+- Statik: kök `typecheck` ✅, `lint` ✅, `build` ✅.
+- Testler: frontend **117/117** (19 dosya) — davranış değişmedi, mevcut testler yeşil.
+- Canlı (headless Chrome + gerçek Vite): mobil 390×844 → `scrollHeight = viewport`
+  (kaydırma yok); masaüstü 1280×900 iki kolon. Karelerle doğrulandı.
+
+### Commit
+
+Bu commit — giriş ekranı marka yeniden tasarımı (`.brand-scope`/`.brand-panel`,
+mobil tam ekran marka + alt-orta form, masaüstü marka paneli + form).
+
+---
+
 ## Veli ana ekranı (GuardianHomePage) yeniden tasarımı — "rapor rafı" + hafta filtresi ✅
 
 ### Süreç özeti

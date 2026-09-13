@@ -6,6 +6,11 @@
  * - Veli/öğrenci: username + şifre (OTP kaldırıldı)
  * Tasarım kuralları: comfortable yoğunluk, alan altında kırmızı + metin
  * hata, yükleniyor durumu, buton ne yaptığını söyler.
+ *
+ * Görsel katman: rol-nötr marka kimliği (`.brand-scope` → marka mavisi accent
+ * ve odak halkası). Mobilde marka tam ekran; logo üstte, form kartı alt-ortada
+ * (kartın altı da marka rengi kalır — beyaz boşluk yok). Masaüstünde sol marka
+ * paneli + sağ form. Davranış (form, yönlendirme, hata) değişmez.
  */
 
 import { useState, type FormEvent } from 'react';
@@ -61,64 +66,94 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <div className="w-full max-w-sm">
-        <div className="flex justify-center">
-          <BrandLogo className="h-16 w-auto object-contain" />
+    <div className="brand-scope brand-canvas relative flex min-h-[100dvh] flex-col lg:grid lg:grid-cols-[minmax(0,45%)_1fr]">
+      {/* Mobil: marka tüm ekranı kaplar (kartın altı da marka kalır). */}
+      <div
+        aria-hidden="true"
+        className="brand-panel pointer-events-none absolute inset-0 overflow-hidden lg:hidden"
+      >
+        <span className="absolute -right-16 -top-16 h-64 w-64 rounded-full border border-white/15" />
+        <span className="absolute -bottom-24 -right-10 h-72 w-72 rounded-full bg-white/5" />
+      </div>
+
+      {/* Logo + slogan. Masaüstünde sol marka paneli dolgusunu taşır; mobilde
+          saydamdır (tam ekran katman arkada). Beyaz metinler koyu marka
+          üzerinde kontrastlıdır; parlak deko tonu yalnızca dekoratiftir. */}
+      <aside className="relative z-10 flex justify-center px-6 pt-24 text-center lg:block lg:min-h-screen lg:px-12 lg:pt-0">
+        <div
+          aria-hidden="true"
+          className="brand-panel pointer-events-none absolute inset-0 hidden overflow-hidden lg:block"
+        >
+          <span className="absolute -right-16 -top-16 h-64 w-64 rounded-full border border-white/15" />
+          <span className="absolute -bottom-24 -right-10 h-72 w-72 rounded-full bg-white/5" />
         </div>
 
-        <div className="mt-6 rounded-md border border-border bg-surface p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="login-identifier"
-                className="mb-1 block text-sm font-medium text-muted"
+        <div className="relative z-10 flex flex-col items-center gap-4 lg:h-full lg:items-start lg:justify-center lg:gap-6">
+          <span className="rounded-2xl bg-surface p-4 shadow-[var(--elevation-3)]">
+            <BrandLogo className="h-24 w-auto object-contain lg:h-32" />
+          </span>
+          <p className="text-center text-xl font-semibold leading-snug tracking-wide text-accent-fg lg:text-left lg:text-2xl">
+            ÖDEV TAKİP
+          </p>
+        </div>
+      </aside>
+
+      {/* Form — mobilde alt-ortada, masaüstünde sağ kolonda dikey ortada. */}
+      <div className="relative z-10 flex flex-1 items-center justify-center px-4 pb-10 lg:pb-0">
+        <div className="w-full max-w-sm">
+          <div className="rounded-3xl border border-border bg-surface p-6 shadow-[var(--elevation-3)]">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="login-identifier"
+                  className="mb-1 block text-sm font-medium text-muted"
+                >
+                  E-posta veya kullanıcı adı
+                </label>
+                <input
+                  id="login-identifier"
+                  type="text"
+                  autoComplete="username"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent"
+                />
+                <FieldError message={fieldErrors.identifier} />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="login-password"
+                  className="mb-1 block text-sm font-medium text-muted"
+                >
+                  Şifre
+                </label>
+                <input
+                  id="login-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent"
+                />
+                <FieldError message={fieldErrors.password} />
+              </div>
+
+              {formError && (
+                <p role="alert" className="text-sm font-medium text-att-absent">
+                  {formError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex min-h-12 w-full items-center justify-center rounded-xl bg-accent px-4 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                E-posta veya kullanıcı adı
-              </label>
-              <input
-                id="login-identifier"
-                type="text"
-                autoComplete="username"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent"
-              />
-              <FieldError message={fieldErrors.identifier} />
-            </div>
-
-            <div>
-              <label
-                htmlFor="login-password"
-                className="mb-1 block text-sm font-medium text-muted"
-              >
-                Şifre
-              </label>
-              <input
-                id="login-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent"
-              />
-              <FieldError message={fieldErrors.password} />
-            </div>
-
-            {formError && (
-              <p role="alert" className="text-sm font-medium text-att-absent">
-                {formError}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? 'Giriş yapılıyor…' : 'Giriş yap'}
-            </button>
-          </form>
+                {submitting ? 'Giriş yapılıyor…' : 'Giriş yap'}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
