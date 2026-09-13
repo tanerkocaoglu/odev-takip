@@ -88,7 +88,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`16fdb6f` — öğretmen "göz at" ekranları mobil kompozisyon.
 
 ---
 
