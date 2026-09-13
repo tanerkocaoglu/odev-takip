@@ -43,7 +43,7 @@ export default function TeacherShell() {
 
   return (
     <div className="min-h-screen bg-bg">
-      <header className="border-b border-border bg-surface">
+      <header className="bg-surface md:border-b md:border-border">
         <div className="mx-auto flex h-20 max-w-5xl items-center justify-between gap-3 px-4">
           <Link
             to="/teacher"
@@ -93,40 +93,44 @@ export default function TeacherShell() {
           </div>
         </div>
 
-        {/* Mobil: yatay kaydırılabilir sekme şeridi (dokunma hedefi ≥44px) */}
-        <nav
-          aria-label="Öğretmen menüsü"
-          className="flex gap-1 overflow-x-auto border-t border-border px-2 md:hidden"
-        >
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                end={tab.end}
-                className={({ isActive }) =>
-                  'relative flex min-h-[44px] shrink-0 items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors ' +
-                  (isActive ? 'text-accent' : 'text-muted hover:text-text')
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {isActive && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent"
-                      />
-                    )}
-                    <Icon size={17} aria-hidden="true" className="shrink-0" />
-                    {tab.label}
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
-        </nav>
       </header>
+
+      {/* Mobil: marka satırı akışta kalır, kaydırınca doğal olarak kaybolur;
+          sekme şeridi `sticky` olduğundan hep görünür kalır. Böylece dikey
+          alan kazanılır ama "Bu hafta / Geçmiş / Teslimler" geçişi zorlaşmaz.
+          (Sticky, kapsayıcı yeterince uzun olsun diye header'ın DIŞINDA.) */}
+      <nav
+        aria-label="Öğretmen menüsü"
+        className="sticky top-0 z-30 flex gap-1 overflow-x-auto border-b border-border bg-surface/95 px-2 backdrop-blur md:hidden"
+      >
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={tab.end}
+              className={({ isActive }) =>
+                'relative flex min-h-[44px] shrink-0 items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors ' +
+                (isActive ? 'text-accent' : 'text-muted hover:text-text')
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent"
+                    />
+                  )}
+                  <Icon size={17} aria-hidden="true" className="shrink-0" />
+                  {tab.label}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
+      </nav>
 
       <main className="admin-content mx-auto max-w-5xl px-4 py-6">
         <Outlet />

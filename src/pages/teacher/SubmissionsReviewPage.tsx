@@ -12,11 +12,13 @@ import {
   Badge,
   LoadingState,
   EmptyState,
+  FilterChip,
   FormError,
   PageTitle,
   PrimaryButton,
   SecondaryButton,
 } from '../../components/admin/ui';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 function fmtDate(iso: string): string {
@@ -34,6 +36,7 @@ function fmtDateTime(iso: string): string {
 }
 
 export default function SubmissionsReviewPage() {
+  const isMobile = useIsMobile();
   const [homeworks, setHomeworks] = useState<TeacherHomeworkWithSubmissions[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<TeacherSubmission[] | null>(null);
@@ -42,27 +45,6 @@ export default function SubmissionsReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-
-  const loadPicker = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await teacherApi.submissionHomeworks();
-      setHomeworks(res.items);
-      if (res.items.length > 0 && !selectedId) {
-        setSelectedId(res.items[0].id);
-      }
-    } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedId]);
-
-  useEffect(() => {
-    loadPicker();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const loadDetail = useCallback(async (homeworkId: string) => {
     setSelectedId(homeworkId);
@@ -77,6 +59,28 @@ export default function SubmissionsReviewPage() {
     } finally {
       setLoadingDetail(false);
     }
+  }, []);
+
+  const loadPicker = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await teacherApi.submissionHomeworks();
+      setHomeworks(res.items);
+      if (res.items.length > 0 && !selectedId) {
+        // İlk ödev seçili görünür; detayı da yükle ki "göz at" akışı boş açılmasın.
+        void loadDetail(res.items[0].id);
+      }
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedId, loadDetail]);
+
+  useEffect(() => {
+    loadPicker();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const markReviewed = async (submissionId: string) => {
@@ -100,8 +104,10 @@ export default function SubmissionsReviewPage() {
 
   if (loading) return <LoadingState />;
 
+  const selectedHw = homeworks?.find((h) => h.id === selectedId) ?? null;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 md:space-y-4">
       <PageTitle icon={ClipboardCheck}>Teslim kontrol</PageTitle>
 
       <FormError message={error} />
@@ -114,37 +120,63 @@ export default function SubmissionsReviewPage() {
       )}
 
       {!error && homeworks && homeworks.length > 0 && (
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          {/* Seçici */}
-          <ul className="space-y-2">
-            {homeworks.map((hw) => (
-              <li key={hw.id}>
-                <button
-                  type="button"
-                  onClick={() => loadDetail(hw.id)}
-                  className={
-                    'card-interactive elevation-1 w-full rounded-md border px-3 py-2.5 text-left ' +
-                    (selectedId === hw.id
-                      ? 'border-accent bg-accent/5'
-                      : 'border-border bg-surface')
-                  }
-                >
-                  <p className="text-sm font-medium text-text">
+        <div className="space-y-4 lg:grid lg:grid-cols-[280px_1fr] lg:gap-6 lg:space-y-0">
+          {/* Seçici — mobilde yatay çip şeridi, masaüstünde dikey liste */}
+          {isMobile ? (
+            <section>
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                Ödev
+              </h2>
+              <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+                {homeworks.map((hw) => (
+                  <FilterChip
+                    key={hw.id}
+                    active={selectedId === hw.id}
+                    onClick={() => loadDetail(hw.id)}
+                  >
                     {hw.course_name} · {hw.class_name}
-                  </p>
-                  <p className="tabular mt-0.5 text-xs text-muted">
-                    Hafta {hw.week_no} · {hw.week_label}
-                  </p>
-                  <p className="tabular mt-0.5 text-xs text-muted">
-                    {hw.submission_count} teslim · son tarih {fmtDate(hw.due_date)}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
+                  </FilterChip>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <ul className="space-y-2">
+              {homeworks.map((hw) => (
+                <li key={hw.id}>
+                  <button
+                    type="button"
+                    onClick={() => loadDetail(hw.id)}
+                    className={
+                      'card-interactive elevation-1 w-full rounded-md border px-3 py-2.5 text-left ' +
+                      (selectedId === hw.id
+                        ? 'border-accent bg-accent/5'
+                        : 'border-border bg-surface')
+                    }
+                  >
+                    <p className="text-sm font-medium text-text">
+                      {hw.course_name} · {hw.class_name}
+                    </p>
+                    <p className="tabular mt-0.5 text-xs text-muted">
+                      Hafta {hw.week_no} · {hw.week_label}
+                    </p>
+                    <p className="tabular mt-0.5 text-xs text-muted">
+                      {hw.submission_count} teslim · son tarih {fmtDate(hw.due_date)}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {/* Detay */}
           <div>
+            {isMobile && selectedHw && (
+              <p className="tabular mb-3 text-xs text-muted">
+                Hafta {selectedHw.week_no} · {selectedHw.week_label} ·{' '}
+                {selectedHw.submission_count} teslim · son tarih{' '}
+                {fmtDate(selectedHw.due_date)}
+              </p>
+            )}
             {loadingDetail && <LoadingState />}
             <FormError message={detailError} />
             {!loadingDetail && !detailError && submissions && submissions.length === 0 && (
@@ -155,7 +187,7 @@ export default function SubmissionsReviewPage() {
                 {submissions.map((s) => (
                   <li
                     key={s.id}
-                    className="elevation-1 rounded-md border border-border bg-surface p-4"
+                    className="elevation-1 rounded-2xl border border-border bg-surface p-4 md:rounded-md"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-medium text-text">{s.student_name}</p>
@@ -194,6 +226,7 @@ export default function SubmissionsReviewPage() {
                         <PrimaryButton
                           onClick={() => markReviewed(s.id)}
                           disabled={reviewingId === s.id}
+                          className="min-h-11 w-full md:min-h-0 md:w-auto"
                         >
                           {reviewingId === s.id ? 'İşaretleniyor…' : 'İncelendi olarak işaretle'}
                         </PrimaryButton>

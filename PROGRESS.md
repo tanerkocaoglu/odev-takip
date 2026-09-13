@@ -5,6 +5,93 @@
 
 ---
 
+## Öğretmen "göz at" ekranları — mobil kompozisyon ✅
+
+### Süreç özeti
+
+Öğretmenin üç bilgi ekranı (`TeacherDashboardPage`, `ReportHistoryPage`,
+`SubmissionsReviewPage`) mobilde öğrenci/veli "müşteri yüzü" kompozisyonuna
+yaklaştırıldı: yatay çip şeritleri, kart tabanlı listeler, comfortable oranlar
+ve sticky sekme şeridi. **Renk kimliği değişmedi** (teal kalır; marka mavisi
+kullanılmadı). **`ReportEntryPage`'e dokunulmadı.** Masaüstü düzeni büyük
+ölçüde korundu (responsive; `md` üstü).
+
+### TeacherShell — mobil üst şerit
+
+- Marka satırı (logo + isim + çıkış) normal akışta kalır, kaydırınca doğal
+  olarak kaybolur; **sekme şeridi `sticky top-0`** olduğundan "Bu hafta /
+  Geçmiş / Teslimler" her an erişilebilir kalır. Dikey alan kazanılır, sekme
+  geçişi zorlaşmaz. Sticky, kapsayıcı yeterince uzun olsun diye nav header'ın
+  **dışına** alındı. Masaüstü görünüm değişmedi.
+
+### TeacherDashboardPage
+
+- Mobil bağlam bloğu (`rounded-3xl`, hafta no/etiket + "N kayıt" / "N gecikti"
+  çipleri) eklendi; masaüstü `PageTitle` korundu.
+- Liste kartları büyütüldü (`rounded-2xl`, `p-4`, min-h 80px); sınıf·ders tam
+  görünür, gün/saat ikincil; **rozetler mobilde ikinci satıra** alındı, sağda
+  chevron. Masaüstünde rozetler satır içinde (mevcut hâl) kalır.
+
+### ReportHistoryPage
+
+- Yeni `useIsMobile` kancasıyla iki düzen **aynı anda DOM'a basılmaz** (jsdom
+  varsayılanı masaüstü → mevcut testler değişmeden geçer).
+- **Mobil:** durum sekmeleri (Tümü/Taslak/Tamamlandı/Gönderildi) + Sınıf/Hafta
+  yatay çip şeritleri + sonuçlar **kart listesi** (hafta no büyük, sınıf·ders,
+  gün, öğrenci, `StatusBadge`, "Aç").
+- **Masaüstü:** mevcut `FilterSelect` dropdown'ları + tablo + sayfalama aynen.
+
+### SubmissionsReviewPage
+
+- **Mobil:** ödev seçici yatay çip şeridine dönüştü; seçili ödev bilgisi
+  (hafta/tarih/teslim sayısı) başlıkta; teslim kartları `rounded-2xl`, dosya
+  ızgarası (`SubmissionFileGrid`/lightbox) aynı; "İncelendi olarak işaretle"
+  tam genişlik + min 44px.
+- **Masaüstü:** `lg:grid-cols-[280px_1fr]` iki panel aynen.
+- İlk ödev seçili görünürken detayın boş kalması giderildi: ilk seçim artık
+  otomatik yükleniyor (masaüstünde de iyileşme).
+
+### Yeni ortak parçalar
+
+- `src/hooks/useIsMobile.ts` (yeni): `matchMedia`; jsdom'da güvenli masaüstü.
+- `components/admin/ui.tsx`: `FilterChip` eklendi; `PrimaryButton`'a opsiyonel
+  `className` (mobil tam genişlik/dokunma hedefi için).
+
+### Kanıt — gerçek mobil (390×844) + masaüstü (1280×900), headless Chrome/CDP
+
+- **Dashboard:** mobil bağlam bloğu + büyük kartlar; yoğunluk simülasyonunda
+  (izole DB, öğretmene 11 kayıt) ekran dolu ve adlar tam; masaüstü listesi
+  korunmuş.
+- **History:** mobilde sekmeler + Sınıf/Hafta çipleri + kart listesi; masaüstü
+  dropdown + tablo.
+- **Submissions:** mobilde çip şeridi + açılan teslim kartı + dosya ızgarası +
+  tam genişlik buton; masaüstü iki panel.
+- Sunucular/Chrome/temp temizlendi; `backend/db/app.db`'ye yazılmadı.
+
+### Doğrulamalar
+
+- Statik: kök `typecheck` ✅, `lint` ✅, `build` ✅.
+- Testler: frontend **117/117** (19 dosya) — davranış/erişilebilir adlar
+  korunduğu için mevcut testler değişmedi.
+
+### Etkilenen dosyalar
+
+```
+src/hooks/useIsMobile.ts                    (yeni)
+src/components/admin/ui.tsx                 (FilterChip + PrimaryButton className)
+src/components/layout/TeacherShell.tsx      (sticky sekme şeridi)
+src/pages/teacher/TeacherDashboardPage.tsx
+src/pages/teacher/ReportHistoryPage.tsx
+src/pages/teacher/SubmissionsReviewPage.tsx
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğretmen ekranları — admin görsel dili + yeni TeacherShell ✅
 
 ### Süreç özeti

@@ -194,23 +194,59 @@ export function FilterSelect({
   );
 }
 
+/**
+ * Yatay çip şeridi öğesi — mobil filtre seçimi (öğrenci/veli deseni).
+ * Aktif çip accent dolgulu; pasif çip yüzey + kenarlık. `FilterSelect`'in
+ * dar ekrandaki karşılığıdır; veri akışı çağıran sayfaya aittir.
+ */
+export function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={
+        'shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition-colors ' +
+        (active
+          ? 'border-accent bg-accent text-accent-fg'
+          : 'border-border bg-surface text-text hover:border-accent hover:text-accent')
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 export function PrimaryButton({
   children,
   onClick,
   type = 'button',
   disabled,
+  className = '',
 }: {
   children: ReactNode;
   onClick?: () => void;
   type?: 'button' | 'submit';
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="card-interactive rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+      className={
+        'card-interactive rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 ' +
+        className
+      }
     >
       {children}
     </button>
