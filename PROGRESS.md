@@ -58,6 +58,24 @@ CLAUDE.md   spec.md   PROGRESS.md
 
 ---
 
+## KVKK ileri maddeleri — değerlendirildi, şimdilik ertelendi (karar) ✅
+
+Aşağıdaki dört madde değerlendirildi. Sistem şu an **dışa kapalı, küçük
+ölçekli (~400 kişi), düşük risk** olarak değerlendirildi; bu **bilinçli bir
+karardır.** Şu an uygulanmıyor. Ölçek büyürse (400+ kişi, çoklu şube vb.)
+tekrar gündeme alınacak.
+
+- **Veli açık rıza metni + sürümleme:** ertelendi — mevcut `consent_at`
+  yeterli görüldü; aydınlatma metni (§9) ayrıca eklendi.
+- **Saklama süresi otomasyonu (retention CLI):** ertelendi — elle
+  `cleanup-submissions` / `db:wipe` yeterli.
+- **Okuma erişimi audit log'u + audit görüntüleme ekranı:** ertelendi.
+- **Yedek konumu (teknik kısım):** KVKK/bölge tartışmasından bağımsız, **ayrı
+  iş** olarak ele alındı ve tamamlandı (`BACKUPS_DIR` + prune — `cc643d6`).
+  Bölge/yurt dışı aktarım değerlendirmesi kapsam dışı.
+
+---
+
 ## UI: favicon + admin sidebar süreç sırası + rapor "son tarih" formatı ✅
 
 ### Yapılanlar
