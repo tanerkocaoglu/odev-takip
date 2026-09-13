@@ -1,26 +1,42 @@
-# Render Blueprint — tek ücretsiz Web Service.
+# Render Blueprint — kalıcı diskli tek Web Service (starter).
 #
 # Frontend (React/Vite build'i) + Backend (Express) tek serviste sunulur:
 # backend, kök `dist/` klasörünü express.static ile verir (bkz. backend/src/app.ts).
 #
-# Render'da disk kalıcı değildir; her deploy başlangıcında `db:reset`
-# (migrate + seed) çalışır → inceleyen herkes taze demo verisiyle başlar.
+# Üretim: starter plan + kalıcı disk. SQLite (`app.db`) ve yüklenen dosyalar
+# (`uploads/`) aynı disk altında tutulur; disk `/var/data`'ya mount edilir ve
+# uygulama `DB_PATH` + `UPLOADS_DIR` ile oraya yönlendirilir (bkz.
+# backend/src/db/index.ts, backend/src/services/storage.ts). Böylece tek mount
+# yeter; deploy/restart verileri silmez.
+#
+# Not: startCommand veritabanını SIFIRLAMAZ. Yalnızca bekleyen migration'ları
+# çalıştırır; seed üretimde otomatik çalışmaz. İlk admin, deploy sonrası Render
+# Shell'de bir kez `npm run seed-admin --prefix backend` ile oluşturulur.
 
 services:
   - type: web
     name: odev-takip
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm install && npm install --prefix backend && npm run build && npm run build --prefix backend
-    # Render NODE_ENV=production verir; db:reset guard'ını açıkça opt-in et.
-    # Bayrağı startCommand'a gömmek, Blueprint env senkronuna bağımlı olmaz.
-    startCommand: ALLOW_DB_RESET=1 npm run db:reset --prefix backend && npm start --prefix backend
+    # Yalnızca migration + sunucu başlatma. db:reset/seed yok.
+    startCommand: npm run db:migrate --prefix backend && npm start --prefix backend
+    disk:
+      name: dershane-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: JWT_SECRET
         generateValue: true
+      # Sırlar Render Dashboard'undan elle, güçlü değerlerle girilir.
       - key: ADMIN_PASSWORD
-        value: admin123
+        sync: false
       - key: SEED_USER_PASSWORD
-        value: admin123
+        sync: false
       - key: STORAGE_DRIVER
         value: local
+      # Kalıcı disk yolları — ikisi de tek mount (/var/data) altında.
+      - key: DB_PATH
+        value: /var/data/app.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads

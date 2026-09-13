@@ -4,7 +4,12 @@ import path from 'node:path';
 import routes from './routes/index.js';
 import { errorHandler } from './errors.js';
 
-export function createApp(): express.Express {
+export interface AppOptions {
+  /** Frontend build dizini; testler izole bir dizin vermek için kullanır. */
+  distPath?: string;
+}
+
+export function createApp(options: AppOptions = {}): express.Express {
   const app = express();
 
   app.use(express.json());
@@ -14,10 +19,14 @@ export function createApp(): express.Express {
 
   // Production: frontend build'ini (kök dist/) statik olarak sun.
   // Render'da tek servis yeterli olur — CORS/proxy gerekmez.
-  // Test ortamında (DB_PATH=test.db) devre dışıdır: /api/v1 dışı rotalar
-  // 404 dönmeye devam eder (app.test.ts).
-  const isTest = process.env.DB_PATH !== undefined;
-  const distPath = path.resolve(import.meta.dirname, '..', '..', 'dist');
+  //
+  // Test ortamı YALNIZCA `NODE_ENV === 'test'` ile belirlenir. `DB_PATH` burada
+  // sentinel DEĞİLDİR: üretimde kalıcı disk için `DB_PATH` set edilir (render.yaml)
+  // ve statik sunum kapanmamalıdır. Testler `DB_PATH` set etse de (vitest.config)
+  // NODE_ENV=test olduğu için /api/v1 dışı rotalar 404 döner (app.test.ts).
+  const isTest = process.env.NODE_ENV === 'test';
+  const distPath =
+    options.distPath ?? path.resolve(import.meta.dirname, '..', '..', 'dist');
   if (!isTest && fs.existsSync(distPath)) {
     app.use(express.static(distPath));
     // SPA fallback — React Router'ın /student, /teacher vb. yolları.

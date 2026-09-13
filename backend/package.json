@@ -11,6 +11,7 @@
     "start": "tsx src/index.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "seed-admin": "tsx scripts/seed-admin.ts",
     "db:reset": "tsx scripts/reset.ts",
     "db:backup": "tsx scripts/backup.ts"
   },
