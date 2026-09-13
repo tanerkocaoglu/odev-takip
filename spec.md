@@ -1073,6 +1073,11 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   dosyalar `_depo/<key>` altında zip'lenir — hiçbir dosya kaybolmaz. Zip ayrıca
   `veritabani/app.db` tutarlı kopyasını taşır.
 - Geçici düzenleme klasörü her durumda (hata dahil) silinir; yarım zip bırakılmaz.
+- **Yedek konumu:** `BACKUPS_DIR` (üretimde kalıcı disk: `/var/data/backups`;
+  yoksa `backend/backups`). Docker'ın kalıcı olmayan dosya sistemine yazılmaz.
+- **Yaşlandırma:** dizinde yalnızca en yeni `BACKUP_KEEP` (varsayılan 10) yedek
+  tutulur; eskiler otomatik silinir. (Disk 1 GB olduğu için önemlidir; asıl
+  ölçek çözümü saklamanın R2'ye taşınmasıdır — Aşama 6.)
 
 ---
 

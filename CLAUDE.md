@@ -477,6 +477,8 @@ CHANGE_PASSWORD_RATE_LIMIT_MAX=5   # hassas: mevcut şifre denemeleri, 15 dk
 ADMIN_IMPORT_RATE_LIMIT_MAX=5      # pahalı: CSV içe aktarma, 1 saat penceresi
 ADMIN_BACKUP_RATE_LIMIT_MAX=3      # pahalı: yedek indirme, 1 saat penceresi
 STORAGE_DRIVER="local"        # local | r2
+BACKUPS_DIR=<yedek çıktı dizini>   # yoksa backend/backups; üretimde /var/data/backups
+BACKUP_KEEP=10                # saklanan en yeni yedek sayısı (eskiler silinir)
 # üretimde:
 # R2_ENDPOINT= R2_BUCKET= R2_ACCESS_KEY_ID= R2_SECRET_ACCESS_KEY=
 ```

@@ -37,6 +37,18 @@ import AdmZip from 'adm-zip';
 /** Zip hiyerarşisinde türev/artık dosyaların toplandığı klasör. */
 const DEPO_DIR = '_depo';
 
+/** Yedek zip adı deseni — prune yalnızca kendi ürettiği dosyalara dokunur. */
+const BACKUP_FILE_RE = /^dershane-yedek-\d{8}-\d{6}\.zip$/;
+
+/** Varsayılan yedek saklama sayısı (üzerine yazılabilecek `BACKUP_KEEP`). */
+const DEFAULT_BACKUP_KEEP = 10;
+
+/** Geçerliyse `BACKUP_KEEP`, değilse varsayılan. */
+function backupKeep(): number {
+  const raw = Number(process.env.BACKUP_KEEP);
+  return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_BACKUP_KEEP;
+}
+
 /** İlişkiden gelen tek dosya satırı (JOIN sonucu). */
 interface BackupFileRow {
   key: string;
@@ -266,6 +278,8 @@ export interface BackupOptions {
   dbPath?: string;
   uploadsDir?: string;
   outDir?: string;
+  /** Bu dizinde tutulacak en yeni yedek sayısı (varsayılan `BACKUP_KEEP`/10). */
+  keep?: number;
 }
 
 /** DB kopyasının yolunu SQL string literal'ine güvenli şekilde gömer (tek tırnak iki katına alınır). */
@@ -282,6 +296,35 @@ function stamp(): string {
 }
 
 /**
+ * Yedek dizinindeki en yeni `keep` zip'i tutar, eskileri siler.
+ *
+ * Dosya adı sıfır dolgulu zaman damgası taşıdığı için sözlük sırası = kronolojik
+ * sıra. Yalnızca kendi ürettiği `dershane-yedek-*.zip` desenine dokunur; başka
+ * dosyalar asla silinmez. Silinenlerin adlarını döner. Dizin yoksa/okunamazsa
+ * sessizce boş döner (yedek üretimini çökertmez).
+ */
+export function pruneBackups(dir: string, keep: number): string[] {
+  if (!Number.isInteger(keep) || keep < 0) return [];
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir).filter((n) => BACKUP_FILE_RE.test(n));
+  } catch {
+    return [];
+  }
+  names.sort();
+  const removed: string[] = [];
+  for (const name of names.slice(0, Math.max(0, names.length - keep))) {
+    try {
+      fs.rmSync(path.join(dir, name), { force: true });
+      removed.push(name);
+    } catch {
+      // Silinemeyen eski yedek yedek üretimini başarısız yapmaz.
+    }
+  }
+  return removed;
+}
+
+/**
  * Tutarlı yedek üretir: `{outDir}/dershane-yedek-{zaman}.zip` döner.
  * Zip içeriği: `veritabani/app.db` + `Ad_Soyad_kullaniciadi/Ders_Adi/Hafta_N/...`
  * (orijinaller) + `_depo/` (thumbnail + sahipsiz).
@@ -290,7 +333,7 @@ export function createBackup(options: BackupOptions = {}): string {
   const dbPath = options.dbPath ?? process.env.DB_PATH ?? path.join('db', 'app.db');
   const uploadsDir =
     options.uploadsDir ?? process.env.UPLOADS_DIR ?? path.join('uploads');
-  const outDir = options.outDir ?? path.join('backups');
+  const outDir = options.outDir ?? process.env.BACKUPS_DIR ?? path.join('backups');
 
   fs.mkdirSync(outDir, { recursive: true });
   // `mkdtempSync` tekil klasör açar: aynı pid'li eski kalıntıyla karışmaz.
@@ -323,6 +366,11 @@ export function createBackup(options: BackupOptions = {}): string {
     // 4) Hata dahil her durumda geçici klasör silinir; yarım zip bırakılmaz.
     fs.rmSync(tmpDir, { recursive: true, force: true });
     if (!zipWritten) fs.rmSync(zipPath, { force: true });
+  }
+
+  // Yaşlandırma: disk sınırlı olduğu için yalnızca en yeni N yedek tutulur.
+  if (zipWritten) {
+    pruneBackups(outDir, options.keep ?? backupKeep());
   }
 
   return zipPath;

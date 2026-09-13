@@ -5,6 +5,59 @@
 
 ---
 
+## Yedek konumu kalıcı diske alındı (`BACKUPS_DIR`) + yaşlandırma ✅
+
+### Sorun
+
+`createBackup()` çıktıyı cwd-göreli `backups/`'a yazıyordu; Render'da
+`backend/backups` **kalıcı disk değil** (mount `/var/data`) → yedekler
+deploy/restart'ta kayboluyordu.
+
+### Çözüm
+
+- **`BACKUPS_DIR` env** (`DB_PATH`/`UPLOADS_DIR` ile simetrik): çözüm
+  `services/backup.ts` varsayılanında + `services/backupCli.ts` doğrulama
+  dizininde; `render.yaml` → `/var/data/backups`.
+- **`pruneBackups(dir, keep)` + `BACKUP_KEEP`** (varsayılan 10): her yedekten
+  sonra en yeni N zip tutulur, eskiler silinir. Yalnızca kendi ürettiği
+  `dershane-yedek-*.zip` desenine dokunur; ilgisiz dosyalar korunur.
+- `.env.example`, `CLAUDE.md` env docs ve `spec.md §8` güncellendi.
+
+### Rakamlar / değerlendirme (gerçek ölçüm)
+
+- Güncel veri: `app.db` 0.34 MB, `uploads` 0.37 MB; taze yedek **0.36 MB**
+  (~%51 sıkıştırma). 10 yedek + canlı veri ≈ 4.3 MB → 1 GB'de sorunsuz.
+- Sınır: N=10 için canlı veri ≲ **93 MB**; N=5 → 170 MB. Spec §8 projeksiyonu
+  (~1.2 GB/hafta uploads) tek başına 1 GB diski aşar → **asıl darboğaz disk
+  boyutu + R2 geçişi**; bu işin kapsamına alınmadı, ayrı başlık olarak
+  işaretlendi.
+
+### Doğrulamalar
+
+- `backup.test.ts` +3: `pruneBackups` (yeni N kalır / ilgisiz dosya korunur /
+  dizin yoksa boş) + `createBackup` `keep` entegrasyonu. backend **326/326**,
+  `typecheck` + `lint` ✅.
+- **Canlı:** `BACKUPS_DIR=tmp`, `BACKUP_KEEP=2` ile 3 kez `db:backup` →
+  dizinde **yalnızca en yeni 2 zip** (370.6 KB); `backend/backups` sayısı
+  **4→4** (doğru dizine yazıyor).
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/backup.ts        (+BACKUPS_DIR, +pruneBackups)
+backend/src/services/backupCli.ts     (BACKUPS_DIR)
+backend/src/backup.test.ts            (+3 test)
+backend/.env.example
+render.yaml
+CLAUDE.md   spec.md   PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## UI: favicon + admin sidebar süreç sırası + rapor "son tarih" formatı ✅
 
 ### Yapılanlar

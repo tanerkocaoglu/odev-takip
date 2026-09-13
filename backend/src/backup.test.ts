@@ -17,6 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import AdmZip from 'adm-zip';
 import {
   createBackup,
+  pruneBackups,
   asciiFoldTr,
   sanitizeSegment,
   sanitizeFilename,
@@ -319,5 +320,56 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     expect(() => createBackup({ dbPath: dirAsDb, uploadsDir, outDir: errorOut })).toThrow();
     expect(tempBackupDirs().length).toBe(before);
     expect(fs.existsSync(errorOut) ? fs.readdirSync(errorOut) : []).toHaveLength(0);
+  });
+});
+
+describe('pruneBackups', () => {
+  it('en yeni keep tanesini tutar; eskileri siler, ilgisiz dosyalara dokunmaz', () => {
+    const dir = path.join(tmpRoot, `prune-${(seq += 1)}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const names = [
+      'dershane-yedek-20250101-000001.zip',
+      'dershane-yedek-20250102-000002.zip',
+      'dershane-yedek-20250103-000003.zip',
+      'dershane-yedek-20250104-000004.zip',
+    ];
+    for (const n of names) fs.writeFileSync(path.join(dir, n), 'x');
+    fs.writeFileSync(path.join(dir, 'baska-dosya.txt'), 'x');
+    fs.writeFileSync(path.join(dir, 'dershane-yedek-bozuk.zip'), 'x');
+
+    const removed = pruneBackups(dir, 2);
+    expect(removed).toEqual([names[0], names[1]]);
+    expect(fs.existsSync(path.join(dir, names[2]))).toBe(true);
+    expect(fs.existsSync(path.join(dir, names[3]))).toBe(true);
+    // Desene uymayan / bozuk adlı dosyalar korunur.
+    expect(fs.existsSync(path.join(dir, 'baska-dosya.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'dershane-yedek-bozuk.zip'))).toBe(true);
+  });
+
+  it('dizin yoksa sessizce boş döner', () => {
+    expect(pruneBackups(path.join(tmpRoot, 'yok-boyle-dizin'), 5)).toEqual([]);
+  });
+});
+
+describe('createBackup — yaşlandırma (keep)', () => {
+  it('en yeni N yedeği tutar; eski yedekler silinir', () => {
+    const { dbPath, uploadsDir, outDir } = freshCase();
+    const db = openFixture(dbPath);
+    db.close();
+    fs.mkdirSync(outDir, { recursive: true });
+    const old = [
+      'dershane-yedek-20250101-000001.zip',
+      'dershane-yedek-20250102-000002.zip',
+      'dershane-yedek-20250103-000003.zip',
+    ];
+    for (const n of old) fs.writeFileSync(path.join(outDir, n), 'x');
+
+    createBackup({ dbPath, uploadsDir, outDir, keep: 2 });
+
+    const zips = fs.readdirSync(outDir).filter((n) => n.endsWith('.zip')).sort();
+    expect(zips).toHaveLength(2);
+    // En yeni eski yedek korunur, en eskiler silinir; yeni üretilen de yerinde.
+    expect(zips).toContain(old[2]);
+    expect(zips.some((n) => !old.includes(n))).toBe(true);
   });
 });

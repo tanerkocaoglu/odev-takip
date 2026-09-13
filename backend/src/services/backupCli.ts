@@ -13,8 +13,12 @@ import path from 'node:path';
 
 /** `services/` → `src/` → backend kökü (script ve tsx yolları buradan). */
 const BACKEND_ROOT = path.join(import.meta.dirname, '..', '..');
-/** Backup CLI çıktısının yazıldığı dizin (script ile aynı kural). */
-const BACKUPS_DIR = path.join(BACKEND_ROOT, 'backups');
+/**
+ * Backup CLI çıktısının yazıldığı dizin (script ile aynı kural): önce
+ * `BACKUPS_DIR` (üretimde render.yaml: /var/data/backups), yoksa
+ * geliştirme varsayılanı `backend/backups`.
+ */
+const BACKUPS_DIR = process.env.BACKUPS_DIR ?? path.join(BACKEND_ROOT, 'backups');
 
 export interface BackupSpawnResult {
   ok: boolean;

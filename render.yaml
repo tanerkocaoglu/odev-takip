@@ -40,6 +40,13 @@ services:
         value: /var/data/app.db
       - key: UPLOADS_DIR
         value: /var/data/uploads
+      # Yedekler kalıcı diskte tutulur (deploy/restart'ta kaybolmaz). Docker
+      # ephemeral FS'e yazmak yerine mount altına alınır.
+      - key: BACKUPS_DIR
+        value: /var/data/backups
+      # Disk yalnızca 1 GB; en yeni N yedek saklanır, eskiler temizlenir.
+      - key: BACKUP_KEEP
+        value: "10"
       # Veliye giden /r/{token} linklerinin tabanı (spec §5.4). Açıkça verilir;
       # kod ayrıca `RENDER_EXTERNAL_URL`'e düşebilir ama bu değer kesinleştirir.
       - key: BASE_URL
