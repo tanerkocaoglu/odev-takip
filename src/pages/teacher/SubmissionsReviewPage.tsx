@@ -5,10 +5,18 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Clock3 } from 'lucide-react';
+import { ClipboardCheck } from 'lucide-react';
 import type { TeacherHomeworkWithSubmissions, TeacherSubmission } from '../../types';
 import { teacherApi, openProtectedFile, ApiClientError } from '../../services/api';
-import { LoadingState, EmptyState, FormError, PrimaryButton } from '../../components/admin/ui';
+import {
+  Badge,
+  LoadingState,
+  EmptyState,
+  FormError,
+  PageTitle,
+  PrimaryButton,
+  SecondaryButton,
+} from '../../components/admin/ui';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 function fmtDate(iso: string): string {
@@ -94,17 +102,11 @@ export default function SubmissionsReviewPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-text">Teslim kontrol</h1>
+      <PageTitle icon={ClipboardCheck}>Teslim kontrol</PageTitle>
 
       <FormError message={error} />
       {error && (
-        <button
-          type="button"
-          onClick={loadPicker}
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-        >
-          Yeniden dene
-        </button>
+        <SecondaryButton onClick={() => void loadPicker()}>Yeniden dene</SecondaryButton>
       )}
 
       {!error && homeworks && homeworks.length === 0 && (
@@ -121,10 +123,10 @@ export default function SubmissionsReviewPage() {
                   type="button"
                   onClick={() => loadDetail(hw.id)}
                   className={
-                    'w-full rounded-md border px-3 py-2.5 text-left transition-colors ' +
+                    'card-interactive elevation-1 w-full rounded-md border px-3 py-2.5 text-left ' +
                     (selectedId === hw.id
                       ? 'border-accent bg-accent/5'
-                      : 'border-border bg-surface hover:border-accent')
+                      : 'border-border bg-surface')
                   }
                 >
                   <p className="text-sm font-medium text-text">
@@ -151,25 +153,18 @@ export default function SubmissionsReviewPage() {
             {!loadingDetail && submissions && submissions.length > 0 && (
               <ul className="space-y-3">
                 {submissions.map((s) => (
-                  <li key={s.id} className="rounded-md border border-border bg-surface p-4">
+                  <li
+                    key={s.id}
+                    className="elevation-1 rounded-md border border-border bg-surface p-4"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-medium text-text">{s.student_name}</p>
                       <div className="flex items-center gap-2">
-                        {s.is_late && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-sub-late">
-                            <Clock3 className="h-3.5 w-3.5" />
-                            Geç teslim
-                          </span>
-                        )}
+                        {s.is_late && <Badge tone="warning">Geç teslim</Badge>}
                         {s.status === 'reviewed' ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green/10 px-2 py-0.5 text-xs font-medium text-sub-uploaded">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            İncelendi
-                          </span>
+                          <Badge tone="positive">İncelendi</Badge>
                         ) : (
-                          <span className="rounded-full bg-blue/10 px-2 py-0.5 text-xs font-medium text-status-completed">
-                            Yeni
-                          </span>
+                          <Badge tone="info">Yeni</Badge>
                         )}
                       </div>
                     </div>

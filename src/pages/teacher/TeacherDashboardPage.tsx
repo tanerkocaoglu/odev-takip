@@ -2,14 +2,36 @@
  * Öğretmen dashboard — "Bu hafta doldurulacaklar" (spec.md §5.1, §6).
  * Ders gününe göre sıralı gelir (backend); tamamlananlar düşer, günü geçmiş
  * taslaklar üstte ve vurgulu görünür.
+ *
+ * Görsel dil admin paneliyle ortaktır: `PageTitle`, dolgulu `Badge`, özet kartı
+ * (üst kenarlık renk şeridi + accent ikon dairesi), `elevation-1` ve
+ * `card-interactive`. Navigasyon artık `TeacherShell` içindedir.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { AlertTriangle, LayoutDashboard } from 'lucide-react';
 import type { TeacherDashboard } from '../../types';
 import { DAY_LABELS } from '../../types';
 import { teacherApi, ApiClientError } from '../../services/api';
-import { LoadingState, EmptyState, FormError } from '../../components/admin/ui';
+import {
+  Badge,
+  EmptyState,
+  FormError,
+  LoadingState,
+  PageTitle,
+  SecondaryButton,
+  StatusBadge,
+} from '../../components/admin/ui';
+
+/** Özet kartı ikonu — accent %10 daire (admin ile aynı). */
+function CardIcon() {
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-att-late/10 text-att-late">
+      <AlertTriangle size={18} aria-hidden="true" />
+    </span>
+  );
+}
 
 export default function TeacherDashboardPage() {
   const [data, setData] = useState<TeacherDashboard | null>(null);
@@ -36,41 +58,33 @@ export default function TeacherDashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-text">Bu hafta doldurulacaklar</h1>
-        <div className="flex items-center gap-3">
-          {data?.week && (
-            <span className="tabular text-sm text-muted">
-              Hafta {data.week.week_no} · {data.week.label}
-            </span>
-          )}
-          <Link
-            to="/teacher/reports/history"
-            className="text-sm font-medium text-accent hover:underline"
-          >
-            Geçmiş raporlarım
-          </Link>
-        </div>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <PageTitle icon={LayoutDashboard}>Bu hafta doldurulacaklar</PageTitle>
+        {data?.week && (
+          <span className="tabular text-sm text-muted">
+            Hafta {data.week.week_no} · {data.week.label}
+          </span>
+        )}
       </div>
 
       <FormError message={error} />
       {error && (
-        <button
-          type="button"
-          onClick={load}
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-        >
-          Yeniden dene
-        </button>
+        <SecondaryButton onClick={() => void load()}>Yeniden dene</SecondaryButton>
       )}
 
-      {/* İç hatırlatma: ders günü geçmiş taslaklar — üstte belirgin sayaç (Aşama 6). */}
+      {/* İç hatırlatma: ders günü geçmiş taslaklar — admin özet kartı diliyle
+          (üst kenarlık anlam rengi + ikon dairesi). */}
       {!error && data && data.overdue_count > 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-att-late/50 bg-att-late/10 px-4 py-3">
-          <span className="tabular text-sm font-semibold text-att-late">
-            Bu hafta {data.overdue_count} raporunuz gecikti
-          </span>
-          <span className="text-sm text-muted">— aşağıdaki kayıtların ders günü geçti.</span>
+        <div className="elevation-1 flex items-center gap-3 rounded-md border border-border border-t-2 border-t-att-late bg-surface p-4">
+          <CardIcon />
+          <div className="min-w-0">
+            <p className="tabular text-sm font-semibold text-att-late">
+              Bu hafta {data.overdue_count} raporunuz gecikti
+            </p>
+            <p className="mt-0.5 text-xs text-muted">
+              Aşağıdaki kayıtların ders günü geçti.
+            </p>
+          </div>
         </div>
       )}
 
@@ -85,7 +99,7 @@ export default function TeacherDashboardPage() {
               <Link
                 to={`/teacher/reports/${item.class_course_id}/${data.week!.id}`}
                 className={
-                  'flex items-center justify-between rounded-md border bg-surface px-4 py-3 transition-colors hover:border-accent ' +
+                  'card-interactive elevation-1 flex items-center justify-between rounded-md border bg-surface px-4 py-3 ' +
                   (item.is_overdue ? 'border-att-late/50 bg-att-late/5' : 'border-border')
                 }
               >
@@ -99,19 +113,11 @@ export default function TeacherDashboardPage() {
                   </p>
                 </div>
                 <div className="ml-3 flex shrink-0 items-center gap-2">
-                  {item.is_overdue && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber/10 px-2 py-0.5 text-xs font-medium text-amber">
-                      Günü geçti
-                    </span>
-                  )}
+                  {item.is_overdue && <Badge tone="warning">Günü geçti</Badge>}
                   {item.status === 'draft' ? (
-                    <span className="inline-flex items-center rounded-full bg-status-draft/10 px-2 py-0.5 text-xs font-medium text-status-draft">
-                      Taslak
-                    </span>
+                    <StatusBadge status="draft" />
                   ) : (
-                    <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted">
-                      Açılmadı
-                    </span>
+                    <Badge tone="neutral">Açılmadı</Badge>
                   )}
                 </div>
               </Link>

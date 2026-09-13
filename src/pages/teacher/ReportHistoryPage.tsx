@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { History } from 'lucide-react';
 import type {
   ReportClassFilterOption,
   ReportWeekFilterOption,
@@ -25,6 +26,8 @@ import {
   EmptyState,
   FormError,
   FilterSelect,
+  PageTitle,
+  SecondaryButton,
   StatusBadge,
 } from '../../components/admin/ui';
 
@@ -102,7 +105,7 @@ export default function ReportHistoryPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-text">Geçmiş raporlarım</h1>
+      <PageTitle icon={History}>Geçmiş raporlarım</PageTitle>
 
       <div className="flex flex-wrap items-end gap-3">
         <FilterSelect
@@ -132,13 +135,7 @@ export default function ReportHistoryPage() {
             </option>
           ))}
         </FilterSelect>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-        >
-          Yenile
-        </button>
+        <SecondaryButton onClick={() => void load()}>Yenile</SecondaryButton>
       </div>
 
       <FormError message={error} />
@@ -154,7 +151,7 @@ export default function ReportHistoryPage() {
       ) : (
         data && (
           <>
-            <div className="overflow-hidden rounded-md border border-border bg-surface">
+            <div className="elevation-1 overflow-hidden rounded-md border border-border bg-surface">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-[13px] font-medium text-muted">

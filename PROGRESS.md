@@ -5,6 +5,91 @@
 
 ---
 
+## Öğretmen ekranları — admin görsel dili + yeni TeacherShell ✅
+
+### Süreç özeti
+
+Öğretmen tarafı, admin'in oturmuş "iç araç" görsel diline (teal accent zaten
+globaldi; eksik olan bileşen sözlüğü ve kabuktu) hizalandı. Renk değişmedi,
+yeni renk/boyut/font tanımlanmadı; yalnızca mevcut token'lar ve paylaşılan
+bileşenler kullanıldı. Onaylı iki karar: **(1)** yeni `TeacherShell`, **(2)**
+gecikme uyarısı admin tarzı özet kartı.
+
+### Kabuk — `TeacherShell.tsx` (yeni)
+
+- `/teacher` artık `AppLayout` yerine `TeacherShell` kullanır (kök `/` fallback
+  için `AppLayout` korundu). Admin'in sol menü mimarisi kopyalanmadı; üst şerit
+  korundu.
+- Admin ile aynı marka/tipografi: `h-20` şerit, `h-16` logo, global teal accent.
+- Sekmeler: **Bu hafta · Geçmiş raporlarım · Teslimler** (aktif:
+  `bg-accent/10 text-accent`; "Geçmiş" artık dashboard içi linkten çıkarılıp
+  gerçek sekmeye taşındı). `<md` ekranda sekmeler yatay kaydırılabilir şeride
+  döner, dokunma hedefi ≥44px.
+- İçerik `admin-content` hook'u altında → admin listelerindeki satır hover
+  davranışı (zemin + solda accent şerit) öğretmen tablolarında da geçerli.
+
+### Ekran değişiklikleri
+
+- **TeacherDashboardPage:** `PageTitle` (ikonlu); gecikme uyarısı admin özet
+  kartı diline (`border-t-2 border-t-att-late` + `bg-att-late/10` ikon dairesi;
+  "Bu hafta N raporunuz gecikti" metni birebir korundu); liste satırları
+  `elevation-1 card-interactive`; rozetler dolgulu `Badge`/`StatusBadge`
+  (Günü geçti→warning, Taslak→neutral, Açılmadı→neutral — admin eksik tablosu
+  ile aynı).
+- **ReportHistoryPage:** `PageTitle`; tablo gövdesine `elevation-1`; "Yenile"
+  `SecondaryButton`.
+- **SubmissionsReviewPage:** `PageTitle`; seçici butonları
+  `elevation-1 card-interactive`; teslim kartları `elevation-1`; rozetler
+  dolgulu `Badge` (Geç teslim→warning, İncelendi→positive, Yeni→info).
+
+### ReportEntryPage — kırmızı çizgi (yalnızca yüzeysel)
+
+- **Değişen:** teslim rozetleri paylaşılan `Badge`'e geçti (metin aynı:
+  "Yüklendi"/"Geç yüklendi"/"Yüklenmedi"); üç yüzeye `elevation-1` (sınıf
+  alanları bölümü, tablo sarmalı, mobil kart).
+- **Değişmeyen:** `compact` yoğunluk (36 + 1px kenarlık satır, 13px), local
+  `inputClass` (h-8; admin `ui.tsx` h-9'una geçilmedi), klavye navigasyonu,
+  odak halkası, toplu doldurma, devamsızlıkta disable+null, layout/üst alan
+  konumları, `PageTitle` (ikon eklenmedi).
+
+### Kanıt — ReportEntryPage önce/sonra (izole DB + gerçek sunucu, headless Chrome/CDP)
+
+- **Yoğunluk ölçümü (birebir aynı, önce = sonra):**
+  `rowHeight=37` (36 + 1px `border-b`), `tableFont=13px`, `cellFont=13px`,
+  `inputHeights=[32,32,32,32]`, `.compact` var.
+- **Klavye navigasyonu (birebir aynı, önce = sonra):** odak `0,0` (ödev) →
+  `ArrowRight` `0,1` (performans) → `ArrowDown` `1,1` → `Enter` `2,1`.
+- **Ekran görüntüleri:** masaüstü `1280×900` ve mobil `390×844` tam-sayfa;
+  içerik bölgesi (alanlar + compact tablo/kart + satırlar + değerler) birebir
+  aynı. **Tek fark:** amaçlanan kabuk (üst nav) + dolgulu rozet/ince `elevation`
+  — davranış veya yoğunluk değişikliği yok.
+- Ölçüm/karşılaştırma geçici izole DB (`VACUUM INTO` kopyası) ile yapıldı,
+  `backend/db/app.db`'ye yazılmadı; sunucu/Chrome/temp temizlendi.
+
+### Doğrulamalar
+
+- **Statik:** kök `typecheck` ✅, `lint` ✅, `build` ✅ (chunk uyarısı mevcut).
+- **Testler:** frontend **117/117** (19 dosya) — rozet metinleri korunduğu için
+  mevcut testler değişmeden geçti. Backend değişmedi.
+
+### Etkilenen dosyalar
+
+```
+src/components/layout/TeacherShell.tsx     (yeni)
+src/App.tsx                                (/teacher → TeacherShell)
+src/pages/teacher/TeacherDashboardPage.tsx
+src/pages/teacher/ReportHistoryPage.tsx
+src/pages/teacher/SubmissionsReviewPage.tsx
+src/pages/teacher/ReportEntryPage.tsx      (yalnızca Badge + elevation-1)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Veli rapor görünümü — "yapılacak ödev" / değerlendirme haftası köprüsü ✅
 
 ### Sorun

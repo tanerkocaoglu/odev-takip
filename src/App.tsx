@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
+import TeacherShell from './components/layout/TeacherShell';
 import CustomerShell from './components/layout/CustomerShell';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/admin/AdminLayout';
@@ -67,7 +68,7 @@ export default function App() {
         path="/teacher"
         element={
           <ProtectedRoute roles={['teacher', 'admin']}>
-            <AppLayout />
+            <TeacherShell />
           </ProtectedRoute>
         }
       >

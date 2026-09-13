@@ -15,7 +15,7 @@ import type {
 } from '../../types';
 import { ATTENDANCE_LABELS, DAY_LABELS } from '../../types';
 import { teacherApi, ApiClientError } from '../../services/api';
-import { Field, FormError, LoadingState, PrimaryButton } from '../../components/admin/ui';
+import { Badge, Field, FormError, LoadingState, PrimaryButton } from '../../components/admin/ui';
 
 const inputClass =
   'h-8 w-full rounded-md border border-border bg-surface px-2 text-[13px] text-text placeholder:text-muted focus:border-accent';
@@ -309,7 +309,7 @@ export default function ReportEntryPage() {
       <FormError message={completeMsg} />
 
       {/* Sınıf düzeyi alanlar */}
-      <section className="grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-2">
+      <section className="elevation-1 grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-2">
         <Field label="Verilmiş olan ödev" htmlFor="prev-homework">
           <input
             id="prev-homework"
@@ -420,7 +420,7 @@ export default function ReportEntryPage() {
       </div>
 
       {/* Masaüstü: tablo */}
-      <div className="compact hidden overflow-hidden rounded-md border border-border bg-surface md:block">
+      <div className="compact elevation-1 hidden overflow-hidden rounded-md border border-border bg-surface md:block">
         <table className="w-full">
           <thead>
             <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
@@ -442,21 +442,15 @@ export default function ReportEntryPage() {
                   <td className="text-[13px] text-text">
                     <div className="flex items-center gap-2">
                       <span className="whitespace-nowrap">{entry.student_name}</span>
-                      {entry.submission && (
-                        <span
-                          className={
-                            'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ' +
-                            (entry.submission.is_late
-                              ? 'bg-amber/10 text-sub-late'
-                              : 'bg-green/10 text-sub-uploaded')
-                          }
-                        >
-                          {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
+                      {entry.submission ? (
+                        <span className="shrink-0">
+                          <Badge tone={entry.submission.is_late ? 'warning' : 'positive'}>
+                            {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
+                          </Badge>
                         </span>
-                      )}
-                      {!entry.submission && (
-                        <span className="inline-flex shrink-0 items-center rounded-full bg-red/10 px-1.5 py-0.5 text-[11px] font-medium text-sub-missing">
-                          Yüklenmedi
+                      ) : (
+                        <span className="shrink-0">
+                          <Badge tone="danger">Yüklenmedi</Badge>
                         </span>
                       )}
                     </div>
@@ -545,7 +539,7 @@ export default function ReportEntryPage() {
               const disabled =
                 entry.attendance === 'absent' || entry.attendance === 'excused';
               return (
-                <div className="space-y-3 rounded-md border border-border bg-surface p-4">
+                <div className="elevation-1 space-y-3 rounded-md border border-border bg-surface p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-text">{entry.student_name}</p>
                     <span className="tabular text-xs text-muted">
@@ -553,20 +547,11 @@ export default function ReportEntryPage() {
                     </span>
                   </div>
                   {entry.submission ? (
-                    <span
-                      className={
-                        'inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-                        (entry.submission.is_late
-                          ? 'bg-amber/10 text-sub-late'
-                          : 'bg-green/10 text-sub-uploaded')
-                      }
-                    >
+                    <Badge tone={entry.submission.is_late ? 'warning' : 'positive'}>
                       {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
-                    </span>
+                    </Badge>
                   ) : (
-                    <span className="inline-flex w-fit items-center rounded-full bg-red/10 px-2 py-0.5 text-xs font-medium text-sub-missing">
-                      Yüklenmedi
-                    </span>
+                    <Badge tone="danger">Yüklenmedi</Badge>
                   )}
                   <Field label="Devamsızlık" htmlFor="m-att">
                     <select
