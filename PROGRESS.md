@@ -110,7 +110,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`2c3ab90` — devamsız satırda `homework_score` + migration #10 (CHECK ayrıştırma).
 
 ---
 
@@ -183,7 +183,7 @@ spec.md   CLAUDE.md   PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`4f90b8f` — admin haftalık ödev özeti (WhatsApp görseli → PNG, spec §5.8).
 
 ---
 
