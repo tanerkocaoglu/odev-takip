@@ -79,6 +79,68 @@ Henüz commit edilmedi.
 
 ---
 
+## Veli ana ekranı (GuardianHomePage) yeniden tasarımı — "rapor rafı" + hafta filtresi ✅
+
+### Süreç özeti
+
+Öğrenci turundaki "müşteri yüzü" disiplini veliye uygulandı. Veli ekranı
+`CustomerShell` içinde kalır; mevcut tablo + iki dropdown yapısı gerçekten
+terk edildi.
+
+- **Kapak:** "Haftalık raporlar" üst etiketi + öğrenci adı (h1).
+- **Çocuk seçimi:** yatay çip şeridi (dropdown değil); tek çocukta gösterilmez.
+- **Geçmiş:** mobilde dikey **zaman çizelgesi** (ince çizgi + düğümler),
+  masaüstünde çok sütunlu ızgara (`lg:grid-cols-2 xl:grid-cols-3`). Kart:
+  hafta no, tarih aralığı, sınıf çipi, gönderim tarihi, ders çipleri; kartın
+  tamamı tıklanabilir (`aria-label="N. hafta raporunu aç"`).
+
+### Hafta filtresi kararı
+
+Tasarım turunda hafta kontrolü "atlama çipi" olarak onaylanmıştı; uygulamada
+işlevsiz olduğu görüldü (yalnızca >1 raporda görünüyor, filtre değil atlıyordu).
+Kullanıcı kararıyla **gerçek hafta filtresi**ne çevrildi:
+- Tüm haftaları listeleyen erişilebilir, etiketli `<select>` ("Tüm haftalar" +
+  "N. hafta · tarih aralığı"); seçilen hafta listeyi süzer.
+- Kayıt sayısıyla büyümez (20+ haftada tek seçici) — öğrenci turundaki nokta
+  göstergesi sıkışması tekrarlanmadı. ≥2 farklı hafta olduğunda görünür.
+
+### Ders filtresi kaldırıldı
+
+Veli ana ekranındaki ders filtresi işlevsizdi: liste hafta merkezli ve her
+haftanın snapshot'ı aynı dersleri içerdiğinden hiçbir şeyi daraltmıyordu (veli
+raporu haftalık bir bütündür). Kullanıcı kararıyla kaldırıldı:
+- `spec.md` §6 "hafta ve ders bazlı filtre" → **"hafta bazlı filtre"** (gerekçe
+  notuyla); öğrenci ödev ekranındaki ders filtresi **kalır** (orada anlamlı).
+- Her haftanın dersleri kart üzerinde **bilgi** olarak gösterilmeye devam eder.
+- Backend API değişmedi; `routes/guardian.ts`'teki `courses` alanı yalnızca kart
+  gösterimini besler (yorum güncellendi).
+
+### Etkilenen dosyalar
+
+```
+src/pages/guardian/GuardianHomePage.tsx   (baştan yazıldı)
+src/guardian.test.tsx                     (yeni testler; ders filtresi testi çıktı)
+spec.md                                   (§6 Veli: ders filtresi kaldırıldı)
+backend/src/routes/guardian.ts            (yalnızca yorum)
+PROGRESS.md
+```
+
+### Doğrulamalar
+
+- Statik: kök + backend `typecheck` ✅, `lint` ✅, `build` ✅.
+- Testler: frontend **116/116** (19 dosya; guardian 8).
+- Canlı (headless Chrome, geçici çok haftalı veriyle): hafta filtresi
+  "Tüm haftalar" → tüm çizelge, "17. hafta" → tek kart; mobil zaman çizelgesi +
+  masaüstü ızgara. Geçici digest'ler + ikinci çocuk geri alındı
+  (weekly_digests 8'e döndü).
+
+### Commit
+
+Bu commit — veli ana ekranı yeniden tasarımı (rapor rafı/zaman çizelgesi, çocuk
+çipleri, hafta filtresi) + işlevsiz ders filtresinin kaldırılması (spec §6).
+
+---
+
 ## Öğrenci "müşteri yüzü" yeniden tasarımı — CustomerShell + capture carousel ✅
 
 ### Süreç özeti

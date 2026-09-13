@@ -899,7 +899,9 @@ Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır
 - Öğrenci seçimi (birden fazla çocuk varsa)
 - **Öğrencinin sistemdeki tüm gönderilmiş raporları** — sınıf değişmiş olsa
   bile geçmiş raporlar listede kalır, hafta bazında kronolojik, hangi sınıftan
-  geldiği bilgisiyle birlikte; **hafta** (görece etiket) ve **ders** bazlı filtre
+  geldiği bilgisiyle birlikte; **hafta** (görece etiket) bazlı filtre
+  (veli raporu haftalık bir bütündür; ders bazlı filtre bu ekranda anlamsız
+  olduğu için kaldırıldı — öğrenci ödev ekranındaki ders filtresi kalır)
 - Rapor detayı + ödev teslim geçmişi
 - Basit trend grafiği: hafta bazında ödev/ders içi performans ortalaması
 

@@ -128,7 +128,7 @@ router.get('/reports', (req, res) => {
         firstActiveWeek = firstWeekCache.get(classId) ?? r.week_no;
       }
 
-      // Ders bazlı filtre için: dolu derslerin adları (eksik ders dahil edilmez).
+      // Rapor kartında gösterim için: dolu derslerin adları (eksik ders dahil edilmez).
       const courses =
         snapshot?.courses
           ?.filter((c) => c.status === 'completed' || c.status === 'sent')

@@ -1,7 +1,7 @@
 /**
- * Veli paneli frontend testleri — Aşama 5.
- * GuardianHomePage: öğrenci seçimi + gönderilmiş rapor listesi; tek çocukta
- * otomatik seçim. Rapor detayı (snapshot + teslim geçmişi) ayrı testte.
+ * Veli paneli frontend testleri — Aşama 5 (GuardianHomePage redesign sonrası).
+ * GuardianHomePage: çocuk çipleri, hafta filtresi, zaman çizelgesi. Rapor
+ * detayı (snapshot + teslim geçmişi) ayrı testte.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -44,6 +44,21 @@ const REPORTS = {
   ],
 };
 
+function reportFixture(overrides: Record<string, unknown>) {
+  return {
+    id: 'r',
+    week: { id: 'w', week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
+    relative_week_no: 1,
+    class_id: 'c1',
+    class_name: 'ÖKLİD',
+    courses: ['Cebir'],
+    sent_at: '2026-01-12T10:00:00.000Z',
+    send_count: 1,
+    course_count: 1,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -72,7 +87,7 @@ describe('guardianApi', () => {
 });
 
 describe('GuardianHomePage', () => {
-  it('birden çok çocukta seçici gösterilir; seçince raporlar listelenir', async () => {
+  it('birden çok çocukta çocuk çipleri gösterilir; seçince zaman çizelgesi gelir', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => STUDENTS })
@@ -85,20 +100,19 @@ describe('GuardianHomePage', () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => {
-      expect(screen.getByLabelText('Öğrenci')).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByLabelText('Öğrenci'), { target: { value: 's1' } });
+    const child = await screen.findByRole('button', { name: 'Örnek Kişi 6' });
+    fireEvent.click(child);
 
     await waitFor(() => {
       expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
     });
     expect(screen.getByText('ÖKLİD')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Aç' })).toHaveAttribute('href', '/guardian/reports/d1');
+    expect(
+      screen.getByRole('link', { name: '3. hafta raporunu aç' }),
+    ).toHaveAttribute('href', '/guardian/reports/d1');
   });
 
-  it('tek çocukta otomatik seçilir ve raporlar yüklenir', async () => {
+  it('tek çocukta otomatik seçilir; çocuk çipi gösterilmez', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [STUDENTS.items[0]] }) })
@@ -114,10 +128,10 @@ describe('GuardianHomePage', () => {
     await waitFor(() => {
       expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText('Öğrenci')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Örnek Kişi 6' })).not.toBeInTheDocument();
   });
 
-  it('gönderilmemiş rapor yoksa boş durum gösterilir', async () => {
+  it('gönderilmiş rapor yoksa boş durum gösterilir', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [STUDENTS.items[0]] }) })
@@ -137,37 +151,18 @@ describe('GuardianHomePage', () => {
     });
   });
 
-  it('hafta (görece) ve ders filtreleri listeyi süzer', async () => {
-    const two = {
+  it('hafta filtresi tüm haftaları listeler ve listeyi süzer', async () => {
+    const three = {
       items: [
-        {
-          id: 'r1',
-          week: { id: 'w1', week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
-          relative_week_no: 1,
-          class_id: 'c1',
-          class_name: 'ÖKLİD',
-          courses: ['Cebir'],
-          sent_at: '2026-01-12T10:00:00.000Z',
-          send_count: 1,
-          course_count: 1,
-        },
-        {
-          id: 'r2',
-          week: { id: 'w2', week_no: 6, start_date: '2026-01-12', end_date: '2026-01-18', label: '12 - 18 Ocak' },
-          relative_week_no: 2,
-          class_id: 'c1',
-          class_name: 'ÖKLİD',
-          courses: ['Geometri'],
-          sent_at: '2026-01-19T10:00:00.000Z',
-          send_count: 1,
-          course_count: 1,
-        },
+        reportFixture({ id: 'r1', relative_week_no: 1, week: { id: 'w1', week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' } }),
+        reportFixture({ id: 'r2', relative_week_no: 2, week: { id: 'w2', week_no: 6, start_date: '2026-01-12', end_date: '2026-01-18', label: '12 - 18 Ocak' } }),
+        reportFixture({ id: 'r3', relative_week_no: 3, week: { id: 'w3', week_no: 7, start_date: '2026-01-19', end_date: '2026-01-25', label: '19 - 25 Ocak' } }),
       ],
     };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [STUDENTS.items[0]] }) })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => two });
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => three });
     vi.stubGlobal('fetch', fetchMock);
 
     render(
@@ -177,21 +172,28 @@ describe('GuardianHomePage', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('12 - 18 Ocak')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: '3. hafta raporunu aç' })).toBeInTheDocument();
     });
-    expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
 
-    // Ders filtresi: Cebir → yalnızca r1.
-    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: 'Cebir' } });
-    expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
-    expect(screen.queryByText('12 - 18 Ocak')).not.toBeInTheDocument();
+    // Tüm haftalar seçicide listelenir (en yeniden eskiye).
+    const select = screen.getByLabelText('Hafta') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      'Tüm haftalar',
+      '3. hafta · 19 - 25 Ocak',
+      '2. hafta · 12 - 18 Ocak',
+      '1. hafta · 05 - 11 Ocak',
+    ]);
 
-    // Hafta filtresi: "2. hafta" → yalnızca r2 (ders filtresi değişmeden önce
-    // ders filtresini sıfırla).
-    fireEvent.change(screen.getByLabelText('Ders'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Hafta'), { target: { value: '2' } });
-    expect(screen.getByText('12 - 18 Ocak')).toBeInTheDocument();
-    expect(screen.queryByText('05 - 11 Ocak')).not.toBeInTheDocument();
+    // Hafta 2 → yalnızca o haftanın raporu.
+    fireEvent.change(select, { target: { value: 'w2' } });
+    expect(screen.getByRole('link', { name: '2. hafta raporunu aç' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '3. hafta raporunu aç' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '1. hafta raporunu aç' })).not.toBeInTheDocument();
+
+    // Tüm haftalar → liste geri gelir.
+    fireEvent.change(select, { target: { value: '' } });
+    expect(screen.getByRole('link', { name: '3. hafta raporunu aç' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '1. hafta raporunu aç' })).toBeInTheDocument();
   });
 
   function renderWithDetail() {
@@ -214,38 +216,12 @@ describe('GuardianHomePage', () => {
     );
   }
 
-  it('rapor satırı mouse ile detaya gider', async () => {
+  it('rapor satırı tıklanınca detaya gider', async () => {
     renderWithDetail();
     await waitFor(() => {
       expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('link', { name: /hafta raporunu aç/i }));
-    await waitFor(() => {
-      expect(screen.getByText('DETAY-SAYFASI')).toBeInTheDocument();
-    });
-  });
-
-  it('rapor satırı Enter ile detaya gider (klavye erişilebilirliği)', async () => {
-    renderWithDetail();
-    await waitFor(() => {
-      expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
-    });
-    const row = screen.getByRole('link', { name: /hafta raporunu aç/i });
-    expect(row).toHaveAttribute('tabindex', '0');
-    fireEvent.keyDown(row, { key: 'Enter' });
-    await waitFor(() => {
-      expect(screen.getByText('DETAY-SAYFASI')).toBeInTheDocument();
-    });
-  });
-
-  it('rapor satırı Space ile detaya gider (klavye erişilebilirliği)', async () => {
-    renderWithDetail();
-    await waitFor(() => {
-      expect(screen.getByText('05 - 11 Ocak')).toBeInTheDocument();
-    });
-    fireEvent.keyDown(screen.getByRole('link', { name: /hafta raporunu aç/i }), {
-      key: ' ',
-    });
     await waitFor(() => {
       expect(screen.getByText('DETAY-SAYFASI')).toBeInTheDocument();
     });
