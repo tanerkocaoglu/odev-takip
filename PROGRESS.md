@@ -60,7 +60,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`82bfd7a` — `cleanup-submissions` manuel teslim dosyası temizliği CLI'ı.
 
 ---
 
