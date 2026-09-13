@@ -38,6 +38,29 @@ function weekdayOf(date: Date): number {
   return ((date.getDay() + 6) % 7) + 1;
 }
 
+/** İki haneli sıfır dolgulu sayı ("3" → "03"). */
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/**
+ * Hafta etiketini tarihten üretir: `gg.aa - gg.aa.yyyy` (nokta ayraçlı,
+ * gün ve ay sıfır dolgulu; örn. `07.09 - 13.09.2026`).
+ *
+ * Hafta iki farklı yıla taşıyorsa yıl iki tarafta da tam yazılır:
+ * `29.12.2025 - 04.01.2026`.
+ */
+export function formatWeekLabel(startDate: string, endDate: string): string {
+  const [sy, sm, sd] = startDate.split('-').map(Number);
+  const [ey, em, ed] = endDate.split('-').map(Number);
+  const start = `${pad2(sd)}.${pad2(sm)}`;
+  const end = `${pad2(ed)}.${pad2(em)}`;
+  if (sy !== ey) {
+    return `${start}.${sy} - ${end}.${ey}`;
+  }
+  return `${start} - ${end}.${ey}`;
+}
+
 /**
  * Bir haftanın bir önceki ders yapılan haftasını döner.
  *

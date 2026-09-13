@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateDueDate,
+  formatWeekLabel,
   getPreviousWeek,
   type WeekRecord,
 } from './weeks.js';
@@ -20,6 +21,24 @@ function week(
     label: `${startDate} - ${endDate}`,
   };
 }
+
+describe('formatWeekLabel', () => {
+  it('hedef biçimi üretir (gg.aa - gg.aa.yyyy)', () => {
+    expect(formatWeekLabel('2026-09-07', '2026-09-13')).toBe('07.09 - 13.09.2026');
+  });
+
+  it('tek haneli gün/ayı sıfırla doldurur (3.09 → 03.09)', () => {
+    expect(formatWeekLabel('2026-09-03', '2026-09-09')).toBe('03.09 - 09.09.2026');
+    expect(formatWeekLabel('2026-03-04', '2026-03-10')).toBe('04.03 - 10.03.2026');
+    expect(formatWeekLabel('2026-01-05', '2026-01-11')).toBe('05.01 - 11.01.2026');
+  });
+
+  it('iki farklı yıla taşarsa yıl iki tarafta da tam yazılır', () => {
+    expect(formatWeekLabel('2025-12-29', '2026-01-04')).toBe(
+      '29.12.2025 - 04.01.2026',
+    );
+  });
+});
 
 describe('getPreviousWeek', () => {
   it('normal haftada bir önceki haftayı döner', () => {

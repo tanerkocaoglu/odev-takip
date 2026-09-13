@@ -163,12 +163,12 @@ export const adminApi = {
       apiFetch<{ items: Week[] }>(
         `/admin/weeks${query({ academicYearId })}`,
       ),
-    create: (input: Omit<Week, 'id'>) =>
+    create: (input: Omit<Week, 'id' | 'label'>) =>
       apiFetch<Week>('/admin/weeks', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    patch: (id: string, input: Partial<Omit<Week, 'id' | 'week_no'>>) =>
+    patch: (id: string, input: Partial<Omit<Week, 'id' | 'week_no' | 'label'>>) =>
       apiFetch<Week>(`/admin/weeks/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(input),

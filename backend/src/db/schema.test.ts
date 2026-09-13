@@ -3,6 +3,7 @@ import { db } from './index.js';
 import { runMigrations } from './migrations.js';
 import { seedDatabase } from './seed.js';
 import { usernamePrefix } from '../utils/username.js';
+import { formatWeekLabel } from '../utils/weeks.js';
 
 /**
  * Şema + seed testleri.
@@ -110,6 +111,19 @@ describe('seed', () => {
     // Seed teslim üretmez (öğrenci yükleyecek); hafta 19 için 4 sent digest.
     expect(count('submissions')).toBe(0);
     expect(count('weekly_digests')).toBe(4);
+  });
+
+  it('seed hafta etiketleri hedef biçimdedir (gg.aa - gg.aa.yyyy, sıfır dolgulu)', () => {
+    const rows = db
+      .prepare(`SELECT start_date, end_date, label FROM weeks ORDER BY week_no`)
+      .all() as Array<{ start_date: string; end_date: string; label: string }>;
+    expect(rows).toHaveLength(21);
+    const pattern = /^\d{2}\.\d{2} - \d{2}\.\d{2}\.\d{4}$/;
+    for (const r of rows) {
+      expect(r.label).toMatch(pattern);
+      // Tek doğru kaynak: label, tarihten üretilen fonksiyonun çıktısıdır.
+      expect(r.label).toBe(formatWeekLabel(r.start_date, r.end_date));
+    }
   });
 
   it('seed idempotenttir — ikinci çalıştırmada kayıt çoğalmaz', async () => {

@@ -24,7 +24,6 @@ export default function WeeksPage() {
   const [weekNo, setWeekNo] = useState(1);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [label, setLabel] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -67,13 +66,11 @@ export default function WeeksPage() {
         week_no: weekNo,
         start_date: startDate,
         end_date: endDate,
-        label: label.trim(),
       });
       setFormOpen(false);
       setWeekNo(weeks.length + 1);
       setStartDate('');
       setEndDate('');
-      setLabel('');
       await load();
     } catch (err) {
       setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
@@ -183,16 +180,9 @@ export default function WeeksPage() {
               />
             </Field>
           </div>
-          <Field label="Etiket" htmlFor="week-label">
-            <input
-              id="week-label"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              required
-              className={inputClass}
-              placeholder="01 - 07 Eylül"
-            />
-          </Field>
+          <p className="text-sm text-muted">
+            Etiket, girilen tarihlerden otomatik oluşturulur (örn. 07.09 - 13.09.2026).
+          </p>
           <FormError message={formError} />
           <div className="flex justify-end gap-2">
             <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>

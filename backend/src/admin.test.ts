@@ -127,6 +127,8 @@ describe('Hafta', () => {
       label: '01 - 07 Eylül',
     });
     expect(created.status).toBe(201);
+    // Etiket istemciden değil, tarihten üretilir.
+    expect(created.body.label).toBe('01.09 - 07.09.2026');
 
     const list = await adminRequest('get', '/api/v1/admin/weeks');
     expect((list.body.items as unknown[]).length).toBe(1);
@@ -149,7 +151,7 @@ describe('Hafta', () => {
     expect(res.status).toBe(409);
   });
 
-  it('PATCH week_no değiştiremez (yalnızca tarih/label)', async () => {
+  it('PATCH week_no değiştiremez; istemci label gönderse bile etiket tarihten gelir', async () => {
     const list = await adminRequest('get', '/api/v1/admin/weeks');
     const week = (list.body.items as Array<{ id: string; week_no: number }>)[0];
 
@@ -158,8 +160,31 @@ describe('Hafta', () => {
       label: 'Yeni etiket',
     });
     expect(res.status).toBe(200);
-    expect(res.body.label).toBe('Yeni etiket');
+    // Tarih değişmediği için etiket sabit kalır ve istemci label'ı yazılmaz.
+    expect(res.body.label).toBe('01.09 - 07.09.2026');
     expect(res.body.week_no).toBe(week.week_no); // week_no değişmedi
+  });
+
+  it('PATCH tarih değişince etiket yeniden üretilir', async () => {
+    // Paylaşılan hafta 1'in tarihini bozmamak için geçici bir hafta kullanılır.
+    const created = await adminRequest('post', '/api/v1/admin/weeks').send({
+      academic_year_id: yearId,
+      week_no: 3,
+      start_date: '2026-09-15',
+      end_date: '2026-09-21',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.label).toBe('15.09 - 21.09.2026');
+
+    const res = await adminRequest('patch', `/api/v1/admin/weeks/${created.body.id}`).send({
+      start_date: '2026-09-16',
+      end_date: '2026-09-22',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.label).toBe('16.09 - 22.09.2026');
+
+    const del = await adminRequest('delete', `/api/v1/admin/weeks/${created.body.id}`);
+    expect(del.status).toBe(204);
   });
 
   it('yıl aralığı dışına taşan hafta 400 döner', async () => {

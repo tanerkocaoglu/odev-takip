@@ -5,6 +5,71 @@
 
 ---
 
+## Hafta etiketi (`weeks.label`) — ISO'dan Türkçe `gg.aa - gg.aa.yyyy` ✅
+
+### Sorun
+
+Seed `buildWeeks()` etiketi `2026-09-07 - 2026-09-13` (ISO) üretiyordu; Türk
+kullanıcıya yabancı. Admin "Yeni hafta" akışı ortak bir üretim kullanmıyordu:
+etiket panelde **elle serbest metin** olarak giriliyor, backend yalnızca
+`min(1)` doğrulayıp yazıyordu — yani format garantisi yoktu; seed düzeltilse
+bile admin ileride biçimsiz etiket üretebilirdi.
+
+### Çözüm — tek üretim noktası
+
+- `backend/src/utils/weeks.ts` → yeni `formatWeekLabel(startDate, endDate)`:
+  `07.09 - 13.09.2026`; gün ve ay sıfır dolgulu; iki tarih farklı yıla
+  taşıyorsa yıl iki tarafta da tam (`29.12.2025 - 04.01.2026`).
+- `db/seed.ts` `buildWeeks()` artık bu fonksiyonu çağırıyor.
+- `routes/admin/weeks.ts`: `POST` etiketi istemciden almaz, tarihten türetir;
+  `PATCH`'te tarih değişince etiket yeniden üretilir. `label` create/patch
+  şemalarından kaldırıldı (istemciden gelen label yok sayılır).
+- `src/pages/admin/WeeksPage.tsx`: serbest "Etiket" input'u kaldırıldı; otomatik
+  üretim notu gösterilir. `api.ts` create/patch girdi tipleri `label`'sız.
+
+### Kararlar (onaylı)
+
+1. Admin etiketi backend'de tarihten türetilir, paneldeki alan kalkar.
+2. Tarih değişince etiket otomatik yeniden üretilir.
+3. Yıl farklıysa iki tarafta da tam yıl yazılır.
+
+### Doğrulamalar
+
+- Statik: backend + kök `typecheck` ✅, kök `lint` ✅.
+- Testler: backend **304/304** (27 dosya; +`formatWeekLabel` sıfır dolgu/yıl
+  sınırı, +seed format assert'i, +admin PATCH üretimi), frontend **117/117**
+  (19 dosya) — mevcut testler değişmeden.
+- `db:reset` sonrası SQL: taze DB'de **21/21** hafta
+  `^\d{2}\.\d{2} - \d{2}\.\d{2}\.\d{4}$` regex'ini geçti ve
+  `label === formatWeekLabel(start_date, end_date)`; tek haneli gün/ay sıfır
+  dolgusu görünür (`03.05`, `01.06`, `07.06`).
+- Canlı API (gerçek sunucu): admin 21 hafta + elle POST
+  (`03.09 - 09.09.2026`) + PATCH yeniden üretim (`04.09 - 10.09.2026`);
+  öğretmen dashboard `07.09 - 13.09.2026`; veli raporu `31.08 - 06.09.2026`
+  — **6/6 PASS**.
+- Canlı UI (headless Chrome/CDP): admin `/admin/weeks`, öğretmen `/teacher`,
+  veli `/guardian` ekranlarında etiketler doğru render edildi — **3/3 PASS**.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/weeks.ts          (+formatWeekLabel)
+backend/src/db/seed.ts
+backend/src/routes/admin/weeks.ts
+backend/src/utils/weeks.test.ts
+backend/src/db/schema.test.ts
+backend/src/admin.test.ts
+src/pages/admin/WeeksPage.tsx
+src/services/api.ts
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğretmen "göz at" ekranları — mobil kompozisyon ✅
 
 ### Süreç özeti

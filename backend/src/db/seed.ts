@@ -22,7 +22,7 @@ import { loadEnv } from '../utils/env.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { hashPassword } from '../utils/hash.js';
 import { nextUsername } from '../utils/username.js';
-import { calculateDueDate, type WeekRecord } from '../utils/weeks.js';
+import { calculateDueDate, formatWeekLabel, type WeekRecord } from '../utils/weeks.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -145,13 +145,14 @@ function buildWeeks(): WeekRecord[] {
     const startIso = toIsoLocal(start);
     const end = new Date(start);
     end.setDate(end.getDate() + 6);
+    const endIso = toIsoLocal(end);
     weeks.push({
       id: `seed-week-${pad2(i)}`,
       academic_year_id: 'seed-academic-year',
       week_no: i,
       start_date: startIso,
-      end_date: toIsoLocal(end),
-      label: `${startIso} - ${toIsoLocal(end)}`,
+      end_date: endIso,
+      label: formatWeekLabel(startIso, endIso),
     });
     start.setDate(start.getDate() + 7);
   }
