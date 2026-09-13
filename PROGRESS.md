@@ -5,6 +5,50 @@
 
 ---
 
+## Veli WhatsApp linki — `localhost` yerine üretim taban URL'i ✅
+
+### Sorun
+
+Canlıda veliye gönderilen mesajda rapor linki `http://localhost:5173/r/{token}`
+çıkıyordu. Neden: `services/digests.ts` tabanı yalnızca `process.env.BASE_URL ??
+'http://localhost:5173'` ile üretiyordu; `render.yaml`'da `BASE_URL` yoktu, bu
+yüzden fallback'e düşüyordu.
+
+### Çözüm
+
+- **`utils/env.ts` → `resolveBaseUrl()`:** öncelik açık `BASE_URL` →
+  Render'ın otomatik `RENDER_EXTERNAL_URL`'i → geliştirme varsayılanı
+  `localhost`. Sondaki `/` temizlenir.
+- `services/digests.ts` artık `resolveBaseUrl()` kullanır.
+- **`render.yaml`:** `BASE_URL=https://odev-takip.example.com`
+  açıkça tanımlandı (deterministik; özel alan adına geçilirse burası/Dashboard
+  güncellenir).
+
+### Doğrulamalar
+
+- `utils/env.test.ts` (yeni, 4 test): BASE_URL > RENDER_EXTERNAL_URL >
+  localhost önceliği + trailing slash + boş değer.
+- `admin-digests.test.ts` (+1 entegrasyon): `BASE_URL` yokken
+  `RENDER_EXTERNAL_URL` linke yansır, `localhost` içermez.
+- backend **323/323** (29 dosya), `typecheck` + `lint` ✅.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/env.ts            (+resolveBaseUrl)
+backend/src/services/digests.ts     (resolveBaseUrl kullanımı)
+backend/src/utils/env.test.ts       (yeni)
+backend/src/admin-digests.test.ts   (+1 entegrasyon)
+render.yaml                         (BASE_URL)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## `db:wipe` (seed'siz boş DB) + `reset.ts` `DB_PATH` düzeltmesi ✅
 
 ### Sorun

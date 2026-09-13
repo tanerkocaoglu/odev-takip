@@ -373,3 +373,27 @@ describe('POST /api/v1/admin/digests/:id/revoke', () => {
     expect(res.body.error.message).toBe('Yalnızca gönderilmiş raporlar iptal edilebilir.');
   });
 });
+
+describe('gönderim linki — taban URL (BASE_URL / RENDER_EXTERNAL_URL)', () => {
+  // Üretimde BASE_URL girilmese bile Render'ın RENDER_EXTERNAL_URL'i
+  // kullanılmalı; linke localhost düşmemeli.
+  it('BASE_URL yokken RENDER_EXTERNAL_URL linke yansır (localhost değil)', async () => {
+    const prevBase = process.env.BASE_URL;
+    const prevRender = process.env.RENDER_EXTERNAL_URL;
+    delete process.env.BASE_URL;
+    process.env.RENDER_EXTERNAL_URL = 'https://odev-takip.example.com';
+    try {
+      const res = await request(app)
+        .post(`/api/v1/admin/digests/${digestIdFor('ad-stu-rec-1')}/send`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain('https://odev-takip.example.com/r/');
+      expect(res.body.message).not.toContain('localhost');
+    } finally {
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+      if (prevRender === undefined) delete process.env.RENDER_EXTERNAL_URL;
+      else process.env.RENDER_EXTERNAL_URL = prevRender;
+    }
+  });
+});

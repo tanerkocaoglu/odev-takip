@@ -37,3 +37,24 @@ export function loadEnv(): void {
     }
   }
 }
+
+/**
+ * Veliye gönderilen `/r/{token}` linki için genel taban URL (spec §5.4).
+ *
+ * Öncelik sırası:
+ * 1. Açık `BASE_URL` — özel alan adı veya yerel geliştirme için.
+ * 2. Render'ın otomatik `RENDER_EXTERNAL_URL`'i (web servisi için
+ *    `https://odev-takip.example.com`) — üretimde elle env girmeyi gerektirmez.
+ * 3. Geliştirme varsayılanı `http://localhost:5173`.
+ *
+ * Sondaki `/` temizlenir; böylece `.../r/{token}` çift slash üretmez.
+ */
+export function resolveBaseUrl(): string {
+  const explicit = process.env.BASE_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, '');
+
+  const renderUrl = process.env.RENDER_EXTERNAL_URL?.trim();
+  if (renderUrl) return renderUrl.replace(/\/+$/, '');
+
+  return 'http://localhost:5173';
+}

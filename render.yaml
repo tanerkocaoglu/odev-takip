@@ -40,3 +40,7 @@ services:
         value: /var/data/app.db
       - key: UPLOADS_DIR
         value: /var/data/uploads
+      # Veliye giden /r/{token} linklerinin tabanı (spec §5.4). Açıkça verilir;
+      # kod ayrıca `RENDER_EXTERNAL_URL`'e düşebilir ama bu değer kesinleştirir.
+      - key: BASE_URL
+        value: https://odev-takip.example.com

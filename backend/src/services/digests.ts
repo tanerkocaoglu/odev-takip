@@ -19,6 +19,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { localTodayISO } from '../utils/time.js';
+import { resolveBaseUrl } from '../utils/env.js';
 import type { WeekRecord } from '../utils/weeks.js';
 import { writeAuditLog } from './audit.js';
 
@@ -709,7 +710,7 @@ export function sendDigest(digestId: string, actorId: string): SendDigestResult 
     diff: snapshot,
   });
 
-  const baseUrl = process.env.BASE_URL ?? 'http://localhost:5173';
+  const baseUrl = resolveBaseUrl();
   const message =
     `Sayın ${digest.guardian_name}, ${digest.student_name} için ` +
     `${week.label} haftalık ödev takip raporu hazır:\n${baseUrl}/r/${token}`;
