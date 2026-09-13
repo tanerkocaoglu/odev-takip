@@ -16,7 +16,8 @@
     "db:wipe": "tsx scripts/wipe.ts",
     "db:backup": "tsx scripts/backup.ts",
     "cleanup-submissions": "tsx scripts/cleanup-submissions.ts",
-    "digest-backfill": "tsx scripts/backfill-digests.ts"
+    "digest-backfill": "tsx scripts/backfill-digests.ts",
+    "diagnose-digest": "tsx scripts/diagnose-digest.ts"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
