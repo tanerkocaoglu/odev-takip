@@ -10,6 +10,7 @@
 import { BookOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DAY_LABELS, type DigestSnapshotCourse } from '../../types';
+import { formatDate } from '../../utils/date';
 import ScoreScale from './ScoreScale';
 import AttendanceChip from './AttendanceChip';
 
@@ -106,7 +107,7 @@ export default function CourseReportCard({
                   {course.homework.description || '—'}
                   <span className="tabular text-muted">
                     {' '}
-                    (son tarih: {course.homework.due_date})
+                    (son tarih: {formatDate(course.homework.due_date)})
                   </span>
                 </InfoRow>
                 {course.homework.graded_in_week && (

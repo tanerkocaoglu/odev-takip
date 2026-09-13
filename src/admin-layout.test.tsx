@@ -9,17 +9,18 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AdminLayout from './components/admin/AdminLayout';
 import { AuthProvider } from './context/AuthContext';
 
+// Kurulum süreci sırası (AdminLayout TABS ile birebir): yapı → kişiler → döngü.
 const NAV: ReadonlyArray<[string, string]> = [
   ['Panel', '/admin'],
   ['Eğitim yılı', '/admin/academic-years'],
   ['Haftalar', '/admin/weeks'],
   ['Sınıflar', '/admin/classes'],
   ['Dersler', '/admin/courses'],
-  ['Atamalar', '/admin/class-courses'],
   ['Öğretmenler', '/admin/teachers'],
-  ['Öğrenciler', '/admin/students'],
-  ['Veliler', '/admin/guardians'],
+  ['Atamalar', '/admin/class-courses'],
   ['Okullar', '/admin/schools'],
+  ['Veliler', '/admin/guardians'],
+  ['Öğrenciler', '/admin/students'],
   ['Raporlar', '/admin/reports'],
   ['Gönderim', '/admin/digests'],
 ];

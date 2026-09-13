@@ -266,6 +266,9 @@ describe('DigestSendPage — gönderim öncesi düzenleme', () => {
     await waitFor(() => expect(screen.getByText('Öğrenci 1')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Önizle' }));
 
+    // Son tarih gg.aa.yyyy gösterilir (ham ISO değil).
+    expect(await screen.findByText(/son tarih: 10\.08\.2026/)).toBeInTheDocument();
+
     const links = await screen.findAllByRole('link', { name: 'Düzenle' });
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute('href')).toMatch(

@@ -5,6 +5,57 @@
 
 ---
 
+## UI: favicon + admin sidebar süreç sırası + rapor "son tarih" formatı ✅
+
+### Yapılanlar
+
+- **Favicon:** `src/assets/logo.png`'den üretildi → `public/favicon.png` (64×64) +
+  `public/apple-touch-icon.png` (180×180); `index.html`'e `icon` /
+  `apple-touch-icon` bağlantıları eklendi.
+- **Admin sidebar sırası (`AdminLayout` TABS):** kurulum sürecini izler —
+  yapı (eğitim yılı → haftalar → sınıf/ders → öğretmen → atama) → kişiler
+  (okul → **veli → öğrenci**; öğrenci zorunlu olarak mevcut veliye bağlanır) →
+  haftalık döngü (raporlar → gönderim). `admin-layout` testi beklenen sıraya
+  güncellendi.
+- **Rapor "son tarih" formatı:** paylaşılan `src/utils/date.ts` →
+  `formatDate(iso)` = `gg.aa.yyyy` (tarih-only ISO'yu `new Date` ile parse
+  etmeden, saat dilimi kayması olmadan). `ReportSnapshot`, `AdminReportViewPage`,
+  `CourseReportCard`, `SubmissionHistory` artık ham `due_date` yerine
+  `formatDate` kullanır; `HomeworkListPage` + `SubmissionsReviewPage`'teki
+  kopya `fmtDate` yardımcısı bu ortak fonksiyona indirgendi (çıktı birebir).
+
+### Doğrulamalar
+
+- `src/utils/date.test.ts` (yeni, 4 test) + `admin-digests.test.tsx`'e
+  "son tarih: 10.08.2026" regresyon kontrolü.
+- `admin-layout` 4/4; frontend **121/121** (20 dosya; +4); `typecheck` + `lint` ✅.
+- `npm run build` ✅ (favicon ve apple-touch-icon `dist/`'e kopyalanıyor).
+
+### Etkilenen dosyalar
+
+```
+public/favicon.png   public/apple-touch-icon.png      (yeni)
+index.html
+src/components/admin/AdminLayout.tsx
+src/admin-layout.test.tsx
+src/utils/date.ts   src/utils/date.test.ts            (yeni)
+src/components/ReportSnapshot.tsx
+src/pages/admin/AdminReportViewPage.tsx
+src/components/customer/CourseReportCard.tsx
+src/components/customer/SubmissionHistory.tsx
+src/pages/student/HomeworkListPage.tsx
+src/pages/teacher/SubmissionsReviewPage.tsx
+src/admin-digests.test.tsx
+CLAUDE.md
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Veli WhatsApp linki — `localhost` yerine üretim taban URL'i ✅
 
 ### Sorun

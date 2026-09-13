@@ -5,6 +5,7 @@
 
 import { BookOpen } from 'lucide-react';
 import type { GuardianReportDetail } from '../../types';
+import { formatDate } from '../../utils/date';
 import SubmissionFileGrid from '../SubmissionFileGrid';
 
 type SubmissionItem = GuardianReportDetail['submissions'][number];
@@ -74,7 +75,7 @@ export default function SubmissionHistory({
               </div>
               <p className="mt-1 text-sm text-muted">
                 Ödev: {sub.description || '—'}
-                <span className="tabular"> · son tarih: {sub.due_date}</span>
+                <span className="tabular"> · son tarih: {formatDate(sub.due_date)}</span>
               </p>
               {sub.submission && (
                 <div className="mt-3">

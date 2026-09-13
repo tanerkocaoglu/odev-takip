@@ -26,6 +26,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { StudentHomework } from '../../types';
+import { formatDate } from '../../utils/date';
 import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { EmptyState, FormError } from '../../components/admin/ui';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
@@ -37,11 +38,6 @@ const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'heic', 'heif', 'pdf']);
 interface PendingState {
   files: File[];
   note: string;
-}
-
-function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}.${m}.${y}`;
 }
 
 /** Kart/rozet durumu — teslim durumundan türetilir. */
@@ -320,7 +316,7 @@ function PendingCard({
           </p>
           <p className="tabular mt-2 text-sm text-muted">
             Son tarih:{' '}
-            <span className="font-medium text-text">{fmtDate(item.due_date)}</span>
+            <span className="font-medium text-text">{formatDate(item.due_date)}</span>
           </p>
         </div>
       </div>
@@ -360,8 +356,8 @@ function DoneCard({
         {item.description}
       </p>
       <p className="tabular px-4 pt-1 text-xs text-muted">
-        Son tarih: {fmtDate(item.due_date)}
-        {item.submission && <> · Teslim: {fmtDate(item.submission.submitted_at.slice(0, 10))}</>}
+        Son tarih: {formatDate(item.due_date)}
+        {item.submission && <> · Teslim: {formatDate(item.submission.submitted_at.slice(0, 10))}</>}
       </p>
 
       {item.submission && (

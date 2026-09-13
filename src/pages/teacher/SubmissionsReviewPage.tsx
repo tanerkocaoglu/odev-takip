@@ -19,12 +19,8 @@ import {
   SecondaryButton,
 } from '../../components/admin/ui';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { formatDate } from '../../utils/date';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
-
-function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}.${m}.${y}`;
-}
 
 function fmtDateTime(iso: string): string {
   const date = new Date(iso);
@@ -160,7 +156,7 @@ export default function SubmissionsReviewPage() {
                       Hafta {hw.week_no} · {hw.week_label}
                     </p>
                     <p className="tabular mt-0.5 text-xs text-muted">
-                      {hw.submission_count} teslim · son tarih {fmtDate(hw.due_date)}
+                      {hw.submission_count} teslim · son tarih {formatDate(hw.due_date)}
                     </p>
                   </button>
                 </li>
@@ -174,7 +170,7 @@ export default function SubmissionsReviewPage() {
               <p className="tabular mb-3 text-xs text-muted">
                 Hafta {selectedHw.week_no} · {selectedHw.week_label} ·{' '}
                 {selectedHw.submission_count} teslim · son tarih{' '}
-                {fmtDate(selectedHw.due_date)}
+                {formatDate(selectedHw.due_date)}
               </p>
             )}
             {loadingDetail && <LoadingState />}

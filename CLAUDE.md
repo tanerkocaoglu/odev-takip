@@ -82,6 +82,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
       ChangePasswordPage.tsx   DashboardPage.tsx   LoginPage.tsx
       TokenReportPage.tsx      (public /r/{token} — düz dosya, klasör değil)
     /services            → api.ts (API istemcisi)
+    /utils               → date.ts (gg.aa.yyyy tarih biçimlendirme)
     /test                → setup.ts (vitest kurulumu)
     App.tsx   main.tsx   index.css   types.ts   vite-env.d.ts
     *.test.tsx           → sayfa/bileşen testleri (kaynağa bitişik; ayrı test/ klasörü yok)

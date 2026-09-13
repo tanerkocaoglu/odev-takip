@@ -9,6 +9,7 @@ import { Link, useParams } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import type { TeacherReportPayload } from '../../types';
 import { DAY_LABELS } from '../../types';
+import { formatDate } from '../../utils/date';
 import { teacherApi, ApiClientError } from '../../services/api';
 import {
   AttendanceBadge,
@@ -112,7 +113,7 @@ export default function AdminReportViewPage() {
                 {report.homework.description || '—'}
                 <span className="tabular text-muted">
                   {' '}
-                  (son tarih: {report.homework.due_date})
+                  (son tarih: {formatDate(report.homework.due_date)})
                 </span>
               </dd>
             </div>

@@ -15,6 +15,7 @@ import { BookOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { DigestSnapshot, DigestSnapshotCourse } from '../types';
 import { DAY_LABELS } from '../types';
+import { formatDate } from '../utils/date';
 import { AttendanceBadge, Badge } from './admin/ui';
 
 /** Sol kenar şeridi — devamsızlık veya "rapor girilmedi" durumundan türetilir. */
@@ -155,7 +156,7 @@ export default function ReportSnapshot({
                     {course.homework.description || '—'}
                     <span className="tabular text-muted">
                       {' '}
-                      (son tarih: {course.homework.due_date})
+                      (son tarih: {formatDate(course.homework.due_date)})
                     </span>
                     {course.homework.graded_in_week && (
                       <span className="mt-1 block text-[13px] text-muted">

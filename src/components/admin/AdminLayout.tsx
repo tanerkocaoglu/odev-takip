@@ -33,17 +33,21 @@ const ROLE_LABELS: Record<string, string> = {
   student: 'Öğrenci',
 };
 
+// Sıralama kurulum sürecini izler: önce yapı (eğitim yılı → haftalar →
+// sınıf/ders → öğretmen → atama), sonra kişiler (okul → veli → öğrenci;
+// öğrenci mevcut bir veliye bağlandığı için veli önce gelir), en sonda
+// haftalık döngü (raporlar → veliye gönderim). Panel her zaman üstte.
 const TABS: { to: string; label: string; end?: boolean; icon: LucideIcon }[] = [
   { to: '/admin', label: 'Panel', end: true, icon: LayoutDashboard },
   { to: '/admin/academic-years', label: 'Eğitim yılı', icon: CalendarRange },
   { to: '/admin/weeks', label: 'Haftalar', icon: CalendarDays },
   { to: '/admin/classes', label: 'Sınıflar', icon: Layers },
   { to: '/admin/courses', label: 'Dersler', icon: BookOpen },
-  { to: '/admin/class-courses', label: 'Atamalar', icon: Shuffle },
   { to: '/admin/teachers', label: 'Öğretmenler', icon: UserCog },
-  { to: '/admin/students', label: 'Öğrenciler', icon: GraduationCap },
-  { to: '/admin/guardians', label: 'Veliler', icon: Users },
+  { to: '/admin/class-courses', label: 'Atamalar', icon: Shuffle },
   { to: '/admin/schools', label: 'Okullar', icon: School },
+  { to: '/admin/guardians', label: 'Veliler', icon: Users },
+  { to: '/admin/students', label: 'Öğrenciler', icon: GraduationCap },
   { to: '/admin/reports', label: 'Raporlar', icon: FileText },
   { to: '/admin/digests', label: 'Gönderim', icon: Send },
 ];
