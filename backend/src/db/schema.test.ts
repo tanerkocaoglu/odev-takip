@@ -373,4 +373,28 @@ describe('seed', () => {
     expect(classIdsForWeek(19)).toEqual(['seed-class-001']);
     expect(classIdsForWeek(17)).toEqual(['seed-class-001']);
   });
+
+  it('report_entries CHECK (#10): devamsızda homework_score serbest, interest_score yasak', () => {
+    const entry = db
+      .prepare(`SELECT id FROM report_entries LIMIT 1`)
+      .get() as { id: string } | undefined;
+    expect(entry).toBeDefined();
+
+    // Gerçek şema üzerinde dene, sonra geri al — seed verisi değişmez.
+    db.exec('BEGIN');
+    try {
+      const upd = db.prepare(
+        `UPDATE report_entries SET attendance = ?, homework_score = ?, interest_score = ?
+         WHERE id = ?`,
+      );
+      // Devamsız + ödev puanı dolu + performans null → KABUL (migration #10).
+      upd.run('absent', 5, null, entry!.id);
+      // Devamsız + performans puanı dolu → tablo CHECK reddeder.
+      expect(() => upd.run('absent', 5, 6, entry!.id)).toThrow();
+      // Geldi + iki puan dolu → KABUL.
+      upd.run('present', 7, 8, entry!.id);
+    } finally {
+      db.exec('ROLLBACK');
+    }
+  });
 });

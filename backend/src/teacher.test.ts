@@ -443,7 +443,7 @@ describe('PUT /api/v1/teacher/reports/:id (autosave)', () => {
     expect(res.body.report.homework.due_date).toBe('2026-08-12');
   });
 
-  it('devamsız satırda puanlar null yapılır', async () => {
+  it('devamsız satırda homework_score korunur, interest_score null yapılır', async () => {
     const res = await request(app)
       .put(`/api/v1/teacher/reports/${reportId}`)
       .set('Authorization', `Bearer ${teacherToken}`)
@@ -463,8 +463,22 @@ describe('PUT /api/v1/teacher/reports/:id (autosave)', () => {
       (e) => e.student_id === studentIds[0],
     );
     expect(row!.attendance).toBe('absent');
-    expect(row!.homework_score).toBeNull();
+    // homework_score devamsızlıktan bağımsız (spec §4): girilir ve korunur.
+    expect(row!.homework_score).toBe(5);
+    // interest_score derse katılım ölçüsü: devamsızsa null olur.
     expect(row!.interest_score).toBeNull();
+
+    const dbRow = db
+      .prepare(
+        `SELECT homework_score, interest_score FROM report_entries
+         WHERE report_id = ? AND student_id = ?`,
+      )
+      .get(reportId, studentIds[0]) as {
+      homework_score: number | null;
+      interest_score: number | null;
+    };
+    expect(dbRow.homework_score).toBe(5);
+    expect(dbRow.interest_score).toBeNull();
   });
 
   it('verilmiş ödev metni değişince serbest metin olarak saklanır', async () => {

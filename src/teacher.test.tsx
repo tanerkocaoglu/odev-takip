@@ -256,7 +256,7 @@ describe('ReportEntryPage', () => {
     expect(screen.queryByRole('button', { name: /ödevi aç/ })).not.toBeInTheDocument();
   });
 
-  it('devamsızlık seçilince puan alanları devre dışı kalır', async () => {
+  it('devamsızlık seçilince yalnızca performans kapanır; ödev puanı açık kalır', async () => {
     vi.stubGlobal('fetch', mockFetch(200, REPORT));
     renderEntryPage();
 
@@ -267,11 +267,17 @@ describe('ReportEntryPage', () => {
     const attendance = screen.getByLabelText('Devamsızlık');
     fireEvent.change(attendance, { target: { value: 'absent' } });
 
-    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
+    // Ödev puanı devamsızlıktan bağımsız — açık (spec §4).
+    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
+    // Ders içi performans derse katılım ölçüsü — devamsızda kapalı.
     expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
+
+    // Devamsız öğrenciye de önceki haftanın ödev puanı girilebilir.
+    fireEvent.change(screen.getByLabelText('Ödev puanı'), { target: { value: '5' } });
+    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('5');
   });
 
-  it('toplu puan: ödev ve ders içi performans ayrı ayrı uygulanır; devamsız satır atlanır', async () => {
+  it('toplu ödev puanı devamsız satıra da uygulanır; toplu performans devamsızı atlar', async () => {
     vi.stubGlobal('fetch', mockFetch(200, REPORT));
     renderEntryPage();
 
@@ -284,30 +290,31 @@ describe('ReportEntryPage', () => {
     const interest = screen.getByLabelText('Ders içi performans puanı') as HTMLInputElement;
     const applyButtons = () => screen.getAllByRole('button', { name: 'Uygula' });
 
-    // Devamsız satır toplu doldurmadan etkilenmez.
     fireEvent.change(attendance, { target: { value: 'absent' } });
+
+    // "Tümü ödev puanı" devamsız satıra da UYGULANIR (ödev devamsızlıktan bağımsız).
     fireEvent.change(screen.getByLabelText('Tümü ödev puanı'), {
       target: { value: '9' },
     });
     fireEvent.click(applyButtons()[0]);
-    expect(homework.value).toBe('');
-
-    // Geldi yapılınca ödev puanı yalnızca ödev alanına yazılır.
-    fireEvent.change(attendance, { target: { value: 'present' } });
-    fireEvent.click(applyButtons()[0]);
     expect(homework.value).toBe('9');
-    expect(interest.value).toBe('');
 
-    // Ders içi performans puanı ayrı alandan uygulanır; ödev puanı korunur.
+    // "Tümü performans puanı" devamsız satırı ATLAR (spec §4).
     fireEvent.change(screen.getByLabelText('Tümü performans puanı'), {
       target: { value: '6' },
     });
     fireEvent.click(applyButtons()[1]);
+    expect(interest.value).toBe('');
     expect(homework.value).toBe('9');
+
+    // Geldi yapılınca performans toplu doldurulur; ödev puanı korunur.
+    fireEvent.change(attendance, { target: { value: 'present' } });
+    fireEvent.click(applyButtons()[1]);
     expect(interest.value).toBe('6');
+    expect(homework.value).toBe('9');
   });
 
-  it('yeni raporda varsayılan "absent"; Tümünü geldi yap puan alanlarını açar', async () => {
+  it('yeni raporda varsayılan "absent"; ödev açık, performans kapalı; Tümünü geldi yap ikisini açar', async () => {
     const absentReport = {
       ...REPORT,
       entries: REPORT.entries.map((e) => ({
@@ -324,8 +331,8 @@ describe('ReportEntryPage', () => {
       expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
     });
 
-    // Sunucudan 'absent' geldiğinde puan alanları devre dışı.
-    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
+    // Sunucudan 'absent' geldiğinde yalnızca performans devre dışı.
+    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
     expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
 
     // "Tümünü geldi yap" gerçekten durumu değiştirir → puan alanları açılır.

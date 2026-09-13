@@ -562,6 +562,76 @@ registerMigration(
   { foreignKeysOff: true },
 );
 
+/**
+ * Migration #10 — `report_entries` puan CHECK'i ayrıştırıldı.
+ *
+ * Gerçek kullanım senaryosu: öğrenci bir haftanın dersine devamsız kalabiliyor
+ * ama bir önceki haftadan gelen ödevi yine de yapıp teslim edebiliyor; bu
+ * ödevin puanı içinde bulunulan haftanın `report_entries` satırına yazılır.
+ * Eski tablo düzeyi CHECK, devamsız (`absent`/`excused`) satırda **her iki**
+ * puanın da `null` olmasını zorladığı için öğretmen bu ödevi değerlendiremiyordu.
+ *
+ * Yeni kural (spec.md §4):
+ * - `homework_score` devamsızlık durumundan bağımsız — her zaman girilebilir.
+ * - `interest_score` derse katılım/ilgi ölçüsü — devamsızsa hâlâ `null` olmalı.
+ *
+ * SQLite tablo düzeyi CHECK'i `ALTER TABLE` ile değiştirmediğinden,
+ * migration #9'daki gibi 12 adımlı tablo yeniden kurulumu uygulanır.
+ * `report_entries`'e referans veren başka tablo yoktur; yine de aynı
+ * `foreignKeysOff` deseni ve runner'ın `foreign_key_check` + ROLLBACK
+ * garantisi kullanılır. COPY'den önce savunma amaçlı ön kontrol yapılır:
+ * eski CHECK bunu zaten imkânsız kılıyordu, ancak beklenmedik veri varsa
+ * net mesajla ve hiçbir şey yazılmadan durulur.
+ */
+registerMigration(
+  10,
+  'entry_score_check',
+  () => {
+    const violations = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM report_entries
+            WHERE attendance IN ('absent','excused') AND interest_score IS NOT NULL`,
+        )
+        .get() as { c: number }
+    ).c;
+    if (violations > 0) {
+      throw new Error(
+        `report_entries CHECK öncesi veri temizliği gerekli: devamsız satırda ` +
+          `interest_score dolu=${violations}`,
+      );
+    }
+
+    db.exec(`
+      CREATE TABLE report_entries_new (
+        id             TEXT PRIMARY KEY,
+        report_id      TEXT NOT NULL REFERENCES reports(id),
+        student_id     TEXT NOT NULL REFERENCES students(id),
+        attendance     TEXT NOT NULL DEFAULT 'present'
+                         CHECK (attendance IN ('present','absent','late','excused')),
+        homework_score INTEGER CHECK (homework_score BETWEEN 1 AND 10),
+        interest_score INTEGER CHECK (interest_score BETWEEN 1 AND 10),
+        teacher_note   TEXT,
+        UNIQUE (report_id, student_id),
+        CHECK (
+          attendance IN ('present','late')
+          OR (attendance IN ('absent','excused') AND interest_score IS NULL)
+        )
+      ) STRICT;
+    `);
+    db.exec(`
+      INSERT INTO report_entries_new
+        (id, report_id, student_id, attendance, homework_score, interest_score, teacher_note)
+      SELECT id, report_id, student_id, attendance, homework_score, interest_score, teacher_note
+      FROM report_entries;
+    `);
+    db.exec(`DROP TABLE report_entries`);
+    db.exec(`ALTER TABLE report_entries_new RENAME TO report_entries`);
+    db.exec(`CREATE INDEX idx_report_entries_student ON report_entries(student_id)`);
+  },
+  { foreignKeysOff: true },
+);
+
 export function runMigrations(): void {
   const row = db.prepare('SELECT user_version FROM pragma_user_version').get() as
     | { user_version: number }

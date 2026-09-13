@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { db } from './index.js';
 import { runMigrations } from './migrations.js';
-import { resetDb } from '../test/helpers.js';
+import { resetDb, insertTestUsers } from '../test/helpers.js';
 
 beforeAll(() => {
   // Önceki koşudan yarıda kalmış bir v8 + NULL/boş kalıntısı varsa #9'un ön
@@ -128,9 +128,10 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4..#9 (submission_files, username_login, schools_grade_view,
-    // must_change_password, submission_file_thumb, not_null_password_phone) koşar.
-    expect(version.user_version).toBe(9);
+    // #3 backfill + #4..#10 (submission_files, username_login, schools_grade_view,
+    // must_change_password, submission_file_thumb, not_null_password_phone,
+    // entry_score_check) koşar.
+    expect(version.user_version).toBe(10);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -183,7 +184,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     const after = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(after.user_version).toBe(9);
+    expect(after.user_version).toBe(10);
 
     const row = db
       .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
@@ -308,7 +309,7 @@ describe('migration #9 — password_hash / whatsapp_phone NOT NULL rewind (9↔8
 
     runMigrations();
 
-    expect(userVersion()).toBe(9);
+    expect(userVersion()).toBe(10);
     expect(columnInfo('users', 'password_hash').notnull).toBe(1);
     expect(columnInfo('guardians', 'whatsapp_phone').notnull).toBe(1);
     expect(db.prepare(`SELECT password_hash FROM users WHERE id = 'm9-student'`).get()).toEqual({
@@ -394,5 +395,150 @@ describe('migration #9 — password_hash / whatsapp_phone NOT NULL rewind (9↔8
       )
       .all();
     expect(leftovers).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// Migration #10 — `report_entries` puan CHECK rewind (10↔9)
+// ===========================================================================
+
+/**
+ * Şemayı #10 öncesine geri sarar (eski puan CHECK'i). `withCheck = false` ile
+ * tablo düzeyi kısıt hiç konmaz — yalnızca "beklenmedik eski veri" senaryosunu
+ * (devamsız + `interest_score` dolu) simüle etmek için fail-fast testinde
+ * kullanılır.
+ */
+function revertEntryCheckToV9(withCheck = true): void {
+  const fk = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number };
+  const wasOn = fk.foreign_keys === 1;
+  if (wasOn) db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    const checkClause = withCheck
+      ? `,
+        CHECK (
+          attendance IN ('absent','excused')
+            AND homework_score IS NULL AND interest_score IS NULL
+          OR attendance IN ('present','late')
+        )`
+      : '';
+    db.exec(`
+      CREATE TABLE report_entries_old (
+        id             TEXT PRIMARY KEY,
+        report_id      TEXT NOT NULL REFERENCES reports(id),
+        student_id     TEXT NOT NULL REFERENCES students(id),
+        attendance     TEXT NOT NULL DEFAULT 'present'
+                         CHECK (attendance IN ('present','absent','late','excused')),
+        homework_score INTEGER CHECK (homework_score BETWEEN 1 AND 10),
+        interest_score INTEGER CHECK (interest_score BETWEEN 1 AND 10),
+        teacher_note   TEXT,
+        UNIQUE (report_id, student_id)${checkClause}
+      ) STRICT;
+    `);
+    db.exec(`INSERT INTO report_entries_old SELECT * FROM report_entries`);
+    db.exec(`DROP TABLE report_entries`);
+    db.exec(`ALTER TABLE report_entries_old RENAME TO report_entries`);
+    db.exec(`CREATE INDEX idx_report_entries_student ON report_entries(student_id)`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    if (wasOn) db.exec('PRAGMA foreign_keys = ON');
+  }
+  db.exec('PRAGMA user_version = 9');
+}
+
+/** #10 testi için en küçük rapor zinciri (yıl → hafta → sınıf/ders → atama → rapor). */
+function insertM10FixtureChain(): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+     VALUES ('m10-year', '2026-2027', '2026-09-01', '2027-06-30', 1)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+     VALUES ('m10-week', 'm10-year', 1, '2026-09-07', '2026-09-13', '07.09 - 13.09.2026')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES ('m10-class', 'm10-year', 'M10 Sınıf', 'm10 sinif', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO courses (id, name, name_normalized, deleted_at)
+     VALUES ('m10-course', 'M10 Ders', 'm10 ders', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO class_courses
+       (id, class_id, course_id, teacher_id, day_of_week, lesson_time, deleted_at)
+     VALUES ('m10-cc', 'm10-class', 'm10-course', 'test-teacher', 1, '09:00', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO reports
+       (id, class_course_id, week_id, topic_covered, prev_homework_id, prev_homework_text,
+        status, completed_at, created_by, updated_at)
+     VALUES ('m10-report', 'm10-cc', 'm10-week', 'Konu', NULL, NULL, 'draft', NULL, 'test-admin', ?)`,
+  ).run(now);
+}
+
+describe('migration #10 — report_entries puan CHECK rewind (10↔9)', () => {
+  afterEach(() => {
+    db.exec(`DELETE FROM report_entries WHERE id LIKE 'm10-%'`);
+    // Fail-fast testinden kalan v9 varsa, anomali temizlendikten sonra ileri sar.
+    if (userVersion() === 9) runMigrations();
+  });
+
+  it('v9 şemasından koşunca veriyi korur; yeni CHECK (homework serbest / interest yasak) uygular', () => {
+    resetDb();
+    revertEntryCheckToV9();
+    insertTestUsers();
+    insertM10FixtureChain();
+    db.prepare(
+      `INSERT INTO report_entries
+         (id, report_id, student_id, attendance, homework_score, interest_score, teacher_note)
+       VALUES ('m10-entry', 'm10-report', 'test-student-rec', 'present', 7, 8, NULL)`,
+    ).run();
+
+    expect(userVersion()).toBe(9);
+    runMigrations();
+    expect(userVersion()).toBe(10);
+
+    // Veri korundu.
+    expect(
+      db
+        .prepare(
+          `SELECT attendance, homework_score, interest_score
+             FROM report_entries WHERE id = 'm10-entry'`,
+        )
+        .get(),
+    ).toEqual({ attendance: 'present', homework_score: 7, interest_score: 8 });
+
+    const upd = db.prepare(
+      `UPDATE report_entries SET attendance = ?, homework_score = ?, interest_score = ?
+       WHERE id = 'm10-entry'`,
+    );
+    // Devamsız + ödev puanı → kabul; devamsız + performans puanı → red.
+    upd.run('absent', 5, null);
+    expect(() => upd.run('absent', 5, 6)).toThrow();
+    expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
+  });
+
+  it('devamsız + interest_score varsa fail-fast: hiçbir şey yazılmaz, sürüm 9 kalır', () => {
+    resetDb();
+    revertEntryCheckToV9(false);
+    insertTestUsers();
+    insertM10FixtureChain();
+    db.prepare(
+      `INSERT INTO report_entries
+         (id, report_id, student_id, attendance, homework_score, interest_score, teacher_note)
+       VALUES ('m10-bad', 'm10-report', 'test-student-rec', 'excused', 4, 9, NULL)`,
+    ).run();
+
+    expect(() => runMigrations()).toThrow();
+    expect(userVersion()).toBe(9);
+    // Rollback hiçbir şeyi silmedi — anomali verisi yerinde.
+    expect(
+      db.prepare(`SELECT interest_score FROM report_entries WHERE id = 'm10-bad'`).get(),
+    ).toEqual({ interest_score: 9 });
   });
 });

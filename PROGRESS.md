@@ -5,6 +5,115 @@
 
 ---
 
+## Devamsız öğrencide `homework_score` — migration #10 ile CHECK ayrıştırma ✅
+
+### Sorun
+
+Gerçek kullanım senaryosu: öğrenci bir haftanın dersine (örn. 20. hafta) devamsız
+kalabiliyor, ama bir önceki haftadan gelen ödevi (ders kaydını izleyerek) yine de
+yapıp teslim edebiliyor; bu ödevin puanı içinde bulunulan haftanın
+`report_entries` satırına yazılıyor. Eski tablo düzeyi `CHECK`, devamsız
+(`absent`/`excused`) satırda **her iki** puanın da `NULL` olmasını zorladığı için
+öğretmen bu ödevi değerlendiremiyordu.
+
+### Karar (kullanıcı onaylı)
+
+- **`homework_score`** devamsızlık durumundan **bağımsız** — her zaman girilebilir.
+- **`interest_score`** derse katılım/ilgi ölçüsü — devamsızsa hâlâ `NULL` olmak
+  zorunda; kural değişmedi (DB CHECK + UI disable).
+- **Toplu doldurma:** "Tümü ödev puanı" absent/excused satırlara **da** uygulanır;
+  "Tümü performans puanı" devamsız satırları **atlar** (karşılaştırmalı).
+- **Devamsızlığa geçiş:** önceden girilmiş `homework_score` **korunur**, otomatik
+  silinmez (öğretmen isterse eliyle temizler).
+- **Tamamlama doğrulaması değişmedi:** `present`/`late` için iki puan da zorunlu;
+  `absent`/`excused` muaf (girilmiş `homework_score` tamamlamayı engellemez).
+
+### Şema — migration #10 (`entry_score_check`, v9→v10)
+
+SQLite tablo düzeyi `CHECK`'i `ALTER TABLE` ile değiştirmediğinden, migration
+#9'daki 12 adımlı tablo yeniden kurulumu deseni uygulandı (`foreignKeysOff: true`;
+runner FK'yı BEGIN'den önce kapatır, COMMIT öncesi `PRAGMA foreign_key_check`,
+hata → tam `ROLLBACK`). COPY öncesi savunma amaçlı fail-fast: devamsız satırda
+`interest_score` doluysa net mesajla durulur.
+
+```sql
+CHECK (
+  attendance IN ('present','late')
+  OR (attendance IN ('absent','excused') AND interest_score IS NULL)
+)
+```
+
+`UNIQUE (report_id, student_id)`, STRICT ve `idx_report_entries_student` korunur.
+`report_entries`'e referans veren başka tablo yoktur.
+
+### Uygulama katmanı
+
+- `routes/teacher.ts` PUT `/reports/:id`: devamsızsa **yalnızca** `interest_score`
+  `NULL`'a çekilir; `homework_score` aynen yazılır. `POST complete` **değişmedi**.
+- `ReportEntryPage.tsx`: `updateEntry` yalnızca interest'ı null'lar (ödev korunur);
+  masaüstü + mobil ödev input'u **her zaman açık**, performans input'u devamsızda
+  `disabled`; `bulkApplyScore` ödev için tüm satırlara, interest için devamsızı
+  atlayarak uygular.
+- `spec.md`: §3.2 DDL + not, §4 kural ayrımı, §5.1 tamamlama netleştirmesi, §6.1
+  devamsızlıkta yalnız performans disable notu.
+
+### Doğrulamalar
+
+- **Statik:** kök + backend `typecheck` ✅, kök `lint` ✅, kök `build` ✅.
+- **Testler:** backend **335/335** (30 dosya; +3: `schema` CHECK pozitif/negatif,
+  `migration #10` rewind 2 test), frontend **129/129** (22 dosya; `teacher` testleri
+  yeni davranışa güncellendi).
+- **Rewind / güvenlik disiplini:** `migration-backfill.test.ts` → 10↔9 rewind
+  (veri korunur, yeni CHECK uygulanır) + fail-fast/rollback testi (devamsız +
+  interest anomalisinde hiçbir şey yazılmaz, sürüm 9 kalır). Mevcut #3/#7/#9
+  versiyon beklentileri 10'a hizalandı.
+- **Canlı migration (gerçek seed verisi):** `app.db`'nin `VACUUM INTO` kopyası
+  (`user_version=9`) → `db:migrate` → **v10**; **160 `present` satır birebir
+  korundu**; şemada yeni CHECK görünür.
+
+### Canlı kanıt (izole DB kopyası + gerçek backend/Vite + headless Chrome/CDP)
+
+**API (10/10 PASS):** öğretmen girişi → B Şubesi hafta 20 raporu; devamsız
+öğrenciye `homework_score=8` kaydedildi, `interest_score=null`; devamsız satıra
+`interest_score=5` gönderilse de kayıtta `null` (uygulama katmanı); DB CHECK
+doğrudan `UPDATE` ile sınandı (absent+homework **kabul**, absent+interest
+**reddedilir**); rapor `completed` oldu; DB son durum `absent/8/null`.
+
+**Gerçek tarayıcı — `ReportEntryPage` (14/14 PASS):**
+1. **Devamsızda ödev / performans:** yeni rapor varsayılanı absent; ödev input
+   **açık**, performans input **disable + boş**. Devamsız satıra ödev 5 girildi;
+   performans hâlâ kapalı.
+2. **Toplu karşılaştırma:** "Tümü ödev 9" → absent dahil **tüm** satırlar 9;
+   "Tümü performans 6" → absent satırlar **atlandı** (boş), present satırlar 6.
+3. **Koru:** satıra önce "Geldi" + ödev 7, sonra "Gelmedi" → ödev **7 kaldı**;
+   interest null/disable oldu.
+   Otomatik kaydetme göstergesi **"Kaydedildi"**; ekran görüntüsü alındı
+   (`report-entry-proof.png`); autosave sonrası DB'de absent satırlar
+   `homework=9/interest=null`, present satır `homework=9/interest=6` doğrulandı.
+
+Kanıt yalnızca izole kopyada yapıldı; **gerçek `backend/db/app.db` değişmedi**
+(v9, mtime 22:25:51 öncesiyle aynı, 160 `present` satır). Sunucular/Chrome temizlendi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts                 (migration #10)
+backend/src/routes/teacher.ts                (PUT: interest null, homework koru)
+backend/src/teacher.test.ts                  (devamsız testi güncellendi)
+backend/src/db/schema.test.ts                (+CHECK pozitif/negatif)
+backend/src/db/migration-backfill.test.ts    (+#10 rewind; versiyon 9→10)
+src/pages/teacher/ReportEntryPage.tsx        (disabled/koru/bulk)
+src/teacher.test.tsx                         (3 test güncellendi)
+spec.md                                      (§3.2, §4, §5.1, §6.1)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Admin "Haftalık Ödev Özeti" — WhatsApp görseli (spec §5.8) ✅
 
 ### Süreç özeti

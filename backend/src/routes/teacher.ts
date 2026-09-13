@@ -628,9 +628,12 @@ router.put('/reports/:id', (req, res) => {
     );
     for (const entry of input.entries ?? []) {
       const isAbsent = entry.attendance === 'absent' || entry.attendance === 'excused';
+      // homework_score devamsızlıktan bağımsızdır (spec §4): öğrenci dersten
+      // devamsız olsa da önceki haftanın ödevini değerlendirebilir. Yalnızca
+      // interest_score (derse katılım) devamsızsa null'a çekilir.
       updateEntry.run(
         entry.attendance,
-        isAbsent ? null : entry.homework_score,
+        entry.homework_score,
         isAbsent ? null : entry.interest_score,
         entry.teacher_note,
         id,

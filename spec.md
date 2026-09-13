@@ -398,18 +398,22 @@ CREATE TABLE report_entries (
   teacher_note   TEXT,
   UNIQUE (report_id, student_id),
   CHECK (
-    attendance IN ('absent','excused')
-      AND homework_score IS NULL AND interest_score IS NULL
-    OR attendance IN ('present','late')
+    attendance IN ('present','late')
+    OR (attendance IN ('absent','excused') AND interest_score IS NULL)
   )
 ) STRICT;
 
 CREATE INDEX idx_report_entries_student ON report_entries(student_id);
 ```
-> Son `CHECK`, §4'teki "devamsız öğrencide puan `null` olur" kuralını
-> veritabanı seviyesinde zorlar. `present`/`late` durumunda puanların dolu
-> olması zorunluluğu **raporun tamamlanması** anında uygulama tarafında
-> kontrol edilir (taslak halinde boş kalabilmelidir).
+> Son `CHECK` (§4), devamsız (`absent`/`excused`) satırda **yalnızca
+> `interest_score`'un `null`** olmasını zorlar; `homework_score` serbesttir.
+> Böylece öğrenci bir haftanın dersine devamsız kalsa bile önceki haftadan
+> gelen ödevi yapıp teslim edebilir ve puanı bu satıra yazılabilir (migration
+> #10; önceki sürümde iki puan da zorunlu `null`'du).
+>
+> `present`/`late` durumunda puanların dolu olması zorunluluğu **raporun
+> tamamlanması** anında uygulama tarafında kontrol edilir (taslak halinde boş
+> kalabilmelidir).
 >
 > **Not:** Tablodaki `DEFAULT 'present'` yalnızca şema bütünlüğü içindir;
 > uygulama `attendance`'ı **her zaman explicit yazar** (yeni satırlar `absent`
@@ -518,9 +522,14 @@ CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id, created_at);
 yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 
 **Kurallar**
-- `attendance = 'absent'` veya `'excused'` ise her iki puan da `null` olur ve
-  UI puan alanlarını disable eder. Bu kural `report_entries` üzerindeki tablo
-  düzeyi `CHECK` kısıtıyla veritabanı seviyesinde de zorlanır (§3.2).
+- **`homework_score` devamsızlık durumundan bağımsızdır:** `present` / `late` /
+  `absent` / `excused` hangisi olursa olsun girilebilir (öğretmen isterse boş
+  bırakır). Öğrenci bir haftanın dersine devamsız kalsa bile önceki haftadan
+  gelen ödevi yapıp teslim edebilir; puanı o haftanın satırına yazılır.
+- **`interest_score` derse katılım/ilgi ölçüsüdür ve devamsızlığa bağlıdır:**
+  `attendance = 'absent'` veya `'excused'` ise `null` olur ve UI bu alanı
+  disable eder. Bu kural `report_entries` üzerindeki tablo düzeyi `CHECK`
+  kısıtıyla veritabanı seviyesinde de zorlanır (§3.2).
 - Ortalama hesaplarında `null` satırlar paydaya dahil edilmez.
 - Puanlar öğrenciye hiçbir ekranda gösterilmez.
 
@@ -547,7 +556,10 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 4. Otomatik `draft` olarak kaydedilir (debounce ~2sn).
 5. "Tamamla" → `status = 'completed'`, `completed_at` set edilir.
    Doğrulama: **işlenen konu** ve **yapılacak ödev açıklaması** boş olamaz;
-   ayrıca devamsız olmayan her öğrenci için iki puan da dolu olmalı.
+   ayrıca devamsız olmayan (`present`/`late`) her öğrenci için iki puan da dolu
+   olmalı. `absent`/`excused` satırlar bu zorunluluktan muaftır; `homework_score`
+   artık bu satırlarda da girilebildiğinden, girilmişse korunur ve tamamlamayı
+   engellemez (§4).
 
 > **Devamsızlık varsayılanı:** `POST /teacher/reports` ile oluşturulan yeni
 > `report_entries` satırları **`absent` ("Gelmedi")** başlar. Böylece öğretmen
@@ -953,7 +965,9 @@ Projenin benimsenmesi bu ekrana bağlı. Gereksinimler:
 - Klavye navigasyonu: `Tab` / `Enter` ile aşağı satır, ok tuşlarıyla hücre.
 - Puan girişi tek tıkla: 1–10 arası butonlar veya doğrudan rakam tuşu.
 - Not alanı satır içinde genişleyen textarea, zorunlu değil.
-- Devamsızlık seçilince o satırın puan hücreleri otomatik disable + null.
+- Devamsızlık seçilince yalnızca **ders içi performans** hücresi otomatik
+  disable + null olur; **ödev puanı** her durumda girilebilir kalır (devamsız
+  öğrencide de önceki haftanın ödevi değerlendirilebilir — §4).
 - Toplu doldurma kısayolu ("tümünü X yap"), sonra tek tek düzeltme.
 - Otomatik kaydetme + "kaydedildi" göstergesi.
 - **Mobil:** tabloyu yatay kaydırmaya zorlama; dar ekranda öğrenci başına

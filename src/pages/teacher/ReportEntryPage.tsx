@@ -155,9 +155,9 @@ export default function ReportEntryPage() {
       prev.map((e) => {
         if (e.student_id !== studentId) return e;
         const next = { ...e, ...patch };
-        // Devamsız/izinli satırda puanlar null olur (spec §4).
+        // Devamsız/izinli satırda yalnızca ders içi performans puanı null olur
+        // (spec §4); ödev puanı devamsızlıktan bağımsızdır ve korunur.
         if (next.attendance === 'absent' || next.attendance === 'excused') {
-          next.homework_score = null;
           next.interest_score = null;
         }
         return next;
@@ -227,11 +227,17 @@ export default function ReportEntryPage() {
     const score = parseScore(field === 'homework_score' ? bulkHomework : bulkInterest);
     if (score === null) return;
     setEntries((prev) =>
-      prev.map((e) =>
-        e.attendance === 'absent' || e.attendance === 'excused'
-          ? e
-          : { ...e, [field]: score },
-      ),
+      prev.map((e) => {
+        // Ödev puanı devamsızlıktan bağımsızdır → tüm satırlara uygulanır.
+        // Ders içi performans devamsız satırda null kalmalı (spec §4) → atlanır.
+        if (
+          field === 'interest_score' &&
+          (e.attendance === 'absent' || e.attendance === 'excused')
+        ) {
+          return e;
+        }
+        return { ...e, [field]: score };
+      }),
     );
   }
 
@@ -435,7 +441,9 @@ export default function ReportEntryPage() {
           </thead>
           <tbody>
             {entries.map((entry, row) => {
-              const disabled =
+              // Yalnızca ders içi performans devamsızlıkta kapanır; ödev puanı
+              // her durumda girebilir (spec §4).
+              const interestDisabled =
                 entry.attendance === 'absent' || entry.attendance === 'excused';
               return (
                 <tr key={entry.student_id} className="border-b border-border last:border-b-0">
@@ -480,7 +488,6 @@ export default function ReportEntryPage() {
                       type="number"
                       min={1}
                       max={10}
-                      disabled={disabled}
                       value={entry.homework_score ?? ''}
                       onChange={(e) =>
                         updateEntry(entry.student_id, {
@@ -489,7 +496,7 @@ export default function ReportEntryPage() {
                       }
                       onKeyDown={(e) => handleCellKeyDown(e, row, 1)}
                       onFocus={(e) => e.target.select()}
-                      className={inputClass + ' tabular disabled:bg-bg disabled:text-muted'}
+                      className={inputClass + ' tabular'}
                     />
                   </td>
                   <td>
@@ -498,7 +505,7 @@ export default function ReportEntryPage() {
                       type="number"
                       min={1}
                       max={10}
-                      disabled={disabled}
+                      disabled={interestDisabled}
                       value={entry.interest_score ?? ''}
                       onChange={(e) =>
                         updateEntry(entry.student_id, {
@@ -536,7 +543,7 @@ export default function ReportEntryPage() {
           <div className="space-y-3">
             {(() => {
               const entry = entries[Math.min(mobileIndex, entries.length - 1)];
-              const disabled =
+              const interestDisabled =
                 entry.attendance === 'absent' || entry.attendance === 'excused';
               return (
                 <div className="elevation-1 space-y-3 rounded-md border border-border bg-surface p-4">
@@ -578,14 +585,13 @@ export default function ReportEntryPage() {
                         type="number"
                         min={1}
                         max={10}
-                        disabled={disabled}
                         value={entry.homework_score ?? ''}
                         onChange={(e) =>
                           updateEntry(entry.student_id, {
                             homework_score: parseScore(e.target.value),
                           })
                         }
-                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
+                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text"
                       />
                     </Field>
                     <Field label="Ders içi performans puanı" htmlFor="m-int">
@@ -594,7 +600,7 @@ export default function ReportEntryPage() {
                         type="number"
                         min={1}
                         max={10}
-                        disabled={disabled}
+                        disabled={interestDisabled}
                         value={entry.interest_score ?? ''}
                         onChange={(e) =>
                           updateEntry(entry.student_id, {
