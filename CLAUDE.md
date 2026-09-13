@@ -102,7 +102,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
                            password, phone, text, time, token, username, weeks
       /test              → helpers.ts + fixtures/ (örnek jpg/png/pdf/heic)
       *.test.ts          → API entegrasyon testleri (supertest; kaynağa bitişik)
-    /scripts             → audit-admin-routes.ts (envanter doğrulama), backup.ts, reset.ts
+    /scripts             → audit-admin-routes.ts (envanter doğrulama), backup.ts, reset.ts, wipe.ts, cleanup-submissions.ts, seed-admin.ts
     /db                  → app.db (git'e girmez)
     /uploads             → yüklenen dosyalar (git'e girmez)
     /backups             → yedek .zip çıktıları (git'e girmez)
@@ -450,8 +450,10 @@ npm run typecheck     # tsc --noEmit
 npm test              # vitest + supertest — backend testleri
 npm run db:migrate    # bekleyen migration'ları çalıştır
 npm run db:seed       # örnek veri + ilk admin (idempotent)
-npm run db:reset      # db sil + migrate + seed (+ uploads temizliği; NODE_ENV=production'da reddeder)
+npm run db:reset      # db sil + migrate + seed (+ uploads temizliği; NODE_ENV=production'da ALLOW_DB_RESET=1 ister)
+npm run db:wipe       # db sil + migrate, SEED YOK → boş şema (uploads temizliği; üretimde ALLOW_DB_WIPE=1 ister)
 npm run db:backup     # yedek: VACUUM INTO kopyası + uploads → tek .zip (backend/backups/)
+npm run cleanup-submissions  # manuel teslim dosyası temizliği (varsayılan dry-run; --execute önce yedek alır)
 cd ..
 ```
 

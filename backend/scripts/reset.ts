@@ -35,7 +35,13 @@ if (!userPassword) {
   process.exit(1);
 }
 
-const dbPath = path.join(import.meta.dirname, '..', 'db', 'app.db');
+// DB yolu tek kaynaktan (db/index.ts ile aynı kural): önce `DB_PATH`, yoksa
+// geliştirme varsayılanı `backend/db/app.db`. Üretimde render.yaml
+// `DB_PATH=/var/data/app.db` tanımlar; sabit yola bakmak yanlış dosyayı siler
+// (gerçek DB dokunulmadan kalır, seed ise DB_PATH'e yazar) — bu yüzden zorunlu.
+const dbPath = process.env.DB_PATH ?? path.join(import.meta.dirname, '..', 'db', 'app.db');
+
+console.log(`DB yolu:     ${dbPath}`);
 
 // WAL/SHM dosyaları da silinir (açık bağlantı varsa Windows'ta kilitlenebilir).
 for (const suffix of ['', '-wal', '-shm']) {
@@ -48,10 +54,11 @@ for (const suffix of ['', '-wal', '-shm']) {
 console.log('Veritabanı silindi. Migration + seed çalıştırılıyor…');
 
 // DB ile birlikte yerel yüklemeleri de temizle; aksi hâlde yetim dosyalar
-// diskte kalır. Üretimde STORAGE_DRIVER=r2 olduğundan bu adım yalnızca
-// geliştirme/yerel modu ilgilendirir.
+// diskte kalır. `storage.ts` ile aynı kural: önce `UPLOADS_DIR` (render.yaml:
+// /var/data/uploads), yoksa `backend/uploads`.
 const uploadsDir =
   process.env.UPLOADS_DIR ?? path.join(import.meta.dirname, '..', 'uploads');
+console.log(`Uploads yolu: ${uploadsDir}`);
 if (fs.existsSync(uploadsDir)) {
   fs.rmSync(uploadsDir, { recursive: true, force: true });
   console.log('Yüklenen dosyalar silindi (uploads).');

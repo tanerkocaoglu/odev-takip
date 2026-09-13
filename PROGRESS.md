@@ -5,6 +5,57 @@
 
 ---
 
+## `db:wipe` (seed'siz boş DB) + `reset.ts` `DB_PATH` düzeltmesi ✅
+
+### Sorun
+
+1. Render Shell'de yalnızca şeması kurulu, **hiç kaydı olmayan** temiz bir
+   veritabanı oluşturacak komut yoktu (`db:reset` demo seed yükler).
+2. `reset.ts` `DB_PATH`'i okumuyor, sabit `backend/db/app.db` yolunu siliyordu.
+   Üretimde (`DB_PATH=/var/data/app.db`) bu, gerçek DB'yi silmeden yalnızca
+   üzerine idempotent seed çalıştırırdı — "reset" sessizce işe yaramazdı.
+   (`UPLOADS_DIR` zaten okunuyordu.)
+
+### Çözüm
+
+- **`backend/scripts/wipe.ts` (yeni, `npm run db:wipe`):** DB dosyası
+  (`DB_PATH` öncelikli) + WAL/SHM + uploads (`UPLOADS_DIR` öncelikli) silinir,
+  ardından yalnızca `runMigrations()` çalışır; **seed import bile edilmez**.
+  Üretimde yalnızca `ALLOW_DB_WIPE=1` (veya `true`) ile çalışır — mevcut
+  `ALLOW_DB_RESET` deseniyle tutarlı.
+- **`reset.ts` düzeltildi:** `const dbPath = process.env.DB_PATH ?? <varsayılan>`
+  (`db/index.ts`/`storage.ts` ile aynı kural). Ayrıca her iki script de çözülen
+  `DB yolu` / `Uploads yolu`nu loglar; eski `STORAGE_DRIVER=r2` yorumu düzeltildi.
+- `CLAUDE.md` komut listesi + klasör yapısı güncellendi (`db:wipe`,
+  `cleanup-submissions`).
+
+### Doğrulamalar (üretim simülasyonu: `NODE_ENV=production`, `DB_PATH`/`UPLOADS_DIR` geçici dizin)
+
+- **`db:wipe` bayraksız:** `exit 1`, hiçbir dosya silinmedi (sentinel DB +
+  uploads aynen korundu).
+- **`ALLOW_DB_WIPE=1`:** `DB_PATH`'te DB oluştu; `users=0`, `classes=0`,
+  `user_version=9` (yalnızca migration); `UPLOADS_DIR` kaldırıldı.
+- **`db:reset` (gerçek `DB_PATH`):** doğru dosyayı hedefledi (`users=29`,
+  `classes=3` seed), `UPLOADS_DIR` temizlendi ve **gerçek `backend/db/app.db`
+  değişmedi** (boyut + mtime birebir aynı).
+- `typecheck` (backend) + `lint` (kök) ✅.
+
+### Etkilenen dosyalar
+
+```
+backend/scripts/wipe.ts        (yeni)
+backend/scripts/reset.ts       (DB_PATH düzeltmesi + yol logları)
+backend/package.json           (db:wipe script'i)
+CLAUDE.md                      (komut listesi + klasör yapısı)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## `cleanup-submissions` — manuel teslim dosyası temizliği CLI'ı ✅
 
 ### Sorun
