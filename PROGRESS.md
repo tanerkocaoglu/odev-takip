@@ -5,6 +5,65 @@
 
 ---
 
+## `cleanup-submissions` — manuel teslim dosyası temizliği CLI'ı ✅
+
+### Sorun
+
+Deneme/test amaçlı yüklenen ödev teslim dosyaları diskte birikiyor; admin
+panelinde silme özelliği yok. Render Shell'den dosyaları elle silmek ise
+`submission_files` kaydını güncellemediği için "DB'de var, diskte yok" kırık
+referanslar bırakıyor.
+
+### Çözüm — seçici, yedekli, dry-run CLI
+
+`npm run cleanup-submissions --prefix backend` (mevcut `db:backup` CLI deseniyle
+uyumlu; `scripts/` kabuğu + `services/` çekirdeği).
+
+- **Seçim:** en az bir filtre zorunlu — `--before`/`--after` (tarih aralığı),
+  `--student`, `--class` (ad normalize), `--week`, `--homework`, `--key`.
+  Tümü için açık `--all`. Filtresiz çalışma reddedilir.
+- **Dry-run varsayılan:** hiçbir şey yazılmaz/silinmez; dosya sayısı, toplam
+  boyut, disk var/yok dağılımı ve ilk 20 örnek gösterilir. Gerçek silme
+  `--execute` ister.
+- **Güvenlik ağı:** execute'da önce `createBackup()` (tam yedek) alınır; yedek
+  başarısızsa silme başlamaz.
+- **Tutarlılık:** DB silme tek transaction'da; **COMMIT sonrası** disk dosyaları
+  (orijinal + thumbnail) silinir → kırık referans değil, en fazla öksüz dosya
+  kalır. Dosyası kalmayan teslimlere `files_purged_at` yazılır; `submissions` /
+  `homeworks` / `reports` kayıtlarına dokunulmaz (spec §7.2).
+- **spec.md §8 netleştirmesi:** bu aracın **manuel, admin tetikli** bir ara
+  dönem komutu olduğu, 1 yıllık **otomatik** saklama politikasının hâlâ
+  uygulanmadığı (bilinçli, Aşama 6) açıkça yazıldı — "artık otomatik temizlik
+  var" izlenimi verilmedi.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **318/318** (28 dosya; +12 yeni `submissionCleanup`
+  testi), frontend **117/117** (19 dosya) — mevcutlar değişmeden.
+- **Uçtan uca CLI (izole DB + izole uploads, gerçek process):** filtresiz
+  ret (exit 1 + Türkçe uyarı), dry-run (DB + disk + `files_purged_at`
+  değişmez), execute (yedek oluşur; DB satırı + orijinal + thumbnail silinir;
+  `files_purged_at` yazılır; `submissions`/`homeworks`/`reports` korunur) —
+  **17/17 PASS**. Kanıt ortamı + üretilen yedek temizlendi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/submissionCleanup.ts       (yeni)
+backend/scripts/cleanup-submissions.ts          (yeni)
+backend/src/services/submissionCleanup.test.ts  (yeni)
+backend/package.json                            (cleanup-submissions script'i)
+spec.md                                         (§8 manuel bakım notu)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Hafta etiketi (`weeks.label`) — ISO'dan Türkçe `gg.aa - gg.aa.yyyy` ✅
 
 ### Sorun

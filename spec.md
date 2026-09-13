@@ -1045,6 +1045,17 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   bitiminden itibaren 2 yıl, sonra anonimleştirilir.
 - Silme işi Faz 6'da otomatikleştirilir; öncesinde manuel bir bakım komutu
   yeterlidir.
+- **Manuel bakım komutu — `npm run cleanup-submissions --prefix backend`:**
+  Yukarıdaki 1 yıllık **otomatik** temizlik politikası henüz uygulanmamıştır
+  (bilinçli olarak Aşama 6'ya bırakılmıştır); bu komut o politikanın yerine
+  geçmez. Render Shell'den **admin tarafından elle** çalıştırılan ara dönem
+  aracıdır ve yalnızca verilen filtrelere (`--before`/`--after` tarih aralığı,
+  `--student`, `--class`, `--week`, `--homework`, `--key`; tümü için `--all`)
+  uyan dosyaları hedefler. Varsayılan **dry-run**'dır; gerçek silme `--execute`
+  ister ve önce `db:backup` çekirdeğiyle tam yedek alır. Temizlik yalnızca
+  dosya ve `submission_files` kayıtlarını kaldırır; dosyası kalmayan teslimlere
+  `files_purged_at` yazılır. `submissions` / `homeworks` / `reports` kayıtları
+  korunur (bu bölümün ilk maddeleri ve §7.2 geçerlidir).
 
 **Yedek düzeni (`db:backup`)**
 - Yedek, canlı `uploads/` klasörüne **dokunmadan** dosyaları DB ilişkisiyle
