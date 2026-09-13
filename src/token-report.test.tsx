@@ -127,4 +127,15 @@ describe('TokenReportPage', () => {
       expect(screen.getByText('Bir hata oluştu.')).toBeInTheDocument();
     });
   });
+
+  it('altbilgide aydınlatma metni linki vardır (/gizlilik)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(410, { error: { code: 'GONE', message: 'Bu rapor artık geçerli değil.' } }),
+    );
+    renderTokenPage('dead');
+
+    const link = await screen.findByRole('link', { name: 'Gizlilik ve Aydınlatma Metni' });
+    expect(link).toHaveAttribute('href', '/gizlilik');
+  });
 });

@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import TokenReportPage from './pages/TokenReportPage';
+import PrivacyNoticePage from './pages/PrivacyNoticePage';
 import AcademicYearsPage from './pages/admin/AcademicYearsPage';
 import WeeksPage from './pages/admin/WeeksPage';
 import ClassesPage from './pages/admin/ClassesPage';
@@ -110,6 +111,7 @@ export default function App() {
         }
       />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/gizlilik" element={<PrivacyNoticePage />} />
       <Route path="/r/:token" element={<TokenReportPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

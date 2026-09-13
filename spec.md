@@ -1089,7 +1089,9 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   amacı (WhatsApp bildirimi) açık, rızaya bağlı ve süre sınırlıdır. Öğretmen
   ve öğrenci kayıtlarında telefon numarası hiç tutulmaz; giriş `username`
   iledir (§2.1). Bu, veri minimizasyonu ilkesinin doğrudan uygulamasıdır.
-- Aydınlatma metni giriş ekranında ve `/r/{token}` sayfasının altında.
+- Aydınlatma metni giriş ekranında ve `/r/{token}` sayfasının altında
+  bağlantılıdır; ikisi de tek içerik kaynağı olan public `/gizlilik` sayfasına
+  gider (yalnızca bilgilendirme — ayrı onay/rıza akışı kurmaz).
 - Öğrenci notları hassas veri kabul edilir; erişimler `audit_logs`'a yazılır.
 - Saklama süreleri §8'de.
 - Dosya URL'leri kısa ömürlü imzalı; bucket public olmayacak.

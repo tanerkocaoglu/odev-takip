@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import type { DigestSnapshot } from '../types';
 import { publicApi, ApiClientError } from '../services/api';
 import GuardianReportView from '../components/customer/GuardianReportView';
@@ -106,6 +106,17 @@ export default function TokenReportPage() {
 
         {!snapshot && !gone && !error && <LoadingSkeleton />}
       </main>
+
+      {/* spec.md §9: aydınlatma metni rapor sayfasının altında; durumdan
+          bağımsız (snapshot/gone/error) her zaman görünür. */}
+      <footer className="mx-auto w-full max-w-2xl px-4 pb-8 text-center lg:max-w-4xl">
+        <Link
+          to="/gizlilik"
+          className="text-xs font-medium text-accent hover:underline"
+        >
+          Gizlilik ve Aydınlatma Metni
+        </Link>
+      </footer>
     </div>
   );
 }

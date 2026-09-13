@@ -76,6 +76,62 @@ tekrar gündeme alınacak.
 
 ---
 
+## KVKK Aydınlatma Metni — public `/gizlilik` sayfası + iki bağlantı ✅
+
+### Kapsam
+
+Yalnızca **bilgilendirme/şeffaflık** katmanı; çerez/izleme veya ayrı onay akışı
+yok. Veli kaydındaki `consent_at` mekanizması ve DB/API **değişmedi**. spec.md
+§9'daki "giriş ekranında ve `/r/{token}` sayfasının altında" maddesi (hiç
+uygulanmamıştı) hayata geçirildi.
+
+### Yapılanlar
+
+- **`src/pages/PrivacyNoticePage.tsx` (yeni):** public `/gizlilik` sayfası;
+  public raporla aynı görsel dil (`customer-face brand-canvas` + `brand-panel`
+  başlık, tek kolon). Bölümler: işlenen veriler, işleme amaçları ve hukuki
+  dayanak, saklama süresi, haklarınız, sorumlu/iletişim + güncelleme tarihi.
+  Gerçek KVKK metni girildi; yalnızca iletişim alanları (`[KÖŞELİ PARANTEZ]`)
+  kurum tarafından doldurulacak. "Geri" butonu (history yoksa `/login`'e).
+- **Saklama ifadesi bilinçli:** "ilgili eğitim yılı sonunda silinir; bu işlem
+  **otomatik değildir**, yöneticinin **manuel** kararıyla yürütülen bakım
+  işlemidir" — gerçek mekanizma (`db:wipe` / `cleanup-submissions`).
+- **`App.tsx`:** `/gizlilik` public route (ProtectedRoute yok).
+- **`LoginPage`:** form kartının altında küçük link → `/gizlilik` (brand-scope
+  accent + odak halkası).
+- **`TokenReportPage`:** `<main>` altında footer linki; snapshot/gone/error
+  durumlarından bağımsız her zaman görünür.
+- `spec.md §9` route notuyla; `CLAUDE.md` klasör listesi.
+
+### Doğrulamalar
+
+- Yeni `privacy-notice.test.tsx` (4 test): bölüm başlıkları, "otomatik
+  değildir/manuel" + "otomatik silinir" yokluğu, girişsiz `/gizlilik` açılışı,
+  giriş ekranı linki.
+- `token-report.test.tsx` (+1): altbilgi linki `/gizlilik`.
+- `App.test.tsx` regresyonsuz; frontend **126/126** (21 dosya); `typecheck` +
+  `lint` ✅.
+
+### Etkilenen dosyalar
+
+```
+src/pages/PrivacyNoticePage.tsx     (yeni)
+src/privacy-notice.test.tsx         (yeni)
+src/App.tsx
+src/pages/LoginPage.tsx
+src/pages/TokenReportPage.tsx
+src/token-report.test.tsx
+spec.md
+CLAUDE.md
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## UI: favicon + admin sidebar süreç sırası + rapor "son tarih" formatı ✅
 
 ### Yapılanlar

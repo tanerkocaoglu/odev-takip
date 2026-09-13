@@ -14,7 +14,7 @@
  */
 
 import { useState, type FormEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import BrandLogo from '../components/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 import { ApiClientError } from '../services/api';
@@ -154,6 +154,15 @@ export default function LoginPage() {
               </button>
             </form>
           </div>
+
+          <p className="mt-4 text-center">
+            <Link
+              to="/gizlilik"
+              className="text-xs font-medium text-accent hover:underline"
+            >
+              Gizlilik ve Aydınlatma Metni
+            </Link>
+          </p>
         </div>
       </div>
     </div>

@@ -81,6 +81,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
                            TeacherDashboardPage
       ChangePasswordPage.tsx   DashboardPage.tsx   LoginPage.tsx
       TokenReportPage.tsx      (public /r/{token} — düz dosya, klasör değil)
+      PrivacyNoticePage.tsx    (public /gizlilik — aydınlatma metni)
     /services            → api.ts (API istemcisi)
     /utils               → date.ts (gg.aa.yyyy tarih biçimlendirme)
     /test                → setup.ts (vitest kurulumu)
