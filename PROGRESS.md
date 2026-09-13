@@ -86,7 +86,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`9e1a455` — öğretmen ekranları admin görsel diline hizalandı + TeacherShell.
 
 ---
 
