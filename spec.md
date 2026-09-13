@@ -546,8 +546,8 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 2. Bir kaydı açar. Sistem otomatik doldurur:
    - **Verilmiş olan ödev:** `week_no - 1` için aynı `class_course_id`'nin
      raporundaki `homeworks.description`. Bulunamazsa (yılın ilk haftası,
-     geçen hafta rapor girilmemiş vb.) alan **boş ve serbest metin** olarak
-     açılır → `prev_homework_text`.
+     **sınıfın ilk aktif haftası**, geçen hafta rapor girilmemiş vb.) alan
+     **boş ve serbest metin** olarak açılır → `prev_homework_text`.
    - **Öğrenci listesi:** o tarihte sınıfta aktif `enrollments`.
    - **Teslim durumu:** her öğrenci satırında geçen haftanın ödevine
      `submission` var mı rozeti + tıklayınca dosyaları önizleme.
@@ -560,6 +560,18 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
    olmalı. `absent`/`excused` satırlar bu zorunluluktan muaftır; `homework_score`
    artık bu satırlarda da girilebildiğinden, girilmişse korunur ve tamamlamayı
    engellemez (§4).
+
+   **İlk aktif hafta istisnası:** Bir sınıfın gördüğü **ilk aktif haftada**
+   (`weeks.id` = o sınıfa ait en erken `enrollments.start_date`'in düştüğü
+   hafta) devredilen bir önceki ödev bağı yoktur; bu haftada `present`/`late`
+   öğrenciler için **puan zorunluluğu kalkar** — öğretmen puanları boş
+   bırakarak da tamamlayabilir (isterse yine girer). Üst alanlar (`topic_covered`,
+   `homework_description`) ve teslim tarihi bu haftada da **zorunlu kalır**.
+   Kural, sınıfın kendi enrollment'ına göre **hafta kimliği** üzerinden
+   eşleştirilir; mutlak `week_no` sırası bir kullanıcı hatasıyla geriye sarılsa
+   bile yanlış haftaya kaymaz. Diğer tüm haftalarda (ara bir haftada önceki ödev
+   eksik olsa bile) katı kural aynen geçerlidir; ilk aktif hafta bulunamazsa da
+   (ör. enrollment kaydı yok) katı kural uygulanır.
 
 > **Devamsızlık varsayılanı:** `POST /teacher/reports` ile oluşturulan yeni
 > `report_entries` satırları **`absent` ("Gelmedi")** başlar. Böylece öğretmen

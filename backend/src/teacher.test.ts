@@ -188,6 +188,19 @@ beforeAll(async () => {
   insertStudentRec.run('t-stu-rec-5', 't-stu-5');
   insertEnrollment.run('t-enr-5', 't-stu-rec-5', 't-class-last', '2026-08-10', null);
 
+  // --- İlk aktif hafta istisnası (spec §5.1): enrollment'ı hafta 1'in
+  // içinde (2026-07-27) başlayan sınıf. İlk haftada puan zorunluluğu kalkar,
+  // ödev ön-doldurma bastırılır; ara haftada (hafta 2) katı kural sürer. ---
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES (?, ?, ?, ?, NULL)`,
+  ).run('t-class-first', 't-year', 'İlk Hafta Sınıfı', 'ilk hafta sinifi');
+  insertCourse.run('t-course-first', 'İlk Ders', 'ilk ders');
+  insertCc.run('t-cc-first', 't-class-first', 't-course-first', 'test-teacher', 6, '16:00');
+  insertStudent.run('t-stu-first', 'Öğrenci t-stu-first', 'ogrenci t-stu-first', 'ogrenci-t-first', now);
+  insertStudentRec.run('t-stu-rec-first', 't-stu-first');
+  insertEnrollment.run('t-enr-first', 't-stu-rec-first', 't-class-first', WEEK1.start, null);
+
   adminToken = await login('admin@test.local');
   teacherToken = await login('teacher@test.local');
 });
@@ -823,5 +836,85 @@ describe('Yılın son haftası (spec §5.2 sınır durumu)', () => {
       .set('Authorization', `Bearer ${teacherToken}`);
     expect(done.status).toBe(200);
     expect(done.body.report.status).toBe('completed');
+  });
+});
+
+describe('İlk aktif hafta (spec §5.1) — puan zorunluluğu istisnası', () => {
+  it('sınıfın ilk haftasında tümü present + puanlar boşken tamamlanır; ödev ön-doldurma yapılmaz', async () => {
+    // WEEK1, t-class-first'in ilk aktif haftasıdır (enrollment 2026-07-27).
+    const created = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-first', week_id: WEEK1.id });
+    expect(created.status).toBe(201);
+
+    // İlk aktif hafta: önceki haftadan devredilen ödev bağlanmaz — boş serbest metin.
+    expect(created.body.report.prev_homework_text).toBeNull();
+
+    const reportId = created.body.report.id as string;
+    const studentIds = (created.body.entries as Array<{ student_id: string }>).map(
+      (e) => e.student_id,
+    );
+    expect(studentIds.length).toBeGreaterThan(0);
+
+    // Üst alanlar dolu; tüm öğrenciler 'present', puanlar boş.
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        topic_covered: 'İlk konu',
+        homework_description: 'İlk ödev',
+        entries: studentIds.map((sid) => ({
+          student_id: sid,
+          attendance: 'present',
+          homework_score: null,
+          interest_score: null,
+          teacher_note: null,
+        })),
+      });
+
+    const done = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(done.status).toBe(200);
+    expect(done.body.report.status).toBe('completed');
+  });
+
+  it('aynı sınıfın ara haftasında (hafta 2) aynı durum 400 verir; ödev ön-doldurma geri gelir', async () => {
+    const created = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-first', week_id: WEEK2.id });
+    expect(created.status).toBe(201);
+
+    // İlk hafta geride kaldı: hafta 1'in ödevi artık otomatik bağlanır.
+    expect(created.body.report.prev_homework_text).toBe('İlk ödev');
+
+    const reportId = created.body.report.id as string;
+    const studentIds = (created.body.entries as Array<{ student_id: string }>).map(
+      (e) => e.student_id,
+    );
+
+    await request(app)
+      .put(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        topic_covered: 'İkinci konu',
+        homework_description: 'İkinci ödev',
+        entries: studentIds.map((sid) => ({
+          student_id: sid,
+          attendance: 'present',
+          homework_score: null,
+          interest_score: null,
+          teacher_note: null,
+        })),
+      });
+
+    const missing = await request(app)
+      .post(`/api/v1/teacher/reports/${reportId}/complete`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(missing.status).toBe(400);
+    expect(missing.body.error.code).toBe('VALIDATION_ERROR');
+    expect(missing.body.error.fields[studentIds[0]]).toBeDefined();
   });
 });

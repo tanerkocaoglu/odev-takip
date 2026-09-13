@@ -5,6 +5,78 @@
 
 ---
 
+## Rapor tamamlama — "sınıfın ilk aktif haftası" istisnası ✅
+
+### Sorun
+
+Bir sınıfın gördüğü ilk haftada devredilen bir önceki ödev bağı yoktur; ama
+tamamlama doğrulaması `present`/`late` öğrenciler için iki puanı da zorunlu
+tutuyordu. Sonuç: grup yeni başladığında (ya da önceki dönemden devam edip yeni
+bir enrollment ile 1. haftadan yeniden başladığında) öğretmen, değerlendirecek
+ödev olmadığı halde puan girmeye zorlanıyordu.
+
+### Karar (kullanıcı onaylı)
+
+- Raporun haftası, o sınıfın **ilk aktif haftası** ise (`weeks.id` = sınıfa ait
+  en erken `enrollments.start_date`'in düştüğü hafta) `present`/`late`
+  öğrencilerde **puan zorunluluğu kalkar**.
+- Eşleştirme **hafta kimliği (id)** üzerinden — mutlak `week_no` sarmasına /
+  yeniden numaralamaya karşı sağlam.
+- **Üst alanlar (`topic_covered`, `homework_description`) ve `due_date` zorunlu
+  kalır**; yalnızca puan zorunluluğu kalkar.
+- "Verilmiş olan ödev" ön-doldurması da ilk aktif haftada **bastırılır**; alan
+  boş serbest metin açılır (yılın ilk haftası davranışıyla aynı).
+- `firstActiveWeekIdForClass` null dönerse (enrollment yok / hafta kaydı yok)
+  katı kural aynen sürer.
+- **Şema/migration yok** — yalnızca uygulama katmanı doğrulaması.
+
+### Veri teşhisi (yerel `backend/db/app.db`, salt-okunur)
+
+- Tek aktif yıl `2026-2027`, 21 hafta, `week_no` 1→21; `start_date` her iki
+  yönde de monoton — **sarma/yeniden numaralama yok**.
+- Aynı yıl içinde `UNIQUE(academic_year_id, week_no)` hafta 53'ten sonra aynı
+  yıla week_no=1 eklenmesini zaten engelliyor; bu yüzden ek doğrulamaya gerek
+  görülmedi (id tabanlı eşleştirme yine de savunma sağlar).
+
+### Uygulama
+
+- `services/digests.ts`: yeni `firstActiveWeekIdForClass(classId)`; mevcut
+  `firstActiveWeekNoForClass` artık onun üzerinden türetiliyor (davranış aynı).
+- `routes/teacher.ts`:
+  - `loadOwnedReport` SELECT'ine `cc.class_id` eklendi.
+  - `POST /reports/:id/complete`: `isFirstActiveWeek` ise puan kontrolü atlanır.
+  - `POST /reports` (get-or-create): `isFirstActiveWeek` ise `prev_homework_id`
+    otomatik bağlanmaz.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **337/337** (30 dosya; +2 `teacher` entegrasyon testi:
+  ilk hafta istisnası + ara hafta katı kural ve ön-doldurma geri dönüşü),
+  frontend **129/129** (22 dosya) — değişmedi.
+- **Canlı kanıt (izole `VACUUM INTO` kopyası + gerçek HTTP sunucusu): 8/8 PASS.**
+  `A Şubesi` (ilk aktif hafta = 1) ile: hafta 1 raporu → ön-doldurma **null**;
+  tümü `present` + puanlar boş → **200 completed** (4 satır). Hafta 6 (ara hafta)
+  aynı durum → **400 VALIDATION_ERROR**; puanlar dolunca → **200**.
+- Gerçek `backend/db/app.db` **değişmedi** (376 832 bayt, mtime `22:25:51`);
+  sunucu/temp kanıt ortamı temizlendi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/digests.ts        (+firstActiveWeekIdForClass)
+backend/src/routes/teacher.ts          (complete istisnası + get-or-create bastırma)
+backend/src/teacher.test.ts            (+2 entegrasyon testi)
+spec.md                                (§5.1 ilk aktif hafta istisnası)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Devamsız öğrencide `homework_score` — migration #10 ile CHECK ayrıştırma ✅
 
 ### Sorun

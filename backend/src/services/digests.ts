@@ -100,13 +100,15 @@ export function classIdForStudentAtWeek(studentId: string, week: WeekRecord): st
 }
 
 /**
- * Bir sınıfın "ilk aktif haftası" (gösterim etiketi — spec §6 Veli):
- * o sınıfa ait EN ERKEN `enrollments.start_date`'in düştüğü haftanın
- * `week_no`'su. Rapor durumuna dayanmaz — rapor doldurulmamış bir hafta,
- * hafta etiketini kaydırmaz. Bulunamazsa (ör. kayıtsız hafta) null döner;
- * çağıran, relative etikette mutlak week_no'ya düşer.
+ * Bir sınıfın "ilk aktif haftası"nın **kimliği**: o sınıfa ait EN ERKEN
+ * `enrollments.start_date`'in düştüğü `weeks` satırının `id`'si. Rapor
+ * durumuna dayanmaz — rapor doldurulmamış bir hafta, ilk haftayı kaydırmaz.
+ * Bulunamazsa (ör. kayıtsız hafta) null döner.
+ *
+ * Kimlik (id) döndürmesi bilinçlidir: `week_no` mutlak sırası bir kullanıcı
+ * hatasıyla geriye sarılsa bile eşleştirme yanlış haftaya kaymaz.
  */
-export function firstActiveWeekNoForClass(classId: string): number | null {
+export function firstActiveWeekIdForClass(classId: string): string | null {
   const minStart = db
     .prepare(`SELECT MIN(e.start_date) AS start FROM enrollments e WHERE e.class_id = ?`)
     .get(classId) as { start: string | null } | undefined;
@@ -114,11 +116,27 @@ export function firstActiveWeekNoForClass(classId: string): number | null {
 
   const week = db
     .prepare(
-      `SELECT w.week_no FROM weeks w
+      `SELECT w.id FROM weeks w
        WHERE w.start_date <= ? AND w.end_date >= ?
        ORDER BY w.start_date ASC LIMIT 1`,
     )
-    .get(minStart.start, minStart.start) as { week_no: number } | undefined;
+    .get(minStart.start, minStart.start) as { id: string } | undefined;
+  return week?.id ?? null;
+}
+
+/**
+ * Bir sınıfın "ilk aktif haftası"nın `week_no`'su (gösterim etiketi —
+ * spec §6 Veli). Kimlik tabanlı hesabın üzerine kurulur; rapor durumuna
+ * dayanmaz. Bulunamazsa null döner; çağıran, relative etikette mutlak
+ * week_no'ya düşer.
+ */
+export function firstActiveWeekNoForClass(classId: string): number | null {
+  const weekId = firstActiveWeekIdForClass(classId);
+  if (!weekId) return null;
+
+  const week = db
+    .prepare(`SELECT week_no FROM weeks WHERE id = ?`)
+    .get(weekId) as { week_no: number } | undefined;
   return week?.week_no ?? null;
 }
 

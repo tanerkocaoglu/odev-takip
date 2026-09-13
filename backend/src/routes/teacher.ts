@@ -20,7 +20,11 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
-import { ensurePendingDigests, maybeReadyDigests } from '../services/digests.js';
+import {
+  ensurePendingDigests,
+  firstActiveWeekIdForClass,
+  maybeReadyDigests,
+} from '../services/digests.js';
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { normalizeTurkish } from '../utils/text.js';
@@ -385,16 +389,24 @@ router.post('/reports', (req, res) => {
   const dueDate = calculateDueDate(week, cc.day_of_week, allWeeks);
 
   // Verilmiş olan ödev: bir önceki ders haftasının aynı atamadaki ödevi
-  // (spec §5.1). Bulunamazsa boş serbest metin açılır (prev_homework_text).
-  const previousWeek = getPreviousWeek(allWeeks, week);
+  // (spec §5.1). **Sınıfın ilk aktif haftasında** otomatik bağlama yapılmaz:
+  // o haftada devredilen bir ödev yoktur, alan boş serbest metin açılır
+  // (`prev_homework_text`) — yılın ilk haftası davranışıyla aynı. Bulunamazsa
+  // da boş açılır. Eşleştirme hafta kimliği (id) üzerindendir; mutlak week_no
+  // sarmasından etkilenmez.
+  const firstActiveWeekId = firstActiveWeekIdForClass(cc.class_id);
+  const isFirstActiveWeek = firstActiveWeekId !== null && firstActiveWeekId === week.id;
   let prevHomeworkId: string | null = null;
-  if (previousWeek) {
-    const prevHomework = db
-      .prepare(
-        `SELECT id FROM homeworks WHERE class_course_id = ? AND week_id = ?`,
-      )
-      .get(cc.id, previousWeek.id) as { id: string } | undefined;
-    prevHomeworkId = prevHomework?.id ?? null;
+  if (!isFirstActiveWeek) {
+    const previousWeek = getPreviousWeek(allWeeks, week);
+    if (previousWeek) {
+      const prevHomework = db
+        .prepare(
+          `SELECT id FROM homeworks WHERE class_course_id = ? AND week_id = ?`,
+        )
+        .get(cc.id, previousWeek.id) as { id: string } | undefined;
+      prevHomeworkId = prevHomework?.id ?? null;
+    }
   }
 
   // Rapor + satırlar + draft homeworks tek transaction'da (DatabaseSync
@@ -453,6 +465,7 @@ router.post('/reports', (req, res) => {
 interface OwnedReportRow {
   id: string;
   class_course_id: string;
+  class_id: string;
   week_id: string;
   topic_covered: string | null;
   prev_homework_id: string | null;
@@ -469,7 +482,7 @@ interface OwnedReportRow {
 function loadOwnedReport(user: AuthUser, reportId: string): OwnedReportRow {
   const report = db
     .prepare(
-      `SELECT r.id, r.class_course_id, r.week_id, r.topic_covered,
+      `SELECT r.id, r.class_course_id, cc.class_id, r.week_id, r.topic_covered,
               r.prev_homework_id, r.prev_homework_text, r.status, r.completed_at,
               cc.teacher_id
        FROM reports r
@@ -677,6 +690,16 @@ router.post('/reports/:id/complete', (req, res) => {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }
 
+  // "Sınıfın ilk aktif haftası" istisnası (spec §5.1): bir sınıfın gördüğü ilk
+  // haftada devredilen bir önceki ödev bağı yoktur; bu yüzden `present`/`late`
+  // öğrencilerde puan zorunluluğu **kalkar** (öğretmen isterse yine girer).
+  // Eşleştirme hafta kimliği (id) üzerindendir — mutlak week_no sarmasına karşı
+  // sağlamdır. `firstActiveWeekId` null ise (sınıfın enrollment'ı yok) katı
+  // kural aynen sürer.
+  const firstActiveWeekId = firstActiveWeekIdForClass(report.class_id);
+  const isFirstActiveWeek =
+    firstActiveWeekId !== null && firstActiveWeekId === report.week_id;
+
   // Yılın son haftası: homeworks satırı (due_date) yoksa tamamlanamaz (spec §5.2).
   const homework = db
     .prepare(`SELECT due_date, description FROM homeworks WHERE report_id = ?`)
@@ -709,7 +732,8 @@ router.post('/reports/:id/complete', (req, res) => {
     );
   }
 
-  // Devamsız olmayan her öğrenci için iki puan da dolu olmalı (spec §5.1).
+  // Devamsız olmayan her öğrenci için iki puan da dolu olmalı (spec §5.1) —
+  // ancak sınıfın ilk aktif haftasında bu zorunluluk uygulanmaz.
   const entries = db
     .prepare(
       `SELECT student_id, attendance, homework_score, interest_score
@@ -722,12 +746,14 @@ router.post('/reports/:id/complete', (req, res) => {
     interest_score: number | null;
   }>;
   const missing: Record<string, string> = {};
-  for (const entry of entries) {
-    if (
-      (entry.attendance === 'present' || entry.attendance === 'late') &&
-      (entry.homework_score === null || entry.interest_score === null)
-    ) {
-      missing[entry.student_id] = 'Ödev ve ders içi performans puanı girilmeli.';
+  if (!isFirstActiveWeek) {
+    for (const entry of entries) {
+      if (
+        (entry.attendance === 'present' || entry.attendance === 'late') &&
+        (entry.homework_score === null || entry.interest_score === null)
+      ) {
+        missing[entry.student_id] = 'Ödev ve ders içi performans puanı girilmeli.';
+      }
     }
   }
   if (Object.keys(missing).length > 0) {
