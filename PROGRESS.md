@@ -128,7 +128,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`fc50e89` — KVKK aydınlatma metni (`/gizlilik` + giriş/rapor linkleri).
 
 ---
 
