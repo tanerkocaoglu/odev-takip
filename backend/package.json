@@ -17,7 +17,8 @@
     "db:backup": "tsx scripts/backup.ts",
     "cleanup-submissions": "tsx scripts/cleanup-submissions.ts",
     "digest-backfill": "tsx scripts/backfill-digests.ts",
-    "diagnose-digest": "tsx scripts/diagnose-digest.ts"
+    "diagnose-digest": "tsx scripts/diagnose-digest.ts",
+    "fix-enrollment-dates": "tsx scripts/fix-enrollment-dates.ts"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
