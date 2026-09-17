@@ -198,4 +198,13 @@ describe('storage driver çözümleme (fail-fast)', () => {
   it('bilinmeyen sürücüyü reddeder', () => {
     expect(() => resolveStorageDriver({ STORAGE_DRIVER: 's3' })).toThrow(/Bilinmeyen STORAGE_DRIVER/);
   });
+
+  it('geçersiz R2_ENDPOINT\'i açık hata ile reddeder (kriptik "Invalid URL" yerine)', () => {
+    expect(() =>
+      r2ConfigFromEnv({ ...R2_ENV, R2_ENDPOINT: 'acc.r2.cloudflarestorage.com' }),
+    ).toThrow(/geçerli bir URL/);
+    expect(() =>
+      r2ConfigFromEnv({ ...R2_ENV, R2_ENDPOINT: 'https://<acc>.r2.cloudflarestorage.com' }),
+    ).toThrow(/geçerli bir URL/);
+  });
 });

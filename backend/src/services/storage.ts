@@ -83,6 +83,19 @@ export function r2ConfigFromEnv(env: NodeJS.ProcessEnv = process.env): R2Config 
       `STORAGE_DRIVER=r2 için eksik ortam değişkenleri: ${missing.join(', ')}`,
     );
   }
+  // S3 SDK'nın kriptik "Invalid URL" hatası yerine açık doğrulama.
+  let parsedEndpoint: URL;
+  try {
+    parsedEndpoint = new URL(endpoint!);
+  } catch {
+    throw new Error(
+      `R2_ENDPOINT geçerli bir URL olmalı (örn. https://<ACCOUNT_ID>.r2.cloudflarestorage.com). ` +
+        `Şu an: "${endpoint}"`,
+    );
+  }
+  if (parsedEndpoint.protocol !== 'http:' && parsedEndpoint.protocol !== 'https:') {
+    throw new Error(`R2_ENDPOINT http(s) ile başlamalı. Şu an: "${endpoint}"`);
+  }
   return {
     endpoint: endpoint!,
     bucket: bucket!,
