@@ -296,15 +296,26 @@ npm run digest-backfill -- --class FİBONACCİ --week 2026-09-12 --execute
   2026-09-07, enrollment başı 2026-09-14 olan velili öğrenci raporda **vardı**,
   digest'te **yoktu** (tek neden `start_date` uyumsuzluğu).
 
-### ⚠️ Teknik borç (açık)
+### ⚠️ Teknik borç durumu
 
-**A4 — öğrenci ödev ekranı enrollment tarih filtresi kullanmıyor.**
-`routes/student.ts` (`GET /student/homeworks` ve ödev erişim doğrulaması)
-`enrollments` join'inde `start_date`/`end_date` tarih filtresi uygulamıyor
-(satır ~82 ve ~126). Yani A ile rapor ekranında düzeltilen aynı sınıftan hata,
-öğrenci tarafında hâlâ açık olabilir: henüz başlamamış (veya bitmiş) bir
-kaydın ödevleri öğrenciye görünebilir. Ayrı ve kalıcı bir düzeltme gerektirir;
-bu iş kapsamına **bilinçli olarak alınmadı**, unutulmasın diye burada kayıtlı.
+**A4 — öğrenci ödev ekranı enrollment tarih filtresi kullanmıyor.** ❌ **Kapalı / hatalı kayıt** — kod değişikliği gerekmedi.
+
+Bu kayıt olgusal olarak yanlıştı. `routes/student.ts`'teki her iki enrollment
+sorgusu — `loadOwnHomework` (ödev erişim doğrulaması) ve `HOMEWORK_SQL`
+(`GET /student/homeworks` listesi) — **dosyanın ilk commit'inden beri**
+(`9b0cf0a`, Aşama 4) hem `e.start_date <= w.start_date` hem de
+`(e.end_date IS NULL OR e.end_date >= w.start_date)` şartını uygular. Kayıtta
+"filtre uygulamıyor" denilen satırlar (bugün ~83 ve ~127) zaten filtreliydi.
+
+A-sınıfı tek gerçek sızma rapor giriş listesindeydi ve `b2f459d` ile kapatıldı
+(bu bölümün üst kısmı). Dosya erişimi (`routes/files.ts`) enrollment join'i
+kullanmaz; `submission_files → submissions → students` sahiplik zinciriyle
+yetki verir, bu yüzden orada tarih filtresi gerekmez.
+
+**Doğrulama (2026-09-17, `deneme\PROJECT`):** `git log -S
+"e.start_date <= w.start_date" -- backend/src/routes/student.ts` → `9b0cf0a`;
+HEAD'de `student.ts:83-85` ve `student.ts:127-129` iki şartlı;
+`teacher.ts:430-437` (`b2f459d` düzeltmesi) yerinde.
 
 ### Etkilenen dosyalar
 
