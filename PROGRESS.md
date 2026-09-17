@@ -56,19 +56,22 @@ AWS SDK kurulu değildi. R2 modu **%0 kod, %100 tasarımdı**.
   mevcut dosya `GET → 200` (302 değil) + `nosniff` + `image/jpeg`; öğrenci
   yüklemesi `storage='local'` + diskte + `GET → 200`. Gerçek `app.db`
   değişmedi (v9, mtime `22:25:51`).
-- **R2 canlı kanıt:** `npm run r2-smoke` (gerçek R2_* env ister; izole DB)
-  zinciri: `saveUpload` → R2 yazımı; `GET /files/:key` → **302** → imzalı URL
-  **200**; `/thumb` → 302; `DeleteObject` sonrası URL erişilemez. **Çalıştırma
-  gerçek kimlik bilgisi gerektirdiğinden bu ortamda çalıştırılmadı; runbook
-  aşağıda.**
+- **R2 canlı kanıt (gerçek Cloudflare R2 + gerçek kimlik bilgileri): `npm run r2-smoke` 11/11 PASS.**
+  İzole DB üzerinde: `saveUpload` → R2'ye yazdı (`storage=r2`, thumbnail
+  üretildi); imzalı URL doğrudan **200** ve doğru nesne (278/278 bayt);
+  `GET /files/:key` → **302** + imzalı R2 URL'i + `nosniff`; `/thumb` → **302**;
+  `DeleteObject` sonrası imzalı URL **404**.
+  (Kimlik bilgileri yalnızca kullanıcının kendi kabuğunda set edildi; bu
+  ortama/sohbete hiç girmedi.)
 
-**R2 runbook (gerçek kimlik bilgileriyle):**
+**R2 çalıştırma (gerçek kimlik bilgileriyle):**
 ```
 cd backend
 STORAGE_DRIVER=r2 R2_ENDPOINT=... R2_BUCKET=... R2_ACCESS_KEY_ID=... \
   R2_SECRET_ACCESS_KEY=... npm run r2-smoke
 ```
-(§12 `submission_files` notu: yalnızca yeni yüklemeler R2'ye gider.)
+(PowerShell: `$env:VAR = "..."` ile set edip `npm run r2-smoke`. §12 `submission_files`
+notu: yalnızca yeni yüklemeler R2'ye gider.)
 
 ### Etkilenen dosyalar
 
@@ -90,7 +93,8 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`a8b1f5a` — R2 depolama sürücüsü + `submission_files.storage` (migration #12).
+`c26749d` — `R2_ENDPOINT` için açık URL doğrulaması.
 
 ---
 
