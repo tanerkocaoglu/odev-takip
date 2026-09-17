@@ -5,6 +5,95 @@
 
 ---
 
+## R2 (Cloudflare) depolama sürücüsü — `STORAGE_DRIVER` gerçekten çalışıyor ✅
+
+### Keşif sonucu (öncesi)
+
+`STORAGE_DRIVER` yalnızca doküman/env/`render.yaml`'da geçiyordu; **hiçbir kod
+okumuyordu**. `storage.ts` yalnızca yerel disk, `files.ts` yalnızca `res.sendFile`,
+AWS SDK kurulu değildi. R2 modu **%0 kod, %100 tasarımdı**.
+
+### Kararlar (kullanıcı onaylı)
+
+1. **`submission_files.storage` (migration #12, `local|r2`)** — nesnenin nerede
+   olduğu satırda saklanır; okuma yolu çalışma anında yeniden türetmez (aynı
+   ilke: `weekly_digests.class_id`). Mevcut satırlar `DEFAULT 'local'`.
+2. **İmzalı URL 5 dk + `302`** (proxy/stream değil).
+3. **Mevcut dosyalar taşınmaz**; yalnızca yeni yüklemeler `STORAGE_DRIVER`'a gider.
+   `db:backup`/`cleanup-submissions`/`wipe`/`reset` bu turda R2'yi **kapsamaz**
+   (ayrı iş) — disk dosyalarıyla çalışmaya devam eder.
+
+### Migration #12 güvenlik disiplini
+
+- `submission_files`'e `storage TEXT NOT NULL DEFAULT 'local' CHECK (...)`.
+  Basit `ADD COLUMN` (tablo yeniden kurulmaz); transaction/rollback runner'da;
+  yedek `db:migrate` CLI'ında.
+- Rewind testi (12↔11): `storage` düşürülür → eski satır eklenir → migrate →
+  satır `local` alır, CHECK geçersiz değeri reddeder, FK temiz. Diğer rewind
+  helper'ları (#7/#9/#10/#11) #12'yi de geri alacak şekilde güncellendi.
+
+### Uygulama
+
+- `services/storage.ts`: `StorageDriver` + `resolveStorageDriver()` (bilinmeyen
+  değer / eksik `R2_*` → **açılışta fail-fast**); `putObject`, `deleteStored`,
+  `presignedGetUrl` (300 sn); `saveUpload` sürücüye yazar ve `storage` döner.
+  AWS SDK **tembel** yüklenir (local modda SDK yüklenmez).
+- `routes/files.ts`: `submission_files.storage` → `local` ise `res.sendFile`,
+  `r2` ise imzalı URL'e `302` (yetki kontrolü aynen).
+- `routes/student.ts`: `submission_files`'a `storage` yazılır; yükleme geri alma
+  `deleteStored` (sürücü-bilinçli).
+- `render.yaml`: `R2_ENDPOINT/R2_BUCKET/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY`
+  `sync: false`; `.env.example` belgelendi.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **361/361** (33 dosya; +8: storage driver fail-fast 4,
+  `files` R2 302 3, migration #12 1), frontend **129/129**.
+- **Migration (gerçek `app.db` kopyası):** v9 → `db:migrate` → **v12**;
+  **9 `submission_files` satırının tamamı `storage='local'`**.
+- **Local mod canlı kanıt (izole kopya + gerçek sunucu + HTTP): 10/10 PASS** —
+  mevcut dosya `GET → 200` (302 değil) + `nosniff` + `image/jpeg`; öğrenci
+  yüklemesi `storage='local'` + diskte + `GET → 200`. Gerçek `app.db`
+  değişmedi (v9, mtime `22:25:51`).
+- **R2 canlı kanıt:** `npm run r2-smoke` (gerçek R2_* env ister; izole DB)
+  zinciri: `saveUpload` → R2 yazımı; `GET /files/:key` → **302** → imzalı URL
+  **200**; `/thumb` → 302; `DeleteObject` sonrası URL erişilemez. **Çalıştırma
+  gerçek kimlik bilgisi gerektirdiğinden bu ortamda çalıştırılmadı; runbook
+  aşağıda.**
+
+**R2 runbook (gerçek kimlik bilgileriyle):**
+```
+cd backend
+STORAGE_DRIVER=r2 R2_ENDPOINT=... R2_BUCKET=... R2_ACCESS_KEY_ID=... \
+  R2_SECRET_ACCESS_KEY=... npm run r2-smoke
+```
+(§12 `submission_files` notu: yalnızca yeni yüklemeler R2'ye gider.)
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts                  (migration #12)
+backend/src/db/migration-backfill.test.ts     (#12 rewind + storage rebuild helper; sürüm 12)
+backend/src/services/storage.ts               (sürücü ayrımı + R2 + presign)
+backend/src/routes/files.ts                   (storage'a göre sendFile | 302)
+backend/src/routes/student.ts                 (storage yaz + sürücü-bilinçli geri alma)
+backend/src/storage.test.ts                   (+driver fail-fast; storage='local')
+backend/src/files-r2.test.ts                  (yeni; R2 302 + thumb)
+backend/scripts/r2-smoke.ts                   (yeni; gerçek R2 duman testi)
+backend/package.json                          (+@aws-sdk/client-s3, +s3-request-presigner, +r2-smoke)
+backend/.env.example   render.yaml
+spec.md                                       (§3.2 DDL, §8, §9)
+CLAUDE.md
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## `weekly_digests.class_id` (migration #11) — önizleme/gönderim artık sınıfı yeniden türetmiyor ✅
 
 ### Sorun

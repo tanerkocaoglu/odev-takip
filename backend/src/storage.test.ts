@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import { saveUpload, localPathFor, type StoredFile } from './services/storage.js';
+import { saveUpload, localPathFor, resolveStorageDriver, r2ConfigFromEnv, type StoredFile } from './services/storage.js';
 import { AppError } from './errors.js';
 
 const PDF_BUFFER = Buffer.from('%PDF-1.4 test icerik');
@@ -55,6 +55,7 @@ describe('saveUpload', () => {
     );
     expect(stored.ext).toBe('jpg');
     expect(stored.mime).toBe('image/jpeg');
+    expect(stored.storage).toBe('local'); // varsayılan sürücü
     expect(stored.key).toMatch(/^[0-9]+-[a-f0-9]{16}\.jpg$/);
     expect(fs.existsSync(localPathFor(stored.key))).toBe(true);
     // Orijinalden daha küçük ya da işlenmiş JPEG.
@@ -166,5 +167,35 @@ describe('localPathFor', () => {
     for (const bad of ['../secret.jpg', '..\\secret.jpg', 'foo', 'a-b.jpg', '123-x.jpg', '123-abcdef.jpg']) {
       expect(() => localPathFor(bad)).toThrowError(AppError);
     }
+  });
+});
+
+describe('storage driver çözümleme (fail-fast)', () => {
+  const R2_ENV = {
+    STORAGE_DRIVER: 'r2',
+    R2_ENDPOINT: 'https://acc.r2.cloudflarestorage.com',
+    R2_BUCKET: 'dershane',
+    R2_ACCESS_KEY_ID: 'ak',
+    R2_SECRET_ACCESS_KEY: 'sk',
+  };
+
+  it('varsayılan local', () => {
+    expect(resolveStorageDriver({})).toBe('local');
+  });
+
+  it('r2 için eksik env varsa açıklayıcı hata fırlatır', () => {
+    expect(() => resolveStorageDriver({ STORAGE_DRIVER: 'r2' })).toThrow(
+      /R2_ENDPOINT.*R2_BUCKET.*R2_ACCESS_KEY_ID.*R2_SECRET_ACCESS_KEY/s,
+    );
+  });
+
+  it('r2 tam yapılandırıldığında kabul eder; region varsayılan auto', () => {
+    expect(resolveStorageDriver(R2_ENV)).toBe('r2');
+    expect(r2ConfigFromEnv(R2_ENV).region).toBe('auto');
+    expect(r2ConfigFromEnv({ ...R2_ENV, R2_REGION: 'weur' }).region).toBe('weur');
+  });
+
+  it('bilinmeyen sürücüyü reddeder', () => {
+    expect(() => resolveStorageDriver({ STORAGE_DRIVER: 's3' })).toThrow(/Bilinmeyen STORAGE_DRIVER/);
   });
 });

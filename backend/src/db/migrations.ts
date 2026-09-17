@@ -671,6 +671,25 @@ registerMigration(11, 'digest_class_id', () => {
   db.exec(`CREATE INDEX idx_digests_class_week ON weekly_digests(class_id, week_id)`);
 });
 
+/**
+ * Migration #12 — `submission_files.storage` (`local` | `r2`).
+ *
+ * Nesnenin hangi sürücüde olduğunu satırda saklar; okuma yolu
+ * (`GET /api/v1/files/:key`) çalışma anında yeniden türetmez. `STORAGE_DRIVER`
+ * yalnızca **yeni yüklemelerin** yazılacağı yeri belirler; mevcut satırlar
+ * `DEFAULT 'local'` alır (geçiş öncesi tüm dosyalar diskteydi).
+ *
+ * Basit `ADD COLUMN`; tablo yeniden kurulmaz, `foreignKeysOff` gerekmez.
+ * Transaction + hata→ROLLBACK garantisi runner'dadır; yedek `db:migrate`
+ * CLI'ında alınır (proje kuralı).
+ */
+registerMigration(12, 'submission_file_storage', () => {
+  db.exec(
+    `ALTER TABLE submission_files ADD COLUMN storage TEXT NOT NULL DEFAULT 'local'
+       CHECK (storage IN ('local','r2'))`,
+  );
+});
+
 /** Bilinen en yüksek migration sürümü (CLI'ın bekleyen iş olup olmadığını anlaması için). */
 export function latestMigrationVersion(): number {
   return migrations.reduce((max, m) => (m.version > max ? m.version : max), 0);

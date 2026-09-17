@@ -131,10 +131,10 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4..#11 (submission_files, username_login, schools_grade_view,
+    // #3 backfill + #4..#12 (submission_files, username_login, schools_grade_view,
     // must_change_password, submission_file_thumb, not_null_password_phone,
-    // entry_score_check, digest_class_id) koşar.
-    expect(version.user_version).toBe(11);
+    // entry_score_check, digest_class_id, submission_file_storage) koşar.
+    expect(version.user_version).toBe(12);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -162,6 +162,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     db.exec(`ALTER TABLE submission_files DROP COLUMN thumb_key`);
     db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
     rebuildDigestsWithoutClassId();
+    rebuildSubmissionFilesWithoutStorage();
     db.exec(`PRAGMA user_version = 6`);
 
     const before = db
@@ -189,7 +190,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     const after = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(after.user_version).toBe(11);
+    expect(after.user_version).toBe(12);
 
     const row = db
       .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
@@ -266,6 +267,7 @@ function revertNotnullToV8(): void {
     if (wasOn) db.exec('PRAGMA foreign_keys = ON');
   }
   rebuildDigestsWithoutClassId();
+  rebuildSubmissionFilesWithoutStorage();
   db.exec('PRAGMA user_version = 8');
 }
 
@@ -315,7 +317,7 @@ describe('migration #9 — password_hash / whatsapp_phone NOT NULL rewind (9↔8
 
     runMigrations();
 
-    expect(userVersion()).toBe(11);
+    expect(userVersion()).toBe(12);
     expect(columnInfo('users', 'password_hash').notnull).toBe(1);
     expect(columnInfo('guardians', 'whatsapp_phone').notnull).toBe(1);
     expect(db.prepare(`SELECT password_hash FROM users WHERE id = 'm9-student'`).get()).toEqual({
@@ -453,6 +455,7 @@ function revertEntryCheckToV9(withCheck = true): void {
     if (wasOn) db.exec('PRAGMA foreign_keys = ON');
   }
   rebuildDigestsWithoutClassId();
+  rebuildSubmissionFilesWithoutStorage();
   db.exec('PRAGMA user_version = 9');
 }
 
@@ -508,7 +511,7 @@ describe('migration #10 — report_entries puan CHECK rewind (10↔9)', () => {
 
     expect(userVersion()).toBe(9);
     runMigrations();
-    expect(userVersion()).toBe(11);
+    expect(userVersion()).toBe(12);
 
     // Veri korundu.
     expect(
@@ -614,7 +617,55 @@ function rebuildDigestsWithoutClassId(): void {
 /** Şemayı #11 öncesine geri sarar (class_id yok, sürüm 10). */
 function revertDigestClassIdToV10(): void {
   rebuildDigestsWithoutClassId();
+  rebuildSubmissionFilesWithoutStorage();
   db.exec('PRAGMA user_version = 10');
+}
+
+/**
+ * `submission_files`'ten `storage` kolonunu (#12) düşürür; diğer kolonları ve
+ * veriyi korur. `thumb_key` var/yok durumuna göre DDL kurulur. `user_version`'a
+ * dokunmaz. `storage` yoksa no-op. (DROP COLUMN CHECK kısıtına takıldığı için
+ * tablo yeniden kurulur.)
+ */
+function rebuildSubmissionFilesWithoutStorage(): void {
+  const cols = (
+    db.prepare(`PRAGMA table_info('submission_files')`).all() as Array<{ name: string }>
+  ).map((c) => c.name);
+  if (!cols.includes('storage')) return;
+
+  const keep = cols.filter((c) => c !== 'storage');
+  const ddl = [
+    'id            TEXT PRIMARY KEY',
+    'submission_id TEXT NOT NULL REFERENCES submissions(id)',
+    'key           TEXT NOT NULL',
+    'filename      TEXT NOT NULL',
+    'size          INTEGER NOT NULL',
+    'mime          TEXT NOT NULL',
+    'ext           TEXT NOT NULL',
+    ...(cols.includes('thumb_key') ? ['thumb_key     TEXT'] : []),
+    'UNIQUE (key)',
+  ].join(',\n        ');
+
+  const fk = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number };
+  const wasOn = fk.foreign_keys === 1;
+  if (wasOn) db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    db.exec(`CREATE TABLE submission_files_old (\n        ${ddl}\n      ) STRICT;`);
+    db.exec(
+      `INSERT INTO submission_files_old (${keep.join(', ')})
+       SELECT ${keep.join(', ')} FROM submission_files`,
+    );
+    db.exec(`DROP TABLE submission_files`);
+    db.exec(`ALTER TABLE submission_files_old RENAME TO submission_files`);
+    db.exec(`CREATE INDEX idx_submission_files_sub ON submission_files(submission_id)`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    if (wasOn) db.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 /** #11 testi için: yıl → hafta → sınıf, normal + "geç başlayan" iki öğrenci. */
@@ -680,7 +731,7 @@ describe('migration #11 — weekly_digests.class_id backfill + rewind (11↔10)'
 
     expect(userVersion()).toBe(10);
     runMigrations();
-    expect(userVersion()).toBe(11);
+    expect(userVersion()).toBe(12);
 
     const normal = db
       .prepare(`SELECT class_id, token, status FROM weekly_digests WHERE id = 'm11-digest-1'`)
@@ -696,6 +747,88 @@ describe('migration #11 — weekly_digests.class_id backfill + rewind (11↔10)'
     expect(late.class_id).toBeNull();
 
     // FK bütünlüğü korunur.
+    expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
+  });
+});
+
+// ===========================================================================
+// Migration #12 — `submission_files.storage` backfill + rewind (12↔11)
+// ===========================================================================
+
+/** #12 testi için en küçük teslim zinciri (…→ rapor → ödev → teslim → dosya). */
+function insertM12Fixture(): void {
+  const now = '2026-09-13T10:00:00.000Z';
+  db.prepare(
+    `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+     VALUES ('m12-year', '2026-2027', '2026-09-01', '2027-06-30', 1)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+     VALUES ('m12-week', 'm12-year', 1, '2026-09-07', '2026-09-13', '07.09 - 13.09.2026')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES ('m12-class', 'm12-year', 'M12 Sınıf', 'm12 sinif', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO courses (id, name, name_normalized, deleted_at)
+     VALUES ('m12-course', 'M12 Ders', 'm12 ders', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO class_courses (id, class_id, course_id, teacher_id, day_of_week, lesson_time, deleted_at)
+     VALUES ('m12-cc', 'm12-class', 'm12-course', 'test-teacher', 1, '09:00', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO reports (id, class_course_id, week_id, topic_covered, status, completed_at, created_by, updated_at)
+     VALUES ('m12-report', 'm12-cc', 'm12-week', 'Konu', 'completed', ?, 'test-teacher', ?)`,
+  ).run(now, now);
+  db.prepare(
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES ('m12-hw', 'm12-report', 'm12-cc', 'm12-week', 'Ödev', '2026-09-14')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO submissions (id, homework_id, student_id, note, submitted_at, is_late, status)
+     VALUES ('m12-sub', 'm12-hw', 'test-student-rec', NULL, ?, 0, 'submitted')`,
+  ).run(now);
+  db.prepare(
+    `INSERT INTO submission_files (id, submission_id, key, filename, size, mime, ext, thumb_key)
+     VALUES ('m12-sf', 'm12-sub', '1234-aaaaaaaaaaaaaaaa.jpg', 'odev.jpg', 1234, 'image/jpeg', 'jpg', NULL)`,
+  ).run();
+}
+
+describe('migration #12 — submission_files.storage backfill + rewind (12↔11)', () => {
+  afterEach(() => {
+    if (userVersion() < 12) runMigrations();
+  });
+
+  it('v11 şemasından koşunca mevcut satırlara storage=local uygular; CHECK korur', () => {
+    resetDb();
+    insertTestUsers();
+    insertM12Fixture();
+
+    // v11'e geri sar: storage kolonu yok, veri kalır.
+    rebuildSubmissionFilesWithoutStorage();
+    db.exec('PRAGMA user_version = 11');
+    expect(userVersion()).toBe(11);
+    const colsBefore = (
+      db.prepare(`PRAGMA table_info('submission_files')`).all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(colsBefore).not.toContain('storage');
+
+    runMigrations();
+    expect(userVersion()).toBe(12);
+
+    const row = db
+      .prepare(`SELECT key, storage FROM submission_files WHERE id = 'm12-sf'`)
+      .get() as { key: string; storage: string };
+    expect(row.storage).toBe('local'); // DEFAULT eski satırlara uygulandı
+    expect(row.key).toBe('1234-aaaaaaaaaaaaaaaa.jpg');
+
+    // CHECK: geçersiz sürücü değeri reddedilir.
+    expect(() =>
+      db.prepare(`UPDATE submission_files SET storage = 'x' WHERE id = 'm12-sf'`).run(),
+    ).toThrow();
+
     expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
   });
 });

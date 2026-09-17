@@ -458,6 +458,7 @@ npm run db:wipe       # db sil + migrate, SEED YOK → boş şema (uploads temiz
 npm run db:backup     # yedek: VACUUM INTO kopyası + uploads → tek .zip (backend/backups/)
 npm run cleanup-submissions  # manuel teslim dosyası temizliği (varsayılan dry-run; --execute önce yedek alır)
 npm run digest-backfill -- --class <ad> [--week <no|YYYY-MM-DD>] [--execute]  # tek seferlik digest telafisi (dry-run; --execute önce yedek)
+npm run r2-smoke      # R2 uçtan uca duman testi (STORAGE_DRIVER=r2 + gerçek R2_* env ister; izole DB kullanır)
 cd ..
 ```
 

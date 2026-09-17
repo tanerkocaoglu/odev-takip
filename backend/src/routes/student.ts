@@ -18,13 +18,12 @@
 
 import { Router, type RequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { upload, MAX_FILES } from '../middleware/upload.js';
-import { saveUpload, localPathFor, type StoredFile } from '../services/storage.js';
+import { saveUpload, deleteStored, type StoredFile } from '../services/storage.js';
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { isLateSubmission } from '../utils/time.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -55,13 +54,15 @@ const requireStudent: RequestHandler = (req, _res, next) => {
   }
 };
 
-/** Diskten dosya kaldırır — en iyi çaba; yoksa yutulur. */
-async function removeFilesFromDisk(files: Array<{ key: string }>): Promise<void> {
+/** Saklanan dosyaları sürücüsünden kaldırır — en iyi çaba; yoksa yutulur. */
+async function removeStoredFiles(
+  files: Array<{ key: string; storage: StoredFile['storage'] }>,
+): Promise<void> {
   for (const f of files) {
     try {
-      await fs.unlink(localPathFor(f.key));
+      await deleteStored(f.storage, f.key);
     } catch {
-      // Dosya zaten yoksa umursama.
+      // Dosya zaten yoksa/erişilemezse umursama (geri alma yolu).
     }
   }
 }
@@ -226,7 +227,7 @@ router.post(
         stored.push(await saveUpload(file));
       }
     } catch (err) {
-      await removeFilesFromDisk(stored);
+      await removeStoredFiles(stored);
       throw err;
     }
 
@@ -268,16 +269,27 @@ router.post(
       }
 
       const insertFile = db.prepare(
-        `INSERT INTO submission_files (id, submission_id, key, filename, size, mime, ext, thumb_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO submission_files
+           (id, submission_id, key, filename, size, mime, ext, thumb_key, storage)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const sf of stored) {
-        insertFile.run(randomUUID(), subId, sf.key, sf.filename, sf.size, sf.mime, sf.ext, sf.thumbKey);
+        insertFile.run(
+          randomUUID(),
+          subId,
+          sf.key,
+          sf.filename,
+          sf.size,
+          sf.mime,
+          sf.ext,
+          sf.thumbKey,
+          sf.storage,
+        );
       }
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
-      await removeFilesFromDisk(stored);
+      await removeStoredFiles(stored);
       throw err;
     }
 

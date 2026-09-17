@@ -35,6 +35,16 @@ services:
         sync: false
       - key: STORAGE_DRIVER
         value: local
+      # R2 (Cloudflare) sırları — yalnızca STORAGE_DRIVER=r2 iken kullanılır.
+      # Değerler Dashboard'dan girilir (sync: false). R2_REGION varsayılan 'auto'.
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
       # Kalıcı disk yolları — ikisi de tek mount (/var/data) altında.
       - key: DB_PATH
         value: /var/data/app.db

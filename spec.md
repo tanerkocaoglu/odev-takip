@@ -441,7 +441,7 @@ CREATE INDEX idx_submissions_student ON submissions(student_id);
 > Yüklenen dosyaların meta bilgisi (`key`, `filename`, `size`, `mime`) `submissions`
 > üzerinde JSON olarak tutulmaz; **`submission_files` tek doğru kaynaktır** (migration #4).
 
-**`submission_files`** — teslim dosyaları (migration #4; Aşama 4 — `thumb_key` migration #8)
+**`submission_files`** — teslim dosyaları (migration #4; `thumb_key` #8; `storage` #12)
 ```sql
 CREATE TABLE submission_files (
   id            TEXT PRIMARY KEY,
@@ -452,6 +452,8 @@ CREATE TABLE submission_files (
   mime          TEXT NOT NULL,
   ext           TEXT NOT NULL,   -- key uzantısı (jpg, pdf, ...)
   thumb_key     TEXT,            -- görsel thumbnail anahtarı; PDF'te NULL (#8)
+  storage       TEXT NOT NULL DEFAULT 'local'
+                  CHECK (storage IN ('local','r2')),  -- #12: nesnenin bulunduğu sürücü
   UNIQUE (key)
 ) STRICT;
 
@@ -466,6 +468,12 @@ CREATE INDEX idx_submission_files_sub ON submission_files(submission_id);
 > yalnızca görüntüleme amaçlı metadır, dosya erişimi `key` üzerindendir.
 > `thumb_key` görsellerde ~300px JPEG thumbnail'a işaret eder (grid için);
 > `NULL` ise dosya rotası orijinali servis eder.
+>
+> **`storage` (migration #12):** nesnenin bulunduğu sürücü. Yazma anında
+> `STORAGE_DRIVER`'a göre belirlenir ve **satırda saklanır**; okuma yolu
+> (`GET /api/v1/files/:key`) çalışma anında yeniden türetmez (aynı ilke:
+> `weekly_digests.class_id`). Mevcut satırlar `DEFAULT 'local'` alır — geçiş
+> öncesi tüm dosyalar diskte olduğu için doğrudur.
 
 ### 3.3 Bildirim ve denetim
 
@@ -1112,20 +1120,29 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 - Geliştirmede yerel disk yeterli. **Üretimde Cloudflare R2 kullanılır**;
   50 GB VPS diskinde biriktirilmez.
 - Storage işlemleri `backend/src/services/storage.ts` modülünde toplanır
-  (multer memory → heic-convert (gerekiyorsa) → sharp → diske yaz). R2'ye
-  geçiş Aşama 6'da bu modülün içi değiştirilerek yapılır.
-  Modül: dosya yolu/key üretimi ve meta bilgisi (key, filename, size, mime).
+  (multer memory → heic-convert (gerekiyorsa) → sharp → sürücüye yaz). İki
+  sürücü vardır: **`local`** (yerel disk, geliştirme) ve **`r2`** (Cloudflare
+  R2, S3-uyumlu API). Sürücü `STORAGE_DRIVER` env'i ile seçilir; çağıran kod
+  sürücüyü bilmez. Modül: dosya yolu/key üretimi ve meta bilgisi (key, filename,
+  size, mime, storage).
   Görsellerde ayrıca **~300px kare JPEG thumbnail** üretilir (`thumbKey`);
   grid bu küçük nesneyi yükler, tam görsel yalnızca lightbox'ta açılır.
   Thumbnail deposu orijinalin yanında ikinci bir nesnedir; hacmi ihmal
   edilebilir (küçültülmüş görselin ~%5'i). PDF'lerde thumbnail yoktur.
+  > **Kapsam sınırı (bu tur):** yalnızca **yeni yüklemeler** `STORAGE_DRIVER`'ın
+  > gösterdiği sürücüye gider. Mevcut dosyalar taşınmaz; `submission_files.storage`
+  > alanı hangi nesnenin nerede olduğunu söyler. `db:backup`,
+  > `cleanup-submissions`, `wipe`/`reset` gibi **bakım script'leri bu turda
+  > R2'yi kapsamaz** (ayrı iş) — mevcut disk dosyalarıyla çalışmaya devam eder.
 - **Dosya erişimi** (Aşama 4'ten itibaren): `express.static` kullanılmaz.
   `GET /api/v1/files/:key` rotası `auth` middleware'i + yetki kontrolü içerir
   (öğrenci: kendi teslimi; öğretmen: kendi ödevinin teslimi; veli: çocuğununki;
-  admin: hepsi). Yerel modda `res.sendFile()`, R2 modunda imzalı URL'ye 302.
-  `GET /api/v1/files/:key/thumb` aynı yetkiyle thumbnail'ı servis eder;
-  `thumb_key` boşsa orijinale düşer.
-- Bucket public değildir.
+  admin: hepsi). Rota, `submission_files.storage`'a bakar: `local` ise
+  `res.sendFile()`, `r2` ise **5 dakika ömürlü imzalı GET URL'ine `302`**
+  yönlendirir (proxy/stream değil). `GET /api/v1/files/:key/thumb` aynı yetkiyle
+  thumbnail'ı servis eder; `thumb_key` boşsa orijinale düşer.
+- Bucket public değildir; erişim yalnızca yetki kontrolünden geçen kısa ömürlü
+  imzalı URL ile olur.
 
 **Saklama politikası**
 - Ödev teslim **dosyaları**: 1 yıl sonra silinir, `files_purged_at` işaretlenir.
@@ -1183,7 +1200,7 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   gider (yalnızca bilgilendirme — ayrı onay/rıza akışı kurmaz).
 - Öğrenci notları hassas veri kabul edilir; erişimler `audit_logs`'a yazılır.
 - Saklama süreleri §8'de.
-- Dosya URL'leri kısa ömürlü imzalı; bucket public olmayacak.
+- Dosya URL'leri kısa ömürlü imzalıdır (5 dk); bucket public olmayacak.
 
 ---
 

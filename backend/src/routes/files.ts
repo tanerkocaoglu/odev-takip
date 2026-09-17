@@ -19,7 +19,12 @@ import fs from 'node:fs';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
-import { localPathFor } from '../services/storage.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import {
+  localPathFor,
+  presignedGetUrl,
+  type StorageDriver,
+} from '../services/storage.js';
 import type { AuthUser } from '../types.js';
 
 const router = Router();
@@ -36,6 +41,7 @@ interface FileRow {
   key: string;
   thumb_key: string | null;
   mime: string;
+  storage: StorageDriver;
   student_id: string;
   files_purged_at: string | null;
   teacher_id: string;
@@ -46,7 +52,7 @@ interface FileRow {
 function loadFileRow(key: string): FileRow | undefined {
   return db
     .prepare(
-      `SELECT sf.key, sf.thumb_key, sf.mime,
+      `SELECT sf.key, sf.thumb_key, sf.mime, sf.storage,
               s.student_id, s.files_purged_at,
               cc.teacher_id,
               st.guardian_id
@@ -77,7 +83,21 @@ function assertAccess(user: AuthUser, row: FileRow): void {
   }
 }
 
-function sendStored(res: ExpressResponse, key: string): void {
+/**
+ * Nesneyi sürücüsüne göre servis eder: `local` → `res.sendFile()`,
+ * `r2` → 5 dk ömürlü imzalı GET URL'ine `302` (proxy/stream değil — spec §8).
+ */
+async function sendStored(
+  res: ExpressResponse,
+  storage: StorageDriver,
+  key: string,
+  mime: string,
+): Promise<void> {
+  if (storage === 'r2') {
+    const url = await presignedGetUrl(key, mime);
+    res.redirect(302, url);
+    return;
+  }
   const filePath = localPathFor(key);
   if (!fs.existsSync(filePath)) {
     throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
@@ -85,35 +105,41 @@ function sendStored(res: ExpressResponse, key: string): void {
   res.sendFile(filePath);
 }
 
-router.get('/:key', (req, res) => {
-  const user = req.user!;
-  const row = loadFileRow(req.params.key);
-  if (!row) {
-    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
-  }
-  assertAccess(user, row);
+router.get(
+  '/:key',
+  asyncHandler<{ key: string }>(async (req, res) => {
+    const user = req.user!;
+    const row = loadFileRow(req.params.key);
+    if (!row) {
+      throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
+    }
+    assertAccess(user, row);
 
-  if (row.files_purged_at) {
-    throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
-  }
+    if (row.files_purged_at) {
+      throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+    }
 
-  sendStored(res, row.key);
-});
+    await sendStored(res, row.storage, row.key, row.mime);
+  }),
+);
 
-router.get('/:key/thumb', (req, res) => {
-  const user = req.user!;
-  const row = loadFileRow(req.params.key);
-  if (!row) {
-    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
-  }
-  assertAccess(user, row);
+router.get(
+  '/:key/thumb',
+  asyncHandler<{ key: string }>(async (req, res) => {
+    const user = req.user!;
+    const row = loadFileRow(req.params.key);
+    if (!row) {
+      throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
+    }
+    assertAccess(user, row);
 
-  if (row.files_purged_at) {
-    throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
-  }
+    if (row.files_purged_at) {
+      throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+    }
 
-  // Eski kayıtta thumbnail yoksa orijinali servis et (yine de doğru yetki).
-  sendStored(res, row.thumb_key ?? row.key);
-});
+    // Eski kayıtta thumbnail yoksa orijinali servis et (yine de doğru yetki).
+    await sendStored(res, row.storage, row.thumb_key ?? row.key, row.mime);
+  }),
+);
 
 export default router;
