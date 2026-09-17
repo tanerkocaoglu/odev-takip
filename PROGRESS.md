@@ -74,7 +74,8 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`4739d66` — bakım araçları R2 farkındalığı (backup akış + cleanup DeleteObject;
+wipe R2'ye dokunmaz).
 
 ---
 
