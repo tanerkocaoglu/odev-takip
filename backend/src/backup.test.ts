@@ -8,10 +8,11 @@
  * Yalnızca servisi test eder; CLI spawn'ı (POST /admin/backup) canlı doğrulamada.
  */
 
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import AdmZip from 'adm-zip';
@@ -22,6 +23,7 @@ import {
   sanitizeSegment,
   sanitizeFilename,
 } from './services/backup.js';
+import { setR2ClientForTesting } from './services/storage.js';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dershane-backup-test-'));
 
@@ -54,7 +56,7 @@ function openFixture(dbPath: string): DatabaseSync {
     'CREATE TABLE submissions (id TEXT PRIMARY KEY, homework_id TEXT NOT NULL, student_id TEXT NOT NULL) STRICT',
   );
   db.exec(
-    'CREATE TABLE submission_files (id TEXT PRIMARY KEY, submission_id TEXT NOT NULL, key TEXT NOT NULL, filename TEXT NOT NULL, thumb_key TEXT) STRICT',
+    "CREATE TABLE submission_files (id TEXT PRIMARY KEY, submission_id TEXT NOT NULL, key TEXT NOT NULL, filename TEXT NOT NULL, thumb_key TEXT, size INTEGER NOT NULL DEFAULT 0, storage TEXT NOT NULL DEFAULT 'local') STRICT",
   );
   return db;
 }
@@ -113,7 +115,7 @@ describe('isim temizleme yardımcıları', () => {
 });
 
 describe('createBackup — yapılandırılmış hiyerarşi', () => {
-  it('dosyayı öğrenci/ders/hafta hiyerarşisine koyar; thumbnail _depo\'ya gider', () => {
+  it('dosyayı öğrenci/ders/hafta hiyerarşisine koyar; thumbnail _depo\'ya gider', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, '1111-aaaaaaaaaaaaaaaa.jpg', 'ORIJINAL');
     writeUpload(uploadsDir, '2222-bbbbbbbbbbbbbbbb.jpg', 'THUMB');
@@ -127,12 +129,12 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w19')`);
     db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
     db.exec(
-      `INSERT INTO submission_files VALUES
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key) VALUES
          ('f1','s1','1111-aaaaaaaaaaaaaaaa.jpg','odev_cozumu.jpg','2222-bbbbbbbbbbbbbbbb.jpg')`,
     );
     db.close();
 
-    const zipPath = createBackup({ dbPath, uploadsDir, outDir });
+    const zipPath = await createBackup({ dbPath, uploadsDir, outDir });
     const entries = zipEntries(zipPath);
 
     expect(entries).toContain('veritabani/app.db');
@@ -151,7 +153,7 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     );
   });
 
-  it('aynı klasörde ad çakışırsa _2 eki verir (sessiz üzerine yazma yok)', () => {
+  it('aynı klasörde ad çakışırsa _2 eki verir (sessiz üzerine yazma yok)', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, 'aaaa-0000000000000001.jpg', 'BIR');
     writeUpload(uploadsDir, 'bbbb-0000000000000002.jpg', 'IKI');
@@ -165,18 +167,18 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w5')`);
     db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
     db.exec(
-      `INSERT INTO submission_files VALUES
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key) VALUES
          ('f1','s1','aaaa-0000000000000001.jpg','IMG_001.jpg',NULL),
          ('f2','s1','bbbb-0000000000000002.jpg','IMG_001.jpg',NULL)`,
     );
     db.close();
 
-    const entries = zipEntries(createBackup({ dbPath, uploadsDir, outDir }));
+    const entries = zipEntries(await createBackup({ dbPath, uploadsDir, outDir }));
     expect(entries).toContain('Ornek_Kisi_1_ornekkisi11/Fizik/Hafta_5/IMG_001.jpg');
     expect(entries).toContain('Ornek_Kisi_1_ornekkisi11/Fizik/Hafta_5/IMG_001_2.jpg');
   });
 
-  it('Türkçe karakterli ad/ders/dosya adını güvenli biçime çevirir', () => {
+  it('Türkçe karakterli ad/ders/dosya adını güvenli biçime çevirir', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, 'cccc-0000000000000003.pdf', 'PDF');
 
@@ -189,16 +191,16 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w3')`);
     db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
     db.exec(
-      `INSERT INTO submission_files VALUES
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key) VALUES
          ('f1','s1','cccc-0000000000000003.pdf','çözüm ödevi.pdf',NULL)`,
     );
     db.close();
 
-    const entries = zipEntries(createBackup({ dbPath, uploadsDir, outDir }));
+    const entries = zipEntries(await createBackup({ dbPath, uploadsDir, outDir }));
     expect(entries).toContain('Sukru_Ornek_sukruornek1/Cografya/Hafta_3/cozum_odevi.pdf');
   });
 
-  it('öğrenci sınıf değiştirmişse homework\'in tarihsel class_course dersini kullanır', () => {
+  it('öğrenci sınıf değiştirmişse homework\'in tarihsel class_course dersini kullanır', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, 'dddd-0000000000000004.jpg', 'ESKI');
 
@@ -219,17 +221,17 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc-old','w19')`);
     db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
     db.exec(
-      `INSERT INTO submission_files VALUES
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key) VALUES
          ('f1','s1','dddd-0000000000000004.jpg','eski_odev.jpg',NULL)`,
     );
     db.close();
 
-    const entries = zipEntries(createBackup({ dbPath, uploadsDir, outDir }));
+    const entries = zipEntries(await createBackup({ dbPath, uploadsDir, outDir }));
     expect(entries).toContain('Deniz_Demir_denizdemir1/Matematik/Hafta_19/eski_odev.jpg');
     expect(entries.some((e) => e.includes('/Fizik/'))).toBe(false);
   });
 
-  it('teslim edilmeyen ödev için klasör/dosya oluşmaz', () => {
+  it('teslim edilmeyen ödev için klasör/dosya oluşmaz', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, 'eeee-0000000000000005.jpg', 'TESLIM');
 
@@ -243,28 +245,28 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w7')`);
     db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
     db.exec(
-      `INSERT INTO submission_files VALUES
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key) VALUES
          ('f1','s1','eeee-0000000000000005.jpg','kimya.jpg',NULL)`,
     );
     db.close();
 
-    const entries = zipEntries(createBackup({ dbPath, uploadsDir, outDir }));
+    const entries = zipEntries(await createBackup({ dbPath, uploadsDir, outDir }));
     expect(entries).toContain('Teslim_Eden_teslimeden1/Kimya/Hafta_7/kimya.jpg');
     expect(entries.some((e) => e.startsWith('Teslim_Etmetmeyen'))).toBe(false);
   });
 
-  it('DB\'de karşılığı olmayan (sahipsiz) dosyayı _depo\'ya koyar', () => {
+  it('DB\'de karşılığı olmayan (sahipsiz) dosyayı _depo\'ya koyar', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, 'ffff-0000000000000006.jpg', 'YETIM');
 
     const db = openFixture(dbPath);
     db.close();
 
-    const entries = zipEntries(createBackup({ dbPath, uploadsDir, outDir }));
+    const entries = zipEntries(await createBackup({ dbPath, uploadsDir, outDir }));
     expect(entries).toContain('_depo/ffff-0000000000000006.jpg');
   });
 
-  it('canlı uploads klasörünü değiştirmez (hash öncesi/sonrası eşit)', () => {
+  it('canlı uploads klasörünü değiştirmez (hash öncesi/sonrası eşit)', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     writeUpload(uploadsDir, 'abcd-1111111111111111.jpg', 'BIR');
     writeUpload(uploadsDir, 'abcd-2222222222222222.pdf', 'IKI');
@@ -278,46 +280,46 @@ describe('createBackup — yapılandırılmış hiyerarşi', () => {
     db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w1')`);
     db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
     db.exec(
-      `INSERT INTO submission_files VALUES
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key) VALUES
          ('f1','s1','abcd-1111111111111111.jpg','a.jpg',NULL),
          ('f2','s1','abcd-2222222222222222.pdf','b.pdf',NULL)`,
     );
     db.close();
 
     const before = hashDir(uploadsDir);
-    createBackup({ dbPath, uploadsDir, outDir });
+    await createBackup({ dbPath, uploadsDir, outDir });
     const after = hashDir(uploadsDir);
 
     expect(after).toEqual(before);
     expect(Object.keys(after)).toHaveLength(2);
   });
 
-  it('uploads klasörü yoksa yalnızca veritabanı zip\'lenir', () => {
+  it('uploads klasörü yoksa yalnızca veritabanı zip\'lenir', async () => {
     const { dbPath, outDir } = freshCase();
     const emptyOut = path.join(outDir, 'empty');
     const missingUploads = path.join(tmpRoot, `yok-${seq}`);
     const db = openFixture(dbPath);
     db.close();
 
-    const names = zipEntries(createBackup({ dbPath, uploadsDir: missingUploads, outDir: emptyOut }));
+    const names = zipEntries(await createBackup({ dbPath, uploadsDir: missingUploads, outDir: emptyOut }));
     expect(names).toContain('veritabani/app.db');
     expect(names).toHaveLength(1);
   });
 
-  it('başarılı ve hatalı çalıştırmada geçici klasör bırakmaz', () => {
+  it('başarılı ve hatalı çalıştırmada geçici klasör bırakmaz', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     const db = openFixture(dbPath);
     db.close();
 
     const before = tempBackupDirs().length;
-    createBackup({ dbPath, uploadsDir, outDir });
+    await createBackup({ dbPath, uploadsDir, outDir });
     expect(tempBackupDirs().length).toBe(before);
 
     // Hata yolu: DB yolu bir klasör → DatabaseSync açamaz, finally temizler.
     const dirAsDb = path.join(tmpRoot, `dir-db-${seq}`);
     fs.mkdirSync(dirAsDb);
     const errorOut = path.join(tmpRoot, `error-out-${seq}`);
-    expect(() => createBackup({ dbPath: dirAsDb, uploadsDir, outDir: errorOut })).toThrow();
+    await expect(createBackup({ dbPath: dirAsDb, uploadsDir, outDir: errorOut })).rejects.toThrow();
     expect(tempBackupDirs().length).toBe(before);
     expect(fs.existsSync(errorOut) ? fs.readdirSync(errorOut) : []).toHaveLength(0);
   });
@@ -352,7 +354,7 @@ describe('pruneBackups', () => {
 });
 
 describe('createBackup — yaşlandırma (keep)', () => {
-  it('en yeni N yedeği tutar; eski yedekler silinir', () => {
+  it('en yeni N yedeği tutar; eski yedekler silinir', async () => {
     const { dbPath, uploadsDir, outDir } = freshCase();
     const db = openFixture(dbPath);
     db.close();
@@ -364,12 +366,97 @@ describe('createBackup — yaşlandırma (keep)', () => {
     ];
     for (const n of old) fs.writeFileSync(path.join(outDir, n), 'x');
 
-    createBackup({ dbPath, uploadsDir, outDir, keep: 2 });
+    await createBackup({ dbPath, uploadsDir, outDir, keep: 2 });
 
     const zips = fs.readdirSync(outDir).filter((n) => n.endsWith('.zip')).sort();
     expect(zips).toHaveLength(2);
     // En yeni eski yedek korunur, en eskiler silinir; yeni üretilen de yerinde.
     expect(zips).toContain(old[2]);
     expect(zips.some((n) => !old.includes(n))).toBe(true);
+  });
+});
+
+describe('createBackup — karışık local/r2', () => {
+  const ENV_KEYS = [
+    'R2_ENDPOINT',
+    'R2_BUCKET',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
+  ] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeAll(() => {
+    for (const k of ENV_KEYS) saved[k] = process.env[k];
+    process.env.R2_ENDPOINT = 'https://acc.r2.cloudflarestorage.com';
+    process.env.R2_BUCKET = 'test';
+    process.env.R2_ACCESS_KEY_ID = 'test';
+    process.env.R2_SECRET_ACCESS_KEY = 'test';
+  });
+  afterAll(() => {
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    setR2ClientForTesting(null);
+  });
+
+  it('r2 nesnesini akışla indirip hiyerarşiye koyar; yerele dokunmaz', async () => {
+    const { dbPath, uploadsDir, outDir } = freshCase();
+    const localKey = 'aaaa-1111111111111111.jpg';
+    const remoteKey = 'bbbb-2222222222222222.jpg';
+    writeUpload(uploadsDir, localKey, 'YEREL-ICERIK');
+
+    // Sahte R2: `Body` bir Readable döner. `transformToByteArray` YOK —
+    // dolayısıyla başarılı olması, indirmenin akışla yapıldığını kanıtlar.
+    const remoteBytes = Buffer.from('R2-ICERIK-'.repeat(2000));
+    setR2ClientForTesting({
+      send: async () => ({ Body: Readable.from(remoteBytes) }),
+    });
+
+    const db = openFixture(dbPath);
+    db.exec(`INSERT INTO users VALUES ('u1','Ornek Kisi 8','ornekkisi81')`);
+    db.exec(`INSERT INTO students VALUES ('st1','u1')`);
+    db.exec(`INSERT INTO courses VALUES ('c1','Matematik')`);
+    db.exec(`INSERT INTO weeks VALUES ('w19',19)`);
+    db.exec(`INSERT INTO class_courses VALUES ('cc1','classA','c1')`);
+    db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w19')`);
+    db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
+    db.exec(
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key, size, storage) VALUES
+         ('f1','s1','${localKey}','yerel.jpg',NULL,13,'local'),
+         ('f2','s1','${remoteKey}','uzak.jpg',NULL,${remoteBytes.length},'r2')`,
+    );
+    db.close();
+
+    const zipPath = await createBackup({ dbPath, uploadsDir, outDir });
+    const zip = new AdmZip(zipPath);
+    const base = 'Ornek_Kisi_8_ornekkisi81/Matematik/Hafta_19';
+    expect(zipEntries(zipPath)).toContain(`${base}/yerel.jpg`);
+    expect(zipEntries(zipPath)).toContain(`${base}/uzak.jpg`);
+
+    expect(zip.readAsText(`${base}/yerel.jpg`)).toBe('YEREL-ICERIK');
+    expect(zip.readFile(`${base}/uzak.jpg`)!.equals(remoteBytes)).toBe(true);
+  });
+
+  it('boyut sınırı aşılırsa (allowLarge yoksa) yedek üretilmez', async () => {
+    const { dbPath, uploadsDir, outDir } = freshCase();
+    const db = openFixture(dbPath);
+    db.exec(`INSERT INTO users VALUES ('u1','A B','ab1')`);
+    db.exec(`INSERT INTO students VALUES ('st1','u1')`);
+    db.exec(`INSERT INTO courses VALUES ('c1','Fizik')`);
+    db.exec(`INSERT INTO weeks VALUES ('w5',5)`);
+    db.exec(`INSERT INTO class_courses VALUES ('cc1','classA','c1')`);
+    db.exec(`INSERT INTO homeworks VALUES ('h1','r1','cc1','w5')`);
+    db.exec(`INSERT INTO submissions VALUES ('s1','h1','st1')`);
+    db.exec(
+      `INSERT INTO submission_files (id, submission_id, key, filename, thumb_key, size, storage) VALUES
+         ('f1','s1','cccc-3333333333333333.jpg','buyuk.jpg',NULL,${60 * 1024 * 1024},'r2')`,
+    );
+    db.close();
+
+    await expect(
+      createBackup({ dbPath, uploadsDir, outDir, maxStagingMb: 50 }),
+    ).rejects.toThrow(/güvenli sınır/);
+    expect(fs.existsSync(outDir) ? fs.readdirSync(outDir).filter((n) => n.endsWith('.zip')) : []).toHaveLength(0);
   });
 });

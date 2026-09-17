@@ -13,7 +13,7 @@ import path from 'node:path';
 import { db } from '../db/index.js';
 import { resetDb, insertTestUsers } from '../test/helpers.js';
 import { planCleanup, runCleanup } from './submissionCleanup.js';
-import { localPathFor } from './storage.js';
+import { localPathFor, setR2ClientForTesting } from './storage.js';
 
 const NOW = '2026-01-15T10:00:00.000Z';
 
@@ -197,8 +197,8 @@ describe('planCleanup — seçim', () => {
 });
 
 describe('runCleanup — dry-run', () => {
-  it('execute yoksa DB ve disk değişmez, yedek alınmaz', () => {
-    const result = runCleanup({ before: '2026-01-01' }, { backupOutDir: backupDir });
+  it('execute yoksa DB ve disk değişmez, yedek alınmaz', async () => {
+    const result = await runCleanup({ before: '2026-01-01' }, { backupOutDir: backupDir });
     expect(result.executed).toBe(false);
     expect(result.backupPath).toBeNull();
     expect(result.deletedFileRows).toBe(0);
@@ -210,8 +210,8 @@ describe('runCleanup — dry-run', () => {
 });
 
 describe('runCleanup — execute', () => {
-  it('önce yedek alır; DB satırı + disk dosyası birlikte silinir', () => {
-    const result = runCleanup(
+  it('önce yedek alır; DB satırı + disk dosyası birlikte silinir', async () => {
+    const result = await runCleanup(
       { before: '2026-01-01' },
       { execute: true, backupOutDir: backupDir, now: () => NOW },
     );
@@ -220,9 +220,9 @@ describe('runCleanup — execute', () => {
     expect(result.backupPath).toBeTruthy();
     expect(fs.existsSync(result.backupPath!)).toBe(true);
     expect(result.deletedFileRows).toBe(1);
-    expect(result.deletedDiskFiles).toBe(2); // orijinal + thumb
+    expect(result.deletedObjects).toBe(2); // orijinal + thumb
     expect(result.purgedSubmissions).toBe(1);
-    expect(result.diskDeleteErrors).toEqual([]);
+    expect(result.deleteErrors).toEqual([]);
 
     // Disk: s1 dosyaları gitti, s2 dosyaları duruyor.
     expect(exists(FILES.s1a)).toBe(false);
@@ -248,14 +248,14 @@ describe('runCleanup — execute', () => {
     expect((db.prepare('SELECT COUNT(*) AS n FROM reports').get() as { n: number }).n).toBe(2);
   });
 
-  it('kısmi silmede teslim boşalmadığı için files_purged_at yazılmaz', () => {
-    const result = runCleanup(
+  it('kısmi silmede teslim boşalmadığı için files_purged_at yazılmaz', async () => {
+    const result = await runCleanup(
       { key: FILES.s2a },
       { execute: true, backupOutDir: backupDir },
     );
 
     expect(result.deletedFileRows).toBe(1);
-    expect(result.deletedDiskFiles).toBe(2); // s2a + thumb
+    expect(result.deletedObjects).toBe(2); // s2a + thumb
     expect(result.purgedSubmissions).toBe(0);
     expect(exists(FILES.s2a)).toBe(false);
     expect(exists(FILES.s2b)).toBe(true);
@@ -263,8 +263,8 @@ describe('runCleanup — execute', () => {
     expect(filesPurgedAt('s2')).toBeNull();
   });
 
-  it('eşleşme yoksa yedek almadan temiz çıkar', () => {
-    const result = runCleanup(
+  it('eşleşme yoksa yedek almadan temiz çıkar', async () => {
+    const result = await runCleanup(
       { student: 'yok' },
       { execute: true, backupOutDir: backupDir },
     );
@@ -272,5 +272,57 @@ describe('runCleanup — execute', () => {
     expect(result.backupPath).toBeNull();
     expect(result.fileCount).toBe(0);
     expect(countSubmissionFiles()).toBe(3);
+  });
+
+  it('karışık local/r2: r2 nesnesini DeleteObject ile, yereli unlink ile siler', async () => {
+    const remoteKey = '9999-eeeeeeeeeeeeeeee.jpg';
+    db.prepare(
+      `INSERT INTO submission_files (id, submission_id, key, filename, size, mime, ext, thumb_key, storage)
+       VALUES ('sf-r2', 's1', ?, 'uzak.jpg', 10, 'image/jpeg', 'jpg', NULL, 'r2')`,
+    ).run(remoteKey);
+
+    const envKeys = ['R2_ENDPOINT', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'] as const;
+    const saved: Record<string, string | undefined> = {};
+    for (const k of envKeys) saved[k] = process.env[k];
+    process.env.R2_ENDPOINT = 'https://acc.r2.cloudflarestorage.com';
+    process.env.R2_BUCKET = 'test';
+    process.env.R2_ACCESS_KEY_ID = 'test';
+    process.env.R2_SECRET_ACCESS_KEY = 'test';
+    const sendCalls: unknown[] = [];
+    setR2ClientForTesting({
+      send: async (command: unknown) => {
+        sendCalls.push(command);
+        return {};
+      },
+    });
+
+    try {
+      const result = await runCleanup(
+        { key: FILES.s1a },
+        { execute: true, backupOutDir: backupDir },
+      );
+      // s1a + thumb (yerel) silinir; r2 satırı filtreye girmedi (key filtresi).
+      expect(result.deletedFileRows).toBe(1);
+      expect(result.deleteErrors).toEqual([]);
+
+      // Şimdi r2 satırını da hedefle.
+      const r2Result = await runCleanup(
+        { key: remoteKey },
+        { execute: true, backupOutDir: backupDir },
+      );
+      expect(r2Result.executed).toBe(true);
+      expect(r2Result.deletedFileRows).toBe(1);
+      expect(r2Result.deletedObjects).toBe(1); // DeleteObject
+      expect(sendCalls.length).toBeGreaterThan(0); // R2 istemcisi çağrıldı
+      expect(
+        db.prepare('SELECT COUNT(*) AS n FROM submission_files WHERE key = ?').get(remoteKey),
+      ).toEqual({ n: 0 });
+    } finally {
+      setR2ClientForTesting(null);
+      for (const k of envKeys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
   });
 });

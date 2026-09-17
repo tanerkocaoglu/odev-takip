@@ -145,19 +145,19 @@ describe('planBackfill', () => {
 });
 
 describe('runBackfill', () => {
-  it('dry-run hiçbir şey yazmaz', () => {
+  it('dry-run hiçbir şey yazmaz', async () => {
     insertGraph({ secondCourseDone: true });
-    const result = runBackfill({ className: 'ÖKLİD', weekNo: 1 }, { execute: false });
+    const result = await runBackfill({ className: 'ÖKLİD', weekNo: 1 }, { execute: false });
     expect(result.executed).toBe(false);
     expect(result.inserted).toBe(0);
     expect(result.backupPath).toBeNull();
     expect(digestCount()).toBe(0);
   });
 
-  it('execute yedek alır, satırı yazar; ikinci çalıştırma idempotenttir', () => {
+  it('execute yedek alır, satırı yazar; ikinci çalıştırma idempotenttir', async () => {
     insertGraph({ secondCourseDone: true });
 
-    const first = runBackfill(
+    const first = await runBackfill(
       { className: 'ÖKLİD', weekNo: 1 },
       { execute: true, backupOutDir: backupDir },
     );
@@ -182,7 +182,7 @@ describe('runBackfill', () => {
     expect(row.token.length).toBeGreaterThan(16);
     expect(row.send_count).toBe(0);
 
-    const second = runBackfill(
+    const second = await runBackfill(
       { className: 'ÖKLİD', weekNo: 1 },
       { execute: true, backupOutDir: backupDir },
     );
@@ -190,10 +190,10 @@ describe('runBackfill', () => {
     expect(digestCount()).toBe(1);
   });
 
-  it('yazılacak satır yoksa (ikinci çalıştırma) yedek almaz', () => {
+  it('yazılacak satır yoksa (ikinci çalıştırma) yedek almaz', async () => {
     insertGraph({ secondCourseDone: true });
-    runBackfill({ className: 'ÖKLİD', weekNo: 1 }, { execute: true, backupOutDir: backupDir });
-    const again = runBackfill(
+    await runBackfill({ className: 'ÖKLİD', weekNo: 1 }, { execute: true, backupOutDir: backupDir });
+    const again = await runBackfill(
       { className: 'ÖKLİD', weekNo: 1 },
       { execute: true, backupOutDir: backupDir },
     );
@@ -203,11 +203,11 @@ describe('runBackfill', () => {
     expect(digestCount()).toBe(1);
   });
 
-  it('telafi sonrası önizleme ve gönderim 409 vermez; kaskad raporları sent yapar', () => {
+  it('telafi sonrası önizleme ve gönderim 409 vermez; kaskad raporları sent yapar', async () => {
     // Öğrencinin enrollment'ı hafta başından SONRA (orijinal hata koşulu);
     // sınıfın tüm dersleri tamam. Backfill class_id ile ready satır açar.
     insertGraph({ secondCourseDone: true });
-    const result = runBackfill(
+    const result = await runBackfill(
       { className: 'ÖKLİD', weekNo: 1 },
       { execute: true, backupOutDir: backupDir },
     );

@@ -238,7 +238,10 @@ export function planBackfill(target: BackfillTarget): BackfillPlan {
  * `execute` true ve yazılacak satır varsa: önce tam yedek, sonra tek
  * transaction'da `INSERT OR IGNORE`.
  */
-export function runBackfill(target: BackfillTarget, options: BackfillOptions = {}): BackfillResult {
+export async function runBackfill(
+  target: BackfillTarget,
+  options: BackfillOptions = {},
+): Promise<BackfillResult> {
   const plan = planBackfill(target);
   const execute = options.execute === true;
 
@@ -253,7 +256,7 @@ export function runBackfill(target: BackfillTarget, options: BackfillOptions = {
   if (plan.insertCount === 0) return { ...empty, executed: true };
 
   // Güvenlik ağı: geri dönüşsüz yazma öncesi tam yedek (proje kuralı).
-  const backupPath = createBackup(
+  const backupPath = await createBackup(
     options.backupOutDir !== undefined ? { outDir: options.backupOutDir } : {},
   );
   const token = options.newToken ?? newDigestToken;

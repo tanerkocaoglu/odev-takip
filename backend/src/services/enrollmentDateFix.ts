@@ -186,11 +186,11 @@ export function planEnrollmentDateFix(
  * `execute` true ve yazılacak değişiklik varsa: önce tam yedek, sonra tek
  * transaction'da enrollment güncelleme + digest `class_id` onarımı.
  */
-export function runEnrollmentDateFix(
+export async function runEnrollmentDateFix(
   enrollmentIds: string[],
   newStartDate: string,
   options: EnrollmentFixOptions = {},
-): EnrollmentFixResult {
+): Promise<EnrollmentFixResult> {
   const plan = planEnrollmentDateFix(enrollmentIds, newStartDate);
   const execute = options.execute === true;
 
@@ -208,7 +208,7 @@ export function runEnrollmentDateFix(
   }
 
   // Güvenlik ağı: geri dönüşsüz yazma öncesi tam yedek (proje kuralı).
-  const backupPath = createBackup(
+  const backupPath = await createBackup(
     options.backupOutDir !== undefined ? { outDir: options.backupOutDir } : {},
   );
 

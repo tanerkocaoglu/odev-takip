@@ -5,6 +5,79 @@
 
 ---
 
+## Bakım araçları R2 farkındalığı — db:backup / cleanup-submissions / wipe-reset ✅
+
+### Sorun
+
+R2 entegrasyonuyla sistemde artık **karışık** depolama var (`submission_files.storage`:
+`local` | `r2`). Ama bakım araçları yalnızca yerel diske bağlıydı: `backup.ts`
+`fs.copyFileSync(uploadsDir/key)`, `submissionCleanup.ts` `fs.unlink`, `wipe`/`reset`
+`fs.rmSync(uploadsDir)`. Yani R2'deki nesneler yedeğe girmiyor, temizlikte
+silinmiyordu.
+
+### Kararlar (kullanıcı onaylı)
+
+1. **backup:** R2 nesneleri **sıralı akışla** geçici staging'e indirilir (tüm
+   içerik belleğe alınmaz); zip içeriği güvenli sınırı (`BACKUP_MAX_STAGING_MB`,
+   varsayılan 750 MB) aşarsa `BACKUP_ALLOW_LARGE=1` gerekir.
+2. **cleanup oto-yedeği:** R2 dahil **tam** yedek alınır (createBackup zaten
+   kapsıyor); preflight özeti (yerel/R2, boyut) gösterilir.
+3. **R2 sahipsiz nesneler:** yedeğe girmez (yalnızca DB'ye bağlı nesneler;
+   `ListObjectsV2` yok).
+4. **wipe/reset R2'ye asla dokunmaz** — birim + kaynak-koruma testi + sahte R2
+   sunucusuyla **sıfır istek** kanıtı.
+
+### Uygulama
+
+- `services/storage.ts`: **`downloadToFile(storage, key, dest)`** — `r2` yolunda
+  `GetObject` gövdesi `pipeline` ile **doğrudan hedef dosyaya** akıtılır (ara
+  Buffer yok); `isValidKey` dışa açıldı; test için `setR2ClientForTesting`.
+- `services/backup.ts`: `createBackup` **async**; `sf.storage`/`sf.size` okunur;
+  `copyStored` local→kopya, r2→akış; sıralı; boyut koruması; bulk tek nesneyle
+  sınırlı.
+- `services/submissionCleanup.ts`: `storage` okunur; plan R2'de varlık kontrolü
+  yapmaz; execute **local→unlink, r2→DeleteObject**; `deletedObjects`/`deleteErrors`.
+  `runCleanup` async (yedek await).
+- `services/localReset.ts` (yeni): yalnızca yerel `uploads/` siler; `wipe`/`reset`
+  bunu kullanır. `storage.ts`'i **import etmez**.
+- `digestBackfill`/`enrollmentDateFix`/`migrate` + CLI'lar `await createBackup`.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **370/370** (34 dosya; +9: karışık local/r2 backup 2,
+  cleanup karışık 1, `localReset` 5, backup fixture `storage/size`), frontend **129/129**.
+- **Canlı kanıt (izole DB + sahte R2 HTTP sunucusu + gerçek CLI'lar): 12/12 PASS** —
+  `db:backup` hem yerel (10 hiyerarşi dosyası) hem R2 nesnesini (6400 bayt, akışla)
+  doğru zip'ledi; `cleanup-submissions --execute` R2 nesnesine **DELETE** attı ve
+  DB satırını sildi; `db:wipe` çalışırken R2 sunucusuna **0 istek** gitti ve yerel
+  uploads silindi. Gerçek `app.db` değişmedi (v9, mtime `22:25:51`).
+- **Sahte sunucu gerçek HTTP'dir:** backup GET, cleanup DELETE, wipe hiçbir istek.
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/storage.ts               (+downloadToFile, isValidKey, test seam)
+backend/src/services/backup.ts                (async, storage-aware, boyut koruması)
+backend/src/services/submissionCleanup.ts     (storage-aware silme; alan adları)
+backend/src/services/localReset.ts            (yeni)
+backend/src/services/localReset.test.ts       (yeni, 5 test)
+backend/src/backup.test.ts                    (+karışık local/r2, +boyut sınırı, fixture storage/size)
+backend/src/services/submissionCleanup.test.ts (+karışık local/r2)
+backend/src/services/digestBackfill.ts        (await createBackup)
+backend/src/services/enrollmentDateFix.ts     (await createBackup)
+backend/src/db/migrate.ts                     (await createBackup)
+backend/scripts/{backup,cleanup-submissions,backfill-digests,fix-enrollment-dates,wipe,reset}.ts
+spec.md                                       (§8 karışık depolama + wipe sınırı)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## R2 (Cloudflare) depolama sürücüsü — `STORAGE_DRIVER` gerçekten çalışıyor ✅
 
 ### Keşif sonucu (öncesi)

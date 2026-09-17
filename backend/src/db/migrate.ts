@@ -19,7 +19,7 @@ try {
   if (latest <= current) {
     console.log(`Bekleyen migration yok (sürüm ${current}).`);
   } else {
-    const backupPath = createBackup();
+    const backupPath = await createBackup();
     console.log(`Yedek alındı: ${backupPath}`);
     runMigrations();
     console.log(`Migration tamam (${current} → ${latest}).`);

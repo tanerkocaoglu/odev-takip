@@ -123,8 +123,8 @@ describe('planEnrollmentDateFix', () => {
 });
 
 describe('runEnrollmentDateFix', () => {
-  it('dry-run hiçbir şey yazmaz', () => {
-    const result = runEnrollmentDateFix([ENR_ID], '2026-09-12', { execute: false });
+  it('dry-run hiçbir şey yazmaz', async () => {
+    const result = await runEnrollmentDateFix([ENR_ID], '2026-09-12', { execute: false });
     expect(result.executed).toBe(false);
     expect(result.enrollmentUpdated).toBe(0);
     expect(result.digestUpdated).toBe(0);
@@ -133,8 +133,8 @@ describe('runEnrollmentDateFix', () => {
     expect(digestClassId()).toBeNull();
   });
 
-  it('execute yedek alır; enrollment ve digest class_id\'sini günceller', () => {
-    const result = runEnrollmentDateFix([ENR_ID], '2026-09-12', {
+  it('execute yedek alır; enrollment ve digest class_id\'sini günceller', async () => {
+    const result = await runEnrollmentDateFix([ENR_ID], '2026-09-12', {
       execute: true,
       backupOutDir: backupDir,
     });
@@ -148,9 +148,9 @@ describe('runEnrollmentDateFix', () => {
     expect(digestClassId()).toBe('fx-class');
   });
 
-  it('ikinci çalıştırma idempotenttir (değişiklik yok, yedek yok)', () => {
-    runEnrollmentDateFix([ENR_ID], '2026-09-12', { execute: true, backupOutDir: backupDir });
-    const again = runEnrollmentDateFix([ENR_ID], '2026-09-12', {
+  it('ikinci çalıştırma idempotenttir (değişiklik yok, yedek yok)', async () => {
+    await runEnrollmentDateFix([ENR_ID], '2026-09-12', { execute: true, backupOutDir: backupDir });
+    const again = await runEnrollmentDateFix([ENR_ID], '2026-09-12', {
       execute: true,
       backupOutDir: backupDir,
     });

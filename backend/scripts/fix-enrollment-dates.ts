@@ -146,7 +146,7 @@ try {
   const { enrollmentIds, startDate, execute } = parseArgs(process.argv.slice(2));
   // Dry-run planı (execute'da da aynı planı göstermek için önceden hesaplanır).
   const result = execute
-    ? runEnrollmentDateFix(enrollmentIds, startDate, { execute: true })
+    ? await runEnrollmentDateFix(enrollmentIds, startDate, { execute: true })
     : { ...planEnrollmentDateFix(enrollmentIds, startDate), executed: false, backupPath: null, enrollmentUpdated: 0, digestUpdated: 0 };
   printResult(result as EnrollmentFixResult);
 } catch (err) {

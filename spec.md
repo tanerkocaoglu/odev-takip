@@ -1129,11 +1129,18 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   grid bu küçük nesneyi yükler, tam görsel yalnızca lightbox'ta açılır.
   Thumbnail deposu orijinalin yanında ikinci bir nesnedir; hacmi ihmal
   edilebilir (küçültülmüş görselin ~%5'i). PDF'lerde thumbnail yoktur.
-  > **Kapsam sınırı (bu tur):** yalnızca **yeni yüklemeler** `STORAGE_DRIVER`'ın
-  > gösterdiği sürücüye gider. Mevcut dosyalar taşınmaz; `submission_files.storage`
-  > alanı hangi nesnenin nerede olduğunu söyler. `db:backup`,
-  > `cleanup-submissions`, `wipe`/`reset` gibi **bakım script'leri bu turda
-  > R2'yi kapsamaz** (ayrı iş) — mevcut disk dosyalarıyla çalışmaya devam eder.
+  > **Karışık depolama:** yalnızca **yeni yüklemeler** `STORAGE_DRIVER`'ın
+  > gösterdiği sürücüye gider; mevcut dosyalar taşınmaz. `submission_files.storage`
+  > alanı hangi nesnenin nerede olduğunu söyler. Bakım araçları iki kaynağı da
+  > kapsar: `db:backup` R2 nesnelerini **sıralı akışla** indirip yedeğe katar
+  > (toplam içerik `BACKUP_MAX_STAGING_MB`/varsayılan 750 MB sınırını aşarsa
+  > `BACKUP_ALLOW_LARGE=1` gerekir); `cleanup-submissions` her satırın
+  > `storage`'ına göre yerelde `unlink`, R2'de `DeleteObject` yapar; R2'de
+  > varlık kontrolü yapılmaz (silme idempotenttir).
+  > **`wipe`/`reset` yalnızca yerel diski ve veritabanını sıfırlar; R2 bucket'ına
+  > asla dokunmaz** (dev/demo araçlarıdır) — bu, kaynak-koruma testiyle kilitlidir.
+  > R2'de DB kaydı olmayan "sahipsiz" nesneler yedeğe girmez (yalnızca DB'ye bağlı
+  > nesneler yedeklenir).
 - **Dosya erişimi** (Aşama 4'ten itibaren): `express.static` kullanılmaz.
   `GET /api/v1/files/:key` rotası `auth` middleware'i + yetki kontrolü içerir
   (öğrenci: kendi teslimi; öğretmen: kendi ödevinin teslimi; veli: çocuğununki;

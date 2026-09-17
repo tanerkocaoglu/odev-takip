@@ -33,6 +33,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import AdmZip from 'adm-zip';
+import { downloadToFile } from './storage.js';
 
 /** Zip hiyerarşisinde türev/artık dosyaların toplandığı klasör. */
 const DEPO_DIR = '_depo';
@@ -54,6 +55,8 @@ interface BackupFileRow {
   key: string;
   thumb_key: string | null;
   filename: string;
+  storage: 'local' | 'r2';
+  size: number;
   full_name: string;
   username: string | null;
   course_name: string;
@@ -173,47 +176,46 @@ function isSafeKey(key: string): boolean {
 }
 
 /**
- * `uploads/<key>` dosyasını hedefe kopyalar; kaynak yoksa sessizce atlar
- * (bozuk/eksik dosya yedeği çökertmez). Kopyanan key'ler `accounted`e işlenir.
+ * Tek nesneyi hedefe kopyalar. `local` ise diskten; `r2` ise **akış olarak**
+ * indirir (`downloadToFile` — tüm içerik belleğe alınmaz). Kaynak yoksa/
+ * erişilemezse sessizce atlar (bozuk/eksik dosya yedeği çökertmez).
+ * Kopyalanan key'ler `accounted`e işlenir.
  */
-function copyByKey(
+async function copyStored(
   uploadsDir: string,
+  storage: 'local' | 'r2',
   key: string,
   destPath: string,
   accounted: Set<string>,
-): void {
+): Promise<void> {
   if (!isSafeKey(key)) return;
-  const src = path.join(uploadsDir, key);
-  if (!fs.existsSync(src)) return;
-  fs.copyFileSync(src, destPath);
-  accounted.add(key);
+  try {
+    if (storage === 'r2') {
+      await downloadToFile('r2', key, destPath);
+    } else {
+      const src = path.join(uploadsDir, key);
+      if (!fs.existsSync(src)) return;
+      fs.copyFileSync(src, destPath);
+    }
+    accounted.add(key);
+  } catch {
+    // Eksik/erişilemeyen nesne yedeği çökertmez; sessizce atlanır.
+  }
 }
 
 /**
- * VACUUM kopyasındaki ilişkiyi okur ve `uploads/` dosyalarını anlamlı
- * hiyerarşiye (orijinaller) + `_depo/`ya (thumbnail + sahipsiz) dağıtır.
- * Metadata sorgusu başarısız olursa (şema yok vb.) yedek yine üretilir:
- * tüm dosyalar `_depo/`ya alınır — ham veri asla kaybolmaz.
+ * VACUUM kopyasındaki ilişkiyi okur. Metadata sorgusu başarısız olursa (şema
+ * yok vb.) yedek yine üretilir: boş döner ve tüm yerel dosyalar `_depo/`ya
+ * alınır — ham veri asla kaybolmaz.
  */
-function buildStructuredTree(
-  dbCopyPath: string,
-  uploadsDir: string,
-  stagingDir: string,
-): void {
-  const treeRoot = stagingDir;
-  const depoRoot = path.join(treeRoot, DEPO_DIR);
-
-  const uploadsExists = fs.existsSync(uploadsDir);
-  const accounted = new Set<string>();
-  const usedByDir = new Map<string, Set<string>>();
-
-  let rows: BackupFileRow[];
+function readBackupRows(dbCopyPath: string): BackupFileRow[] {
   try {
     const copy = new DatabaseSync(dbCopyPath, { readOnly: true });
     try {
-      rows = copy
+      return copy
         .prepare(
           `SELECT sf.key AS key, sf.thumb_key AS thumb_key, sf.filename AS filename,
+                  sf.storage AS storage, sf.size AS size,
                   u.full_name AS full_name, u.username AS username,
                   co.name AS course_name, w.week_no AS week_no
              FROM submission_files sf
@@ -230,8 +232,27 @@ function buildStructuredTree(
       copy.close();
     }
   } catch {
-    rows = [];
+    return [];
   }
+}
+
+/**
+ * Satırları anlamlı hiyerarşiye (orijinaller) + `_depo/`ya (thumbnail +
+ * sahipsiz yerel) dağıtır. R2 nesneleri **akış ile** indirilir; sıralıdır
+ * (paralellik yok) → bellek/disk baskısı tek nesneyle sınırlı kalır.
+ * Yerel `uploads/` içindeki sahipsiz dosyalar da `_depo/`ya alınır.
+ */
+async function buildStructuredTree(
+  rows: BackupFileRow[],
+  uploadsDir: string,
+  stagingDir: string,
+): Promise<void> {
+  const treeRoot = stagingDir;
+  const depoRoot = path.join(treeRoot, DEPO_DIR);
+
+  const uploadsExists = fs.existsSync(uploadsDir);
+  const accounted = new Set<string>();
+  const usedByDir = new Map<string, Set<string>>();
 
   if (uploadsExists) fs.mkdirSync(depoRoot, { recursive: true });
 
@@ -256,19 +277,31 @@ function buildStructuredTree(
       used,
       sanitizeFilename(row.filename || fallbackFilename(row.key)),
     );
-    copyByKey(uploadsDir, row.key, path.join(absDir, name), accounted);
+    await copyStored(uploadsDir, row.storage, row.key, path.join(absDir, name), accounted);
 
     if (row.thumb_key && isSafeKey(row.thumb_key)) {
-      copyByKey(uploadsDir, row.thumb_key, path.join(depoRoot, row.thumb_key), accounted);
+      await copyStored(
+        uploadsDir,
+        row.storage,
+        row.thumb_key,
+        path.join(depoRoot, row.thumb_key),
+        accounted,
+      );
     }
   }
 
   if (uploadsExists) {
     for (const entry of fs.readdirSync(uploadsDir, { withFileTypes: true })) {
       if (!entry.isFile() || accounted.has(entry.name)) continue;
-      // Sahipsiz/artık dosya: key adıyla `_depo/`ya (hiçbir dosya kaybolmaz).
+      // Sahipsiz/artık YEREL dosya: key adıyla `_depo/`ya (hiçbir dosya kaybolmaz).
       if (isSafeKey(entry.name)) {
-        copyByKey(uploadsDir, entry.name, path.join(depoRoot, entry.name), accounted);
+        await copyStored(
+          uploadsDir,
+          'local',
+          entry.name,
+          path.join(depoRoot, entry.name),
+          accounted,
+        );
       }
     }
   }
@@ -280,6 +313,27 @@ export interface BackupOptions {
   outDir?: string;
   /** Bu dizinde tutulacak en yeni yedek sayısı (varsayılan `BACKUP_KEEP`/10). */
   keep?: number;
+  /** Zip içeriği için üst sınır (MB). Varsayılan `BACKUP_MAX_STAGING_MB`/750. */
+  maxStagingMb?: number;
+  /** `true` ise boyut sınırı uygulanmaz (bilinçli büyük yedek). */
+  allowLarge?: boolean;
+}
+
+/** Yedek zip içeriği için varsayılan üst sınır (MB) — disk güvenliği. */
+const DEFAULT_BACKUP_MAX_MB = 750;
+
+/**
+ * Zip'e girecek toplam içerik (yaklaşık) için üst sınır. `allowLarge` veya
+ * `BACKUP_ALLOW_LARGE=1` ile devre dışı bırakılabilir; sınır `options` →
+ * `BACKUP_MAX_STAGING_MB` → varsayılan sırasıyla belirlenir.
+ */
+function backupMaxBytes(options: BackupOptions): number | null {
+  if (options.allowLarge || process.env.BACKUP_ALLOW_LARGE === '1') return null;
+  const envMb = Number(process.env.BACKUP_MAX_STAGING_MB);
+  const mb =
+    options.maxStagingMb ??
+    (Number.isFinite(envMb) && envMb > 0 ? envMb : DEFAULT_BACKUP_MAX_MB);
+  return mb * 1024 * 1024;
 }
 
 /** DB kopyasının yolunu SQL string literal'ine güvenli şekilde gömer (tek tırnak iki katına alınır). */
@@ -327,9 +381,13 @@ export function pruneBackups(dir: string, keep: number): string[] {
 /**
  * Tutarlı yedek üretir: `{outDir}/dershane-yedek-{zaman}.zip` döner.
  * Zip içeriği: `veritabani/app.db` + `Ad_Soyad_kullaniciadi/Ders_Adi/Hafta_N/...`
- * (orijinaller) + `_depo/` (thumbnail + sahipsiz).
+ * (orijinaller) + `_depo/` (thumbnail + sahipsiz yerel).
+ *
+ * `local` ve `r2` nesneleri birlikte yedeklenir; R2 nesneleri sıralı olarak
+ * akışla indirilir. Toplam içerik güvenli sınırı aşarsa (disk koruması) hata
+ * fırlatır — `allowLarge`/`BACKUP_ALLOW_LARGE=1` ile geçersiz kılınabilir.
  */
-export function createBackup(options: BackupOptions = {}): string {
+export async function createBackup(options: BackupOptions = {}): Promise<string> {
   const dbPath = options.dbPath ?? process.env.DB_PATH ?? path.join('db', 'app.db');
   const uploadsDir =
     options.uploadsDir ?? process.env.UPLOADS_DIR ?? path.join('uploads');
@@ -352,18 +410,31 @@ export function createBackup(options: BackupOptions = {}): string {
       db.close();
     }
 
-    // 2) DB ilişkisiyle anlamlı hiyerarşiyi geçici klasöre kur (canlı uploads'a dokunmaz).
-    fs.mkdirSync(stagingDir, { recursive: true });
-    buildStructuredTree(dbCopy, uploadsDir, stagingDir);
+    // 2) Disk güvenliği: zip'e girecek toplam içeriği kontrol et.
+    const rows = readBackupRows(dbCopy);
+    const estimated = rows.reduce((sum, r) => sum + (r.size ?? 0), 0);
+    const limit = backupMaxBytes(options);
+    const estimatedWithThumbs = Math.ceil(estimated * 1.05);
+    if (limit !== null && estimatedWithThumbs > limit) {
+      throw new Error(
+        `Yedek içeriği ~${Math.ceil(estimatedWithThumbs / (1024 * 1024))} MB; ` +
+          `güvenli sınır ${Math.round(limit / (1024 * 1024))} MB. Disk güvenliği için ` +
+          `iptal edildi. Sınırı BACKUP_MAX_STAGING_MB ile artırın ya da BACKUP_ALLOW_LARGE=1 verin.`,
+      );
+    }
 
-    // 3) DB kopyası + geçici ağacı tek .zip'te birleştir.
+    // 3) DB ilişkisiyle anlamlı hiyerarşiyi geçici klasöre kur.
+    fs.mkdirSync(stagingDir, { recursive: true });
+    await buildStructuredTree(rows, uploadsDir, stagingDir);
+
+    // 4) DB kopyası + geçici ağacı tek .zip'te birleştir.
     const zip = new AdmZip();
     zip.addFile('veritabani/app.db', fs.readFileSync(dbCopy));
     zip.addLocalFolder(stagingDir);
     zip.writeZip(zipPath);
     zipWritten = true;
   } finally {
-    // 4) Hata dahil her durumda geçici klasör silinir; yarım zip bırakılmaz.
+    // 5) Hata dahil her durumda geçici klasör silinir; yarım zip bırakılmaz.
     fs.rmSync(tmpDir, { recursive: true, force: true });
     if (!zipWritten) fs.rmSync(zipPath, { force: true });
   }

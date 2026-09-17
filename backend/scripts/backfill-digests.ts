@@ -159,7 +159,7 @@ function printResult(result: BackfillResult): void {
 
 try {
   const args = parseArgs(process.argv.slice(2));
-  const result = runBackfill(
+  const result = await runBackfill(
     {
       className: args.className,
       weekNo: args.weekNo,

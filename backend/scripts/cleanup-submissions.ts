@@ -150,6 +150,9 @@ function printResult(result: CleanupResult): void {
   console.log(`Teslim (etkilenen): ${result.submissionCount}`);
   console.log(`Toplam boyut:    ${formatBytes(result.totalBytes)}`);
   console.log(`Diskte mevcut:   ${result.existingOnDisk}  (eksik: ${result.missingOnDisk})`);
+  if (result.remoteObjects > 0) {
+    console.log(`R2 nesnesi:      ${result.remoteObjects} (varlık kontrolü yapılmaz)`);
+  }
   if (result.invalidKeys > 0) {
     console.log(`Geçersiz key:    ${result.invalidKeys} (atlandı)`);
   }
@@ -179,23 +182,23 @@ function printResult(result: CleanupResult): void {
   console.log('');
   console.log(`Yedek:           ${result.backupPath ?? '(yedek alınmadı — silinecek dosya yoktu)'}`);
   console.log(`Silinen DB satırı:   ${result.deletedFileRows}`);
-  console.log(`Silinen disk dosyası: ${result.deletedDiskFiles}`);
+  console.log(`Silinen nesne (yerel+R2): ${result.deletedObjects}`);
   console.log(`files_purged_at yazılan teslim: ${result.purgedSubmissions}`);
-  if (result.diskDeleteErrors.length > 0) {
+  if (result.deleteErrors.length > 0) {
     console.log('');
-    console.log(`UYARI: ${result.diskDeleteErrors.length} disk dosyası silinemedi:`);
-    for (const err of result.diskDeleteErrors) {
+    console.log(`UYARI: ${result.deleteErrors.length} nesne silinemedi:`);
+    for (const err of result.deleteErrors) {
       console.log(`  - ${err.key}: ${err.message}`);
     }
-    console.log('DB kayıtları silindi; bu dosyalar öksüz kaldı (yedekte mevcuttur).');
+    console.log('DB kayıtları silindi; bu nesneler öksüz kaldı (yedekte mevcuttur).');
   }
 }
 
 try {
   const { filters, execute } = parseArgs(process.argv.slice(2));
-  const result = runCleanup(filters, { execute });
+  const result = await runCleanup(filters, { execute });
   printResult(result);
-  if (result.executed && result.diskDeleteErrors.length > 0) {
+  if (result.executed && result.deleteErrors.length > 0) {
     process.exitCode = 1;
   }
 } catch (err) {

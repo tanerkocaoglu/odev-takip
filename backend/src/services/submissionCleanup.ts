@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import { db } from '../db/index.js';
 import { normalizeTurkish } from '../utils/text.js';
-import { localPathFor } from './storage.js';
+import { localPathFor, isValidKey, deleteStored } from './storage.js';
 import { createBackup } from './backup.js';
 
 /** Temizlik hedefini daraltan filtreler (en az biri ya da `all` zorunlu). */
@@ -65,6 +65,7 @@ export interface CleanupPlanFile {
   filename: string;
   submissionId: string;
   submittedAt: string;
+  storage: 'local' | 'r2';
   studentName: string;
   studentUsername: string | null;
   className: string;
@@ -84,6 +85,8 @@ export interface CleanupPlan {
   fullyPurgedSubmissions: string[];
   existingOnDisk: number;
   missingOnDisk: number;
+  /** R2'deki nesne sayısı (varlık kontrolü yapılmaz; DeleteObject idempotenttir). */
+  remoteObjects: number;
   /** Geçersiz/parça key'ler (diske erişilemez; sessizce atlanır). */
   invalidKeys: number;
 }
@@ -94,8 +97,10 @@ export interface CleanupResult extends CleanupPlan {
   backupPath: string | null;
   deletedFileRows: number;
   purgedSubmissions: number;
-  deletedDiskFiles: number;
-  diskDeleteErrors: Array<{ key: string; message: string }>;
+  /** Silinen nesne sayısı (yerel disk + R2). */
+  deletedObjects: number;
+  /** Silinemeyen nesneler (yerel veya R2) — raporlanır, işlemi bozmaz. */
+  deleteErrors: Array<{ key: string; message: string }>;
 }
 
 interface CleanupFileRow {
@@ -106,6 +111,7 @@ interface CleanupFileRow {
   filename: string;
   submission_id: string;
   submitted_at: string;
+  storage: 'local' | 'r2';
   student_name: string;
   student_username: string | null;
   class_name: string;
@@ -119,6 +125,7 @@ const BASE_SELECT = `
   SELECT sf.id AS file_id, sf.key AS key, sf.thumb_key AS thumb_key,
          sf.size AS size, sf.filename AS filename,
          sf.submission_id AS submission_id, s.submitted_at AS submitted_at,
+         sf.storage AS storage,
          u.full_name AS student_name, u.username AS student_username,
          c.name AS class_name, co.name AS course_name, w.week_no AS week_no
     FROM submission_files sf
@@ -199,15 +206,6 @@ function buildWhere(
   return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
-/** `localPathFor` sıkı doğrulamasını bozmadan güvenli yol döner (geçersizse null). */
-function tryLocalPath(key: string): string | null {
-  try {
-    return localPathFor(key);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Filtrelere uyan dosyaları seçer ve ne silineceğini hesaplar. Hiçbir şey
  * yazmaz, hiçbir dosyayı silmez.
@@ -248,15 +246,21 @@ export function planCleanup(filters: CleanupFilters): CleanupPlan {
   let totalBytes = 0;
   let existingOnDisk = 0;
   let missingOnDisk = 0;
+  let remoteObjects = 0;
   let invalidKeys = 0;
   for (const r of rows) {
     totalBytes += r.size;
     for (const key of [r.key, ...(r.thumb_key ? [r.thumb_key] : [])]) {
-      const p = tryLocalPath(key);
-      if (p === null) {
+      if (!isValidKey(key)) {
         invalidKeys += 1;
         continue;
       }
+      if (r.storage === 'r2') {
+        // R2'de varlık kontrolü yapılmaz (plan ağ beklemez); silme idempotenttir.
+        remoteObjects += 1;
+        continue;
+      }
+      const p = localPathFor(key);
       if (fs.existsSync(p)) existingOnDisk += 1;
       else missingOnDisk += 1;
     }
@@ -272,6 +276,7 @@ export function planCleanup(filters: CleanupFilters): CleanupPlan {
       filename: r.filename,
       submissionId: r.submission_id,
       submittedAt: r.submitted_at,
+      storage: r.storage,
       studentName: r.student_name,
       studentUsername: r.student_username,
       className: r.class_name,
@@ -284,6 +289,7 @@ export function planCleanup(filters: CleanupFilters): CleanupPlan {
     fullyPurgedSubmissions,
     existingOnDisk,
     missingOnDisk,
+    remoteObjects,
     invalidKeys,
   };
 }
@@ -293,7 +299,10 @@ export function planCleanup(filters: CleanupFilters): CleanupPlan {
  * `execute` true ise: tam yedek → tek transaction'da DB silme → COMMIT sonrası
  * disk silme.
  */
-export function runCleanup(filters: CleanupFilters, options: CleanupOptions = {}): CleanupResult {
+export async function runCleanup(
+  filters: CleanupFilters,
+  options: CleanupOptions = {},
+): Promise<CleanupResult> {
   const plan = planCleanup(filters);
   const execute = options.execute === true;
 
@@ -303,8 +312,8 @@ export function runCleanup(filters: CleanupFilters, options: CleanupOptions = {}
     backupPath: null,
     deletedFileRows: 0,
     purgedSubmissions: 0,
-    deletedDiskFiles: 0,
-    diskDeleteErrors: [],
+    deletedObjects: 0,
+    deleteErrors: [],
   });
 
   if (!execute) {
@@ -314,8 +323,9 @@ export function runCleanup(filters: CleanupFilters, options: CleanupOptions = {}
     return { ...emptyResult(), executed: true };
   }
 
-  // 1) Güvenlik ağı: tam yedek. Başarısız olursa istisna yukarı çıkar; silme başlamaz.
-  const backupPath = createBackup(
+  // 1) Güvenlik ağı: tam yedek (yerel + R2 nesneleri dahil). Başarısız olursa
+  //    istisna yukarı çıkar; silme başlamaz.
+  const backupPath = await createBackup(
     options.backupOutDir !== undefined ? { outDir: options.backupOutDir } : {},
   );
   const purgedAt = (options.now ?? (() => new Date().toISOString()))();
@@ -335,21 +345,27 @@ export function runCleanup(filters: CleanupFilters, options: CleanupOptions = {}
     throw err;
   }
 
-  // 3) Disk — COMMIT sonrası. Kırık referans oluşmaz; hata olsa bile öksüz dosya
-  //    kalır (zararsız) ve raporda bildirilir.
-  const diskDeleteErrors: Array<{ key: string; message: string }> = [];
-  let deletedDiskFiles = 0;
+  // 3) Nesne silme — COMMIT sonrası (kırık referans oluşmaz). `submission_files`
+  //    row'undaki `storage` sürücüyü belirler: local → unlink, r2 → DeleteObject
+  //    (idempotent). Hata olsa bile öksüz nesne kalır (zararsız) ve raporlanır.
+  const deleteErrors: Array<{ key: string; message: string }> = [];
+  let deletedObjects = 0;
   for (const file of plan.files) {
     for (const key of [file.key, ...(file.thumbKey ? [file.thumbKey] : [])]) {
-      const p = tryLocalPath(key);
-      if (p === null) continue;
+      if (!isValidKey(key)) continue;
       try {
-        if (fs.existsSync(p)) {
-          fs.unlinkSync(p);
-          deletedDiskFiles += 1;
+        if (file.storage === 'r2') {
+          await deleteStored('r2', key);
+          deletedObjects += 1;
+        } else {
+          const p = localPathFor(key);
+          if (fs.existsSync(p)) {
+            fs.unlinkSync(p);
+            deletedObjects += 1;
+          }
         }
       } catch (err) {
-        diskDeleteErrors.push({
+        deleteErrors.push({
           key,
           message: err instanceof Error ? err.message : String(err),
         });
@@ -363,7 +379,7 @@ export function runCleanup(filters: CleanupFilters, options: CleanupOptions = {}
     backupPath,
     deletedFileRows: plan.files.length,
     purgedSubmissions: plan.fullyPurgedSubmissions.length,
-    deletedDiskFiles,
-    diskDeleteErrors,
+    deletedObjects,
+    deleteErrors,
   };
 }

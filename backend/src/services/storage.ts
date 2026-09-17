@@ -15,12 +15,16 @@
  * `heic-convert` → JPEG buffer → sharp (uzun kenar max 2000px, JPEG q80) →
  * sürücüye yaz. PDF aynen saklanır. Ham dosya saklanmaz.
  *
- * Not (kapsam sınırı): `db:backup`, `cleanup-submissions`, `wipe`/`reset` gibi
- * bakım script'leri bu turda R2'yi kapsamaz; mevcut disk dosyalarıyla çalışır.
+ * Not: `db:backup` R2 nesnelerini akışla indirir; `cleanup-submissions` her
+ * satırın `storage`'ına göre yerelde `unlink`, R2'de `DeleteObject` yapar.
+ * `wipe`/`reset` yalnızca yerel diski sıfırlar; R2'ye dokunmaz.
  */
 
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import convert from 'heic-convert';
@@ -173,7 +177,17 @@ function assertContentMatches(file: UploadedFile): void {
 
 let cachedClient: S3Client | null = null;
 
-async function getR2Client(): Promise<S3Client> {
+/** Test için R2 istemcisi enjekte etme (ağ olmadan akış davranışını doğrulamak). */
+type S3Like = { send: (command: unknown) => Promise<unknown> };
+let r2ClientOverride: S3Like | null = null;
+
+export function setR2ClientForTesting(client: S3Like | null): void {
+  r2ClientOverride = client;
+  cachedClient = null;
+}
+
+async function getR2Client(): Promise<S3Client | S3Like> {
+  if (r2ClientOverride) return r2ClientOverride;
   if (cachedClient) return cachedClient;
   const cfg = r2ConfigFromEnv();
   const { S3Client: S3 } = await import('@aws-sdk/client-s3');
@@ -235,7 +249,39 @@ export async function presignedGetUrl(key: string, mime?: string): Promise<strin
     Key: key,
     ...(mime ? { ResponseContentType: mime } : {}),
   });
-  return getSignedUrl(client, command, { expiresIn: PRESIGN_TTL_SECONDS });
+  return getSignedUrl(client as S3Client, command, { expiresIn: PRESIGN_TTL_SECONDS });
+}
+
+/**
+ * Nesneyi **akış olarak** hedef dosyaya yazar (yedek indirmesi için). `local`
+ * ise diskten kopyalar; `r2` ise `GetObject` gövdesini doğrudan hedef dosyaya
+ * `pipeline` ile aktarır — içerik **tümüyle belleğe alınmaz** (büyük
+ * dosyalarda bellek şişmez). Kaynak yoksa fırlatır; çağıran karar verir.
+ */
+export async function downloadToFile(
+  storage: StorageDriver,
+  key: string,
+  destPath: string,
+): Promise<void> {
+  if (storage === 'local') {
+    await fs.copyFile(localPathFor(key), destPath);
+    return;
+  }
+  const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+  const client = await getR2Client();
+  const res = (await client.send(
+    new GetObjectCommand({ Bucket: r2ConfigFromEnv().bucket, Key: key }),
+  )) as { Body?: Readable };
+  if (!res.Body) {
+    throw new Error(`R2 nesnesi gövdesiz döndü: ${key}`);
+  }
+  // Akış → dosya; ara Buffer yok.
+  await pipeline(res.Body, createWriteStream(destPath));
+}
+
+/** Key biçimini (path traversal güvenli) doğrular — disk/bucket'tan bağımsız. */
+export function isValidKey(key: string): boolean {
+  return /^[0-9]+-[a-f0-9]{16}\.(jpg|pdf)$/.test(key);
 }
 
 /**
@@ -321,7 +367,7 @@ export async function saveUpload(file: UploadedFile): Promise<StoredFile> {
  * doğrulanır — path traversal (`..`, `/`) burada engellenir.
  */
 export function localPathFor(key: string): string {
-  if (!/^[0-9]+-[a-f0-9]{16}\.(jpg|pdf)$/.test(key)) {
+  if (!isValidKey(key)) {
     throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
   }
   return path.join(uploadsDir, key);

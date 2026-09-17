@@ -12,5 +12,5 @@ import { createBackup } from '../src/services/backup.js';
 
 loadEnv();
 
-const zipPath = createBackup();
+const zipPath = await createBackup();
 console.log(zipPath);

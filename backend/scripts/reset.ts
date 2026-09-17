@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadEnv } from '../src/utils/env.js';
+import { removeLocalUploads } from '../src/services/localReset.js';
 
 /**
  * CLI: npm run db:reset
@@ -56,11 +57,11 @@ console.log('Veritabanı silindi. Migration + seed çalıştırılıyor…');
 // DB ile birlikte yerel yüklemeleri de temizle; aksi hâlde yetim dosyalar
 // diskte kalır. `storage.ts` ile aynı kural: önce `UPLOADS_DIR` (render.yaml:
 // /var/data/uploads), yoksa `backend/uploads`.
+// NOT: Bu yalnızca YEREL klasörü siler; uzak depoya (R2) dokunulmaz.
 const uploadsDir =
   process.env.UPLOADS_DIR ?? path.join(import.meta.dirname, '..', 'uploads');
 console.log(`Uploads yolu: ${uploadsDir}`);
-if (fs.existsSync(uploadsDir)) {
-  fs.rmSync(uploadsDir, { recursive: true, force: true });
+if (removeLocalUploads(uploadsDir)) {
   console.log('Yüklenen dosyalar silindi (uploads).');
 }
 
