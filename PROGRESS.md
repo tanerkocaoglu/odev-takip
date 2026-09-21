@@ -5,6 +5,79 @@
 
 ---
 
+## Admin "Tüm raporlar" araması — öğretmen adı genişlemesi ✅
+
+### Kapsam
+
+Admin paneli "Tüm raporlar" ekranındaki arama (`q`), sınıf/ders adının yanı sıra
+**öğretmen adını** da arar. Sınıf ve ders araması aynen korunur; üçü OR ile
+birleşir.
+
+### Kararlar (kullanıcı onaylı)
+
+1. **Yalnızca admin rolünde:** `GET /teacher/reports` paylaşılan uçtur (öğretmen
+   "Geçmiş raporlarım"ı da besler). Öğretmen-adı koşulu OR'a **sadece
+   `user.role === 'admin'` iken** eklenir; öğretmen semantiği (yalnız
+   sınıf/ders) değişmez — kısıt UI'da değil **backend**'de.
+2. **CSV export da aynı genişlemeyi alır** (`/admin/reports/export`,
+   admin-only) → ekran ile CSV birebir tutarlı.
+3. **Placeholder + spec** güncellenir ("Sınıf, ders veya öğretmen ara";
+   §5.5/§5.7).
+
+### Uygulama
+
+- **`routes/teacher.ts` GET /reports:** `JOIN users t ON t.id = cc.teacher_id`
+  (count + satır sorgusu). `q` admin ise
+  `(c.name_normalized LIKE ? OR co.name_normalized LIKE ? OR t.full_name_normalized LIKE ?)`,
+  öğretmen ise mevcut 2'li OR. Hepsi `normalizeTurkish` ile indirgenir.
+- **`services/csvExport.ts` `reportsExportCsv`:** aynı join + 3'lü OR.
+- **`AdminReportsPage`:** placeholder "Sınıf, ders veya öğretmen ara".
+  `ReportHistoryPage` **dokunulmadı** (zaten `q` göndermiyor).
+- **`spec.md`:** §5.5 arama kapsamı notu (role göre daralma) + §5.7 `q`
+  açıklaması.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **418/418** (37 dosya; yeni `report-search-teacher` 4
+  test), frontend **135/135** (değişmedi). Mevcut `report-filters` /
+  `csv-export` q testleri regresyonsuz geçti.
+- **Canlı kanıt (izole DB + gerçek Express + HTTP): 13/13 PASS.**
+  - Admin: `q="Öğretmen 1"` / `"ogretmen"` / `"ÖĞRETMEN 1"` / `"Öğretmen 1"` → hepsi
+    PİSAGOR/Fizik raporunu buldu; `q="ÖKLİD"` (sınıf) ve `q="cebir"` (ders)
+    regresyonsuz.
+  - **Öğretmen rolü (kısıt backend'de):** Öğretmen 1'in kendi token'ıyla
+    `q="Öğretmen 1"` → **0** (öğretmen adı aranmıyor; aransaydı 1 olurdu),
+    `q="pisagor"` → 1 (sınıf araması çalışır), `q="Örnek Kişi 4"` → 0.
+  - CSV: `q="Öğretmen 1"` → başlık + 1 satır (Fizik; Cebir yok).
+- Geçici fixture/script silindi.
+
+### ⚠️ Not — `app.db` WAL checkpoint
+
+Salt-okunur `diagnose-weeks` CLI'ı (önceki turda) paylaşılan `db` bağlantısını
+kullanıp kapandığında SQLite WAL'i ana dosyaya checkpoint'ledi: `app.db` bir
+sayfa büyüdü (376 832 → 380 928) ve mtime güncellendi. **Mantıksal değişiklik
+yok:** `PRAGMA integrity_check = ok`, `user_version = 9`, seed sayımları aynı
+(29 users, 21 weeks, 42 reports, 168 report_entries, 12 class_courses). İleride
+teşhis araçları için read-only bağlantı opsiyonu değerlendirilebilir.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts                  (JOIN users + admin-only 3'lü OR)
+backend/src/services/csvExport.ts              (JOIN users + 3'lü OR)
+backend/src/report-search-teacher.test.ts      (yeni, 4 test)
+src/pages/admin/AdminReportsPage.tsx           (placeholder)
+spec.md                                        (§5.5, §5.7)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Hafta aralığı bütünlüğü — tam 7 gün kuralı + savunma katmanı ✅
 
 ### Sorun

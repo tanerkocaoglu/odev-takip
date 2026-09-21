@@ -915,6 +915,9 @@ router.get('/reports', (req, res) => {
   const weekId = typeof req.query.week_id === 'string' ? req.query.week_id : null;
   // Arama: sınıf adı VEYA ders adı (normalize). Türkçe LIKE ASCII'de harf
   // duyarsız olmadığından sorgu sunucuda normalizeTurkish ile indirgenir.
+  // **Öğretmen adı yalnızca admin** aramasında dahildir (karar): paylaşılan uç
+  // öğretmen "Geçmiş raporlarım" ekranını da beslediğinden öğretmen semantiği
+  // bu genişlemeden etkilenmez.
   const q = typeof req.query.q === 'string' ? normalizeTurkish(req.query.q.trim()) : '';
 
   const extraWhere: string[] = [];
@@ -932,8 +935,16 @@ router.get('/reports', (req, res) => {
     extraValues.push(weekId);
   }
   if (q) {
-    extraWhere.push('(c.name_normalized LIKE ? OR co.name_normalized LIKE ?)');
-    extraValues.push(`%${q}%`, `%${q}%`);
+    if (user.role === 'admin') {
+      // Admin: sınıf VEYA ders VEYA öğretmen adı (hepsi normalize).
+      extraWhere.push(
+        '(c.name_normalized LIKE ? OR co.name_normalized LIKE ? OR t.full_name_normalized LIKE ?)',
+      );
+      extraValues.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    } else {
+      extraWhere.push('(c.name_normalized LIKE ? OR co.name_normalized LIKE ?)');
+      extraValues.push(`%${q}%`, `%${q}%`);
+    }
   }
 
   // Kapsam: öğretmen yalnızca kendi atamaları (CLAUDE.md — "önce hepsini çek
@@ -950,6 +961,7 @@ router.get('/reports', (req, res) => {
          JOIN class_courses cc ON cc.id = r.class_course_id
          JOIN classes c ON c.id = cc.class_id
          JOIN courses co ON co.id = cc.course_id
+         JOIN users t ON t.id = cc.teacher_id
          JOIN weeks w ON w.id = r.week_id
          WHERE ${where}`,
       )
@@ -968,6 +980,7 @@ router.get('/reports', (req, res) => {
        JOIN class_courses cc ON cc.id = r.class_course_id
        JOIN classes c ON c.id = cc.class_id
        JOIN courses co ON co.id = cc.course_id
+       JOIN users t ON t.id = cc.teacher_id
        JOIN weeks w ON w.id = r.week_id
        WHERE ${where}
        ORDER BY w.start_date DESC,

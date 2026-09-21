@@ -901,10 +901,16 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
 - **"Tüm raporlar" görünümü (admin'in "tüm raporları görme" hakkının
   karşılığı):** eksik listesinin yanında aynı sayfada ikincil bir sekme.
   Durum filtresi (`draft` / `completed` / `sent`), sınıf/hafta filtresi ve
-  sınıf/ders adı aramasıyla raporlar listelenir; satıra tıklandığında rapor
-  **salt-okunur** açılır (üst alanlar + devamsızlık/puan/not tablosu; hiçbir
-  düzenleme UI'ı yok). Bu görünüm canlı rapor verisini gösterir — digest
-  `snapshot`'ı değil.
+  **sınıf/ders/öğretmen adı aramasıyla** raporlar listelenir; satıra
+  tıklandığında rapor **salt-okunur** açılır (üst alanlar + devamsızlık/puan/not
+  tablosu; hiçbir düzenleme UI'ı yok). Bu görünüm canlı rapor verisini gösterir
+  — digest `snapshot`'ı değil.
+  > **Arama (`q`) kapsamı role göre daralır:** `GET /teacher/reports` ucu hem
+  > admin "Tüm raporlar"ı hem öğretmen "Geçmiş raporlarım"ı besler. `q`,
+  > `normalizeTurkish` ile indirgenip sınıf VEYA ders adıyla eşleşir;
+  > **öğretmen adı yalnızca admin aramasında** OR'a eklenir
+  > (`users.full_name_normalized`). Böylece öğretmen rolünde arama semantiği
+  > değişmez (yalnızca sınıf/ders) — bu, UI kısıtı değil **backend** kuralıdır.
   > **Filtre seçenekleri role göre kapsamlanır** (`GET /teacher/reports/filters`):
   > öğretmen yalnızca kendi `class_courses` atamalarındaki raporlarda geçen
   > sınıf/haftaları görür; admin tümünü. Öğretmen başka bir öğretmenin sınıf
@@ -980,8 +986,9 @@ filtre/arama sonucu**, ekranda görünen sütunlarla CSV olarak indirilebilir.
 Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır).
 
 - `GET /admin/reports/export` — `status`, `class_id`, `week_id`, `q`
-  (sınıf/ders adı arama) filtreleri (`GET /teacher/reports` ile aynı WHERE
-  mantığı), sayfalama uygulanmaz: tüm eşleşen satırlar iner.
+  (sınıf/ders/**öğretmen** adı arama — admin kapsamı) filtreleri
+  (`GET /teacher/reports` ile aynı WHERE mantığı), sayfalama uygulanmaz: tüm
+  eşleşen satırlar iner.
 - `GET /admin/students/export` — `q` (ad/veli normalize arama) + `classId`.
 - `GET /admin/guardians/export` — `q`.
 - Yanıt `text/csv; charset=utf-8` + `Content-Disposition: attachment`.

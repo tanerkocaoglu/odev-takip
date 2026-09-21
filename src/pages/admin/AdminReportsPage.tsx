@@ -166,7 +166,7 @@ export default function AdminReportsPage() {
           <SearchBox
             value={qInput}
             onChange={setQInput}
-            placeholder="Sınıf veya ders ara"
+            placeholder="Sınıf, ders veya öğretmen ara"
           />
         </label>
         <button

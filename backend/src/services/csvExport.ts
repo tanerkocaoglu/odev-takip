@@ -152,11 +152,15 @@ export function reportsExportCsv(params: {
     where.push('r.week_id = ?');
     values.push(params.weekId);
   }
-  // Arama: sınıf veya ders adı (normalize) — /teacher/reports ile aynı mantık.
+  // Arama: sınıf / ders / öğretmen adı (normalize) — `/teacher/reports` admin
+  // kapsamıyla birebir aynı. Rota yalnızca admin olduğundan öğretmen adı
+  // koşulsuz dahildir.
   const q = params.q ? normalizeTurkish(params.q.trim()) : '';
   if (q) {
-    where.push('(c.name_normalized LIKE ? OR co.name_normalized LIKE ?)');
-    values.push(`%${q}%`, `%${q}%`);
+    where.push(
+      '(c.name_normalized LIKE ? OR co.name_normalized LIKE ? OR t.full_name_normalized LIKE ?)',
+    );
+    values.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
 
   const rows = db
@@ -169,6 +173,7 @@ export function reportsExportCsv(params: {
        JOIN class_courses cc ON cc.id = r.class_course_id
        JOIN classes c ON c.id = cc.class_id
        JOIN courses co ON co.id = cc.course_id
+       JOIN users t ON t.id = cc.teacher_id
        JOIN weeks w ON w.id = r.week_id
        WHERE ${where.join(' AND ')}
        ORDER BY w.start_date DESC,
