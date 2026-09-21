@@ -584,11 +584,23 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 > otomatik olarak normal (doldurulabilir) hâle gelir. Kural "bugün"e bağlı
 > olduğundan DB şemasında (CHECK/kısmi indeks) zorlanamaz; uygulama katmanındadır.
 >
-> **Kapsam sınırı (bilinçli):** Admin dashboard eksik liste, admin gönderim
-> ekranı varsayılan haftası, ödev özeti varsayılan haftası ve `digest-backfill`
-> CLI'ı da aynı "boşlukta en erken haftaya düş" mantığını kullanır; bunlar
-> **yazma değil listeleme/varsayılan seçim** yüzeyleridir ve bu kuralda
-> değiştirilmemiştir.
+> **Admin dashboard "eksik" sayımı bu kurala uyar (yalnızca orası):** Admin
+> dashboard da aynı "boşlukta en erken haftaya düş" mantığıyla bir hafta seçer
+> (varsayılan `currentDigestWeek()`), ama **gösterilen hafta henüz
+> başlamadıysa** (`bugün < week.start_date`) o haftanın raporları **eksik
+> sayılmaz**: `GET /admin/dashboard` yanıtı `week_not_started: true` taşır,
+> `missing` listesi boş ve `summary` `{ total: 0, completed: 0 }` döner
+> (§5.5). `/admin/dashboard/missing` de savunma katmanı olarak boş döner.
+> Hafta başladığında (`bugün >= start_date`) eksik sayımı otomatik normal
+> davranışına döner. Bu kural `hasWeekStarted()` (tek tarih kaynağı) ile
+> uygulanır; şemada (CHECK/kısmi indeks) zorlanamaz.
+>
+> **Kapsam sınırı (bilinçli):** Admin **gönderim** ekranı varsayılan haftası,
+> **ödev özeti** varsayılan haftası ve `digest-backfill` CLI'ının varsayılan
+> haftası da aynı "boşlukta en erken haftaya düş" mantığını kullanır; bunlar
+> **yazma değil listeleme/varsayılan seçim** yüzeyleridir ve bu turda
+> değiştirilmemiştir (admin dashboard'ın "eksik" sayımından farklı olarak
+> orada yanıltıcı bir "eksik" iddiası üretilmez).
 
 1. Öğretmen giriş yapar → "Bu hafta doldurulacaklar". Öğretmen başına ~10
    kayıt olacağı için bu liste **haftanın gerçek başlangıcına göre göreli**
@@ -849,6 +861,14 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
 - Altında **yalnızca eksik olanların listesi**: sınıf, ders, öğretmen,
   ders günü, durum (`draft` / hiç açılmamış). Ders günü geçmiş olanlar
   vurgulu ve üstte.
+- **Henüz başlamamış hafta "eksik" sayılmaz.** Aktif yılda başlamış hafta
+  yokken dashboard en yakın gelecek haftaya düşer; ama bu hafta için
+  `week_not_started: true` döner: `missing` listesi **boş**, özet
+  `{ total: 0, completed: 0 }` (yani "0/N tamamlandı" yanılgısı yok) ve
+  matriste dersler "Eksik" yerine "Henüz başlamadı" etiketi taşır. Üstte
+  "{hafta} henüz başlamadı ({tarih})" bilgilendirmesi gösterilir. Bu, §5.1
+  kuralının eksik-sayımına uygulanmış hâlidir; ekran yine gelecek haftayı
+  gösterir (matris/önizleme), yalnızca onu "eksik" diye etiketlemez.
 - Öğretmene göre gruplama seçeneği ("Kim geride kalmış?").
 - Tam matris (satır = sınıf, sütun = ders) ikincil bir sekmede, yatay
   kaydırmalı olarak bulunur.

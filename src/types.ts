@@ -454,6 +454,8 @@ export interface AdminDashboardMatrixRow {
 
 export interface AdminDashboard {
   week: TeacherDashboardWeek | null;
+  /** Gösterilen hafta henüz başlamadı mı (bugün < hafta başı). */
+  week_not_started: boolean;
   summary: { total: number; completed: number };
   missing: AdminDashboardMissingItem[];
   matrix: AdminDashboardMatrixRow[];

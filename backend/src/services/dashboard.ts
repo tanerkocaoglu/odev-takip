@@ -7,7 +7,7 @@
 
 import { db } from '../db/index.js';
 import { RISK, RISK_FLAGS } from '../constants.js';
-import { isOverdue } from '../utils/time.js';
+import { hasWeekStarted, isOverdue } from '../utils/time.js';
 import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import { currentDigestWeek } from './digests.js';
 
@@ -49,6 +49,12 @@ export interface DashboardOverview {
     end_date: string;
     label: string;
   } | null;
+  /**
+   * Gösterilen hafta henüz başlamadı mı (bugün < `week.start_date`)?
+   * Bu durumda `missing` boş ve `summary` sıfırdır: henüz doldurulmamış bir
+   * haftanın raporları "eksik" sayılmaz (spec.md §5.1/§5.5).
+   */
+  week_not_started: boolean;
   summary: { total: number; completed: number };
   missing: MissingReport[];
   matrix: MatrixClass[];
@@ -86,8 +92,14 @@ function loadWeek(weekId: string): WeekRecord {
 /**
  * Eksik raporlar (spec §5.5): draft ya da hiç açılmamış atamalar; günü geçenler
  * üstte, sonra ders günü/saate göre sıralı. `is_overdue` JS'te hesaplanır.
+ *
+ * Hafta henüz başlamadıysa liste boştur — doldurulmamış bir gelecek haftanın
+ * tüm atamalarını "eksik" saymak yanıltıcıdır (spec §5.1). Savunma katmanı:
+ * `/admin/dashboard/missing` de bu fonksiyondan beslenir.
  */
 export function buildMissingReports(week: WeekRecord): MissingReport[] {
+  if (!hasWeekStarted(week)) return [];
+
   const rows = db
     .prepare(
       `SELECT cc.id AS class_course_id, cc.day_of_week, cc.lesson_time, cc.teacher_id,
@@ -146,6 +158,7 @@ export function getDashboardOverview(weekId?: string): DashboardOverview {
   if (!resolved) {
     return {
       week: null,
+      week_not_started: false,
       summary: { total: 0, completed: 0 },
       missing: [],
       matrix: [],
@@ -153,6 +166,7 @@ export function getDashboardOverview(weekId?: string): DashboardOverview {
     };
   }
   const week = loadWeek(resolved);
+  const weekNotStarted = !hasWeekStarted(week);
 
   // Toplam beklenti: aktif eğitim yılının (silinmemiş) atamaları.
   const totalRow = db
@@ -171,6 +185,11 @@ export function getDashboardOverview(weekId?: string): DashboardOverview {
     .get(resolved) as { n: number };
 
   const missing = buildMissingReports(week);
+  // Henüz başlamamış haftada tamamlanan/eksik sayılmaz: payda da sıfırdır
+  // (§5.5 özeti yanlış "0/N tamamlandı" göstermesin).
+  const summary = weekNotStarted
+    ? { total: 0, completed: 0 }
+    : { total: totalRow.n, completed: completedRow.n };
 
   // Tam matris (satır = sınıf, sütun = ders).
   const matrixRows = db
@@ -241,7 +260,8 @@ export function getDashboardOverview(weekId?: string): DashboardOverview {
       end_date: week.end_date,
       label: week.label,
     },
-    summary: { total: totalRow.n, completed: completedRow.n },
+    week_not_started: weekNotStarted,
+    summary,
     missing,
     matrix: [...matrix.values()],
     digests: {
@@ -252,11 +272,19 @@ export function getDashboardOverview(weekId?: string): DashboardOverview {
   };
 }
 
-/** Eksik rapor listesi (sayfalama route'ta). Hafta yoksa boş liste. */
-export function getMissingReportsView(weekId?: string): { missing: MissingReport[] } {
+/**
+ * Eksik rapor listesi (sayfalama route'ta). Hafta yoksa boş liste; hafta henüz
+ * başlamadıysa da boştur (`buildMissingReports` guard'ı) ve `week_not_started`
+ * true döner.
+ */
+export function getMissingReportsView(weekId?: string): {
+  missing: MissingReport[];
+  week_not_started: boolean;
+} {
   const resolved = resolveWeekId(weekId);
-  if (!resolved) return { missing: [] };
-  return { missing: buildMissingReports(loadWeek(resolved)) };
+  if (!resolved) return { missing: [], week_not_started: false };
+  const week = loadWeek(resolved);
+  return { missing: buildMissingReports(week), week_not_started: !hasWeekStarted(week) };
 }
 
 /**

@@ -14,6 +14,7 @@ function ok(body: unknown) {
 
 const DASH = {
   week: { id: 'w1', week_no: 20, start_date: '2026-08-03', end_date: '2026-08-09', label: 'Hafta 20' },
+  week_not_started: false,
   summary: { total: 40, completed: 10 },
   missing: [],
   matrix: [],

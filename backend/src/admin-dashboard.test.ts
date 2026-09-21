@@ -216,6 +216,8 @@ describe('GET /api/v1/admin/dashboard (spec §5.5)', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
 
+    // Başlamış hafta: eksik sayımı normal çalışır.
+    expect(res.body.week_not_started).toBe(false);
     // Özet: 3 atamadan 1'i tamamlandı.
     expect(res.body.summary).toEqual({ total: 3, completed: 1 });
 
@@ -251,6 +253,27 @@ describe('GET /api/v1/admin/dashboard (spec §5.5)', () => {
       .get(`/api/v1/admin/dashboard?week_id=${WEEK2.id}`)
       .set('Authorization', `Bearer ${signTokenFor('test-student', 'student')}`);
     expect(res.status).toBe(403);
+  });
+
+  it('henüz başlamamış hafta istendiğinde eksik saymaz (week_not_started)', async () => {
+    // WEEK3 (2026-08-10) bugünden (2026-08-04) sonra başlar.
+    const res = await request(app)
+      .get(`/api/v1/admin/dashboard?week_id=${WEEK3.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.week.id).toBe(WEEK3.id);
+    expect(res.body.week_not_started).toBe(true);
+    expect(res.body.summary).toEqual({ total: 0, completed: 0 });
+    expect(res.body.missing).toEqual([]);
+  });
+
+  it('başlamamış hafta için missing ucu boş döner', async () => {
+    const res = await request(app)
+      .get(`/api/v1/admin/dashboard/missing?week_id=${WEEK3.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+    expect(res.body.items).toEqual([]);
   });
 });
 
@@ -436,5 +459,52 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
       .get('/api/v1/admin/dashboard/risk')
       .set('Authorization', `Bearer ${teacherToken}`);
     expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /api/v1/admin/dashboard — aktif yılda başlamış hafta yok (fallback)', () => {
+  // `currentDigestWeek()` başlamış hafta bulamazsa en erken (gelecek) haftaya
+  // düşer. Bu haftanın tüm atamaları doldurulmamış olsa da "eksik" sayılmamalı
+  // (spec §5.1/§5.5). Aktif yılı geçici olarak tamamen gelecekte olan bir yıla
+  // çevirip gerçek fallback yolunu test ediyoruz; sonra geri alıyoruz.
+  const FUTURE_YEAR_ID = 'ds-year-future';
+  const FUTURE_WEEK_ID = 'ds-week-future';
+
+  beforeAll(() => {
+    db.prepare(
+      `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+       VALUES (?, '2027-2028', '2027-09-01', '2028-06-30', 0)`,
+    ).run(FUTURE_YEAR_ID);
+    db.prepare(
+      `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+       VALUES (?, ?, 1, '2027-09-06', '2027-09-12', 'Gelecek Hafta 1')`,
+    ).run(FUTURE_WEEK_ID, FUTURE_YEAR_ID);
+    db.prepare(`UPDATE academic_years SET is_active = 0 WHERE id = 'ds-year'`).run();
+    db.prepare(`UPDATE academic_years SET is_active = 1 WHERE id = ?`).run(FUTURE_YEAR_ID);
+  });
+
+  afterAll(() => {
+    db.prepare(`UPDATE academic_years SET is_active = 0 WHERE id = ?`).run(FUTURE_YEAR_ID);
+    db.prepare(`UPDATE academic_years SET is_active = 1 WHERE id = 'ds-year'`).run();
+  });
+
+  it('gelecek haftaya düşer ama eksik listesi boş + summary 0/0 olur', async () => {
+    const res = await request(app)
+      .get('/api/v1/admin/dashboard')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.week.id).toBe(FUTURE_WEEK_ID);
+    expect(res.body.week_not_started).toBe(true);
+    expect(res.body.summary).toEqual({ total: 0, completed: 0 });
+    expect(res.body.missing).toEqual([]);
+  });
+
+  it('dashboard/missing de boş döner (savunma katmanı)', async () => {
+    const res = await request(app)
+      .get('/api/v1/admin/dashboard/missing')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+    expect(res.body.items).toEqual([]);
   });
 });

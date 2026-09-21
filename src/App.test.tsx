@@ -104,6 +104,7 @@ describe('App — admin erişimi', () => {
           status: 200,
           json: async () => ({
             week: null,
+            week_not_started: false,
             summary: { total: 0, completed: 0 },
             missing: [],
             matrix: [],

@@ -22,6 +22,7 @@ import type { AdminDashboard, RiskList } from '../../types';
 import { DAY_LABELS, RISK_FLAG_LABELS, type RiskFlag } from '../../types';
 import { adminApi, downloadBackup, ApiClientError } from '../../services/api';
 import { Badge, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
+import { formatDate } from '../../utils/date';
 
 /** İskelet bloğu — shimmer sınıfı index.css'te tanımlı. */
 function Skeleton({ className = '' }: { className?: string }) {
@@ -206,6 +207,15 @@ export default function AdminDashboardPage() {
       {backupDone && <p className="text-sm font-medium text-status-sent">{backupDone}</p>}
       {backupError && <FormError message={backupError} />}
 
+      {/* Hafta henüz başlamadıysa doldurulmuş rapor yoktur; bu durumda
+          "eksik" değil "henüz başlamadı" bilgisi gösterilir (spec §5.1/§5.5). */}
+      {data.week_not_started && data.week && (
+        <p className="elevation-1 rounded-md border border-border bg-surface p-4 text-sm text-muted">
+          {data.week.label} haftası henüz başlamadı ({formatDate(data.week.start_date)}).
+          Raporlar hafta başladığında doldurulmaya başlanır.
+        </p>
+      )}
+
       {/* Özet kartları — üst kenarlık anlam rengi; tıklanabilirler Level 2 hover */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="elevation-1 rounded-md border border-border border-t-2 border-t-status-sent bg-surface p-4">
@@ -215,12 +225,19 @@ export default function AdminDashboardPage() {
             Tamamlanan rapor{data.week ? ` · ${data.week.label}` : ''}
           </p>
         </div>
-        <div className="elevation-1 rounded-md border border-border border-t-2 border-t-att-late bg-surface p-4">
-          <CardIcon Icon={AlertTriangle} />
+        <div
+          className={
+            'elevation-1 rounded-md border border-border border-t-2 bg-surface p-4 ' +
+            (data.week_not_started ? 'border-t-border' : 'border-t-att-late')
+          }
+        >
+          <CardIcon Icon={data.week_not_started ? LayoutDashboard : AlertTriangle} />
           <p className="tabular mt-2 text-2xl font-semibold text-text">
-            {Math.max(0, total - completed)}
+            {data.week_not_started ? '—' : Math.max(0, total - completed)}
           </p>
-          <p className="mt-1 text-xs text-muted">Eksik rapor</p>
+          <p className="mt-1 text-xs text-muted">
+            {data.week_not_started ? 'Henüz başlamadı' : 'Eksik rapor'}
+          </p>
         </div>
         <Link
           to="/admin/digests"
@@ -274,7 +291,13 @@ export default function AdminDashboardPage() {
           </label>
 
           {data.missing.length === 0 ? (
-            <EmptyState message="Bu hafta doldurulacak eksik rapor yok." />
+            <EmptyState
+              message={
+                data.week_not_started
+                  ? 'Bu hafta henüz başlamadı; raporlar hafta başladığında doldurulacak.'
+                  : 'Bu hafta doldurulacak eksik rapor yok.'
+              }
+            />
           ) : groupByTeacher ? (
             [...grouped.entries()].map(([teacher, items]) => (
               <div key={teacher} className="space-y-2">
@@ -370,7 +393,9 @@ export default function AdminDashboardPage() {
                         ? 'Gönderildi'
                         : course.status === 'completed'
                           ? 'Tamamlandı'
-                          : 'Eksik';
+                          : data.week_not_started
+                            ? 'Henüz başlamadı'
+                            : 'Eksik';
                     return (
                       <td
                         key={course.class_course_id}
@@ -381,7 +406,11 @@ export default function AdminDashboardPage() {
                         </div>
                         <div className="text-xs text-muted">{course.teacher_name}</div>
                         <div className="mt-1">
-                          <Badge tone={done ? 'positive' : 'warning'}>{label}</Badge>
+                          <Badge
+                            tone={done ? 'positive' : data.week_not_started ? 'neutral' : 'warning'}
+                          >
+                            {label}
+                          </Badge>
                         </div>
                       </td>
                     );

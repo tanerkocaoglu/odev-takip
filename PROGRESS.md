@@ -5,6 +5,94 @@
 
 ---
 
+## Admin dashboard — henüz başlamamış hafta "eksik" sayılmaz ✅
+
+### Sorun (gerçek kullanımda doğrulandı)
+
+Önceki turda bilinçli kapsam sınırı olarak bırakılan (bkz. "Henüz başlamamış
+hafta" bölümü) yanıltıcı uyarı gerçek kullanımda görüldü: admin panele
+girildiğinde **henüz başlamamış bir haftanın tüm raporları "eksik"
+gösteriliyordu.**
+
+Kök neden: `services/dashboard.ts` → `resolveWeekId()` = `weekId ??
+currentDigestWeek()?.id`. `currentDigestWeek()` (digests.ts) aktif yılda
+`start_date <= bugün` olan hafta yoksa **en erken (gelecek) haftaya** düşer.
+`buildMissingReports` o haftada raporu olmayan **her** `class_courses`'u eksik
+saydığından başlamamış haftada liste tüm atamalarla dolar; özet `{ total: N,
+completed: 0 }` dönüp "N eksik / 0/N tamamlandı" yanılgısı üretir. Yerel
+seed'de geçmiş haftalar olduğu için bu tekrar üretilemiyordu.
+
+### Kararlar (kullanıcı onaylı)
+
+1. **Varsayılan hafta davranışı korunur:** başlamış hafta yoksa yine en yakın
+   gelecek haftaya düşülür (öğretmen dashboard'ındaki salt-okunur önizlemeyle
+   tutarlı); admin o haftayı matris/önizleme olarak görmeye devam eder.
+2. **Ama "eksik" sayılmaz:** `missing` **boş**, `summary` `{ total: 0,
+   completed: 0 }`, `week_not_started: true`; ekranda "eksik" kelimesi yerine
+   "{hafta} henüz başlamadı (tarih)" banner'ı ve nötr "Henüz başlamadı"
+   etiketleri. Guard **hem `getDashboardOverview` hem `buildMissingReports`
+   içinde** (ikincisi savunma katmanı → `/admin/dashboard/missing` de boş döner).
+3. **Kapsam yalnızca admin dashboard.** Diğer üç yüzey (`routes/admin/digests.ts`
+   gönderim varsayılanı, `services/homeworkSummary.ts` + frontend kopyası,
+   `services/digestBackfill.ts`) **bilinçli kapsam dışı** bırakıldı; not
+   `spec.md §5.1`'de güncellendi ama genişletilmedi.
+
+### Uygulama
+
+- **`services/dashboard.ts`:** `hasWeekStarted` import edildi;
+  `DashboardOverview`'a `week_not_started: boolean`; `buildMissingReports`
+  başında `if (!hasWeekStarted(week)) return []`; `getDashboardOverview`
+  başlamamış haftada `summary = { total: 0, completed: 0 }`; `getMissingReportsView`
+  `week_not_started` taşır.
+- **`types.ts`:** `AdminDashboard.week_not_started`.
+- **`AdminDashboardPage.tsx`:** banner; "Eksik rapor" kartı başlamamış haftada
+  nötr (`—` / "Henüz başlamadı", kenarlık rengi nötr); eksik listesi boş
+  durumunda "raporlar hafta başladığında doldurulacak" metni; matris etiketi
+  "Eksik" yerine "Henüz başlamadı" (nötr ton).
+- **`spec.md`:** §5.5'e "Henüz başlamamış hafta eksik sayılmaz" maddesi; §5.1
+  kapsam sınırı notu güncellendi (dashboard artık uyar, diğer üç yüzey aynı).
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **390/390** (35 dosya; +4: başlamamış açık `week_id`,
+  başlamamış `missing` ucu, tamamen gelecek aktif yıl fallback'i ve onun
+  `missing` ucu; mevcut dashboard testine `week_not_started:false` kontrolü),
+  frontend **133/133** (23 dosya; +1 yeni `admin-dashboard.test.tsx` banner +
+  "Eksik" değil "Henüz başlamadı" kontrolü).
+- **Canlı kanıt (izole `DB_PATH` + gerçek Express sunucusu + gerçek HTTP login):
+  15/15 PASS.**
+  - **Faz A — başlamış hafta yok:** fallback gelecek hafta seçildi;
+    `week_not_started=true`, `summary {0,0}`, `missing=[]`, matris 2 ders
+    (ekran boş kalmıyor); `/dashboard/missing` total 0; açık gelecek `week_id`
+    guard'ı da aktif.
+  - **Faz B — başlamış hafta eklendi (regresyon):** başlamış hafta seçildi;
+    `week_not_started=false`, `summary {2,1}`, `missing` yalnızca tamamlanmamış
+    CC_2 (`not_started`); `/dashboard/missing` toplam 1. Mevcut davranış
+    bozulmadı.
+  - Kanıt yalnızca temp DB'de; gerçek `backend/db/app.db` **değişmedi**
+    (376 832 bayt, mtime `13.09.2026 22:25:51`); betik + temp DB silindi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/dashboard.ts             (+hasWeekStarted guard,
+                                                week_not_started, summary 0/0)
+backend/src/admin-dashboard.test.ts            (+4 test, mevcut teste alan kontrolü)
+src/types.ts                                   (AdminDashboard.week_not_started)
+src/pages/admin/AdminDashboardPage.tsx         (banner + nötr etiketler)
+src/admin-dashboard.test.tsx                   (yeni; banner + matris etiketi)
+src/admin-risk.test.tsx   src/App.test.tsx     (mock'lara alan eklendi)
+spec.md                                        (§5.5 madde, §5.1 kapsam notu)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Ders sıralaması hafta başına göre + `isOverdue` düzeltmesi ✅
 
 ### Sorun
