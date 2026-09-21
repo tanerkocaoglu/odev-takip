@@ -156,7 +156,8 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`d29f46b` — öğretmen ödev ekleri (PDF), migration #13 `homework_attachments`
+(report bazlı).
 
 ---
 
