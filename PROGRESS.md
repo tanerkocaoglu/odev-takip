@@ -88,7 +88,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`45b3d0a` — riskli öğrenci penceresi yalnızca bitmiş haftaları kullanır.
 
 ---
 
