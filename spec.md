@@ -557,6 +557,29 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 
 ### 5.1 Öğretmenin haftalık rapor doldurması
 
+> **Henüz başlamamış hafta salt-okunur önizlemedir (zorunlu).** Aktif eğitim
+> yılında bugünü kapsayan bir hafta yoksa (ör. haftalar arası boşluk; ilk hafta
+> henüz gelmediyse) "gösterilen hafta" **en yakın gelecek haftaya** düşer, ama
+> bu hafta **doldurulamaz**. Öğretmen ekranında sınıf/ders/gün/saat ve öğrenci
+> satırları görünür; devamsızlık, puan ve not alanları **salt-okunur**dur ve
+> "Raporu tamamla" aksiyonu sunulmaz. Ekranın yüklenmesi
+> `GET /api/v1/teacher/reports/entry` iledir: rapor varsa onu, yoksa **DB'ye
+> hiçbir şey yazmadan** sentetik önizlemeyi döner.
+>
+> Backend bu haftaya yazmayı reddeder — yalnızca arayüz kısıtı yeterli değildir:
+> `week.start_date > bugün` iken `POST /api/v1/teacher/reports`,
+> `PUT /api/v1/teacher/reports/:id` ve `POST /api/v1/teacher/reports/:id/complete`
+> **403 `FORBIDDEN`** döner (**admin dahil**). `GET /teacher/dashboard` yanıtı
+> `week_not_started` taşır. Hafta başladığında (`bugün >= start_date`) aynı ekran
+> otomatik olarak normal (doldurulabilir) hâle gelir. Kural "bugün"e bağlı
+> olduğundan DB şemasında (CHECK/kısmi indeks) zorlanamaz; uygulama katmanındadır.
+>
+> **Kapsam sınırı (bilinçli):** Admin dashboard eksik liste, admin gönderim
+> ekranı varsayılan haftası, ödev özeti varsayılan haftası ve `digest-backfill`
+> CLI'ı da aynı "boşlukta en erken haftaya düş" mantığını kullanır; bunlar
+> **yazma değil listeleme/varsayılan seçim** yüzeyleridir ve bu kuralda
+> değiştirilmemiştir.
+
 1. Öğretmen giriş yapar → "Bu hafta doldurulacaklar". Öğretmen başına ~10
    kayıt olacağı için bu liste `day_of_week` + `lesson_time` sırasına göre
    dizilir; tamamlananlar listeden düşer, ders günü geçtiği halde `draft`
@@ -1023,6 +1046,11 @@ Projenin benimsenmesi bu ekrana bağlı. Gereksinimler:
 - Otomatik kaydetme + "kaydedildi" göstergesi.
 - **Mobil:** tabloyu yatay kaydırmaya zorlama; dar ekranda öğrenci başına
   kart görünümüne geç, kartlar arası ileri/geri.
+- **Henüz başlamamış hafta (gelecek):** aynı ekran **salt-okunur önizleme**
+  olarak render edilir — sınıf/ders/gün/saat ve öğrenci satırları görünür ama
+  devamsızlık/puan/not alanları `disabled`, toplu doldurma ve "Raporu tamamla"
+  yok; otomatik kaydetme çalışmaz ve üstte "Bu hafta henüz başlamadı" bilgisi
+  gösterilir (§5.1). Backend yazma uçları 403 döner.
 
 ---
 

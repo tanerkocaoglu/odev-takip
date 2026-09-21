@@ -96,6 +96,14 @@ export default function TeacherDashboardPage() {
         <SecondaryButton onClick={() => void load()}>Yeniden dene</SecondaryButton>
       )}
 
+      {/* Hafta henüz başlamadıysa kayıtlar salt-okunur önizlemedir (spec §5.1). */}
+      {!error && data?.week_not_started && (
+        <p className="elevation-1 rounded-2xl border border-border bg-surface p-4 text-sm text-muted md:rounded-md">
+          Bu hafta henüz başlamadı — kayıtlar yalnızca önizleme. Hafta
+          başladığında doldurulabilir.
+        </p>
+      )}
+
       {/* İç hatırlatma: ders günü geçmiş taslaklar — admin özet kartı diliyle
           (üst kenarlık anlam rengi + ikon dairesi). */}
       {!error && data && data.overdue_count > 0 && (
@@ -148,7 +156,9 @@ export default function TeacherDashboardPage() {
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-0 md:ml-3 md:shrink-0">
                   {item.is_overdue && <Badge tone="warning">Günü geçti</Badge>}
-                  {item.status === 'draft' ? (
+                  {data.week_not_started ? (
+                    <Badge tone="neutral">Önizleme</Badge>
+                  ) : item.status === 'draft' ? (
                     <StatusBadge status="draft" />
                   ) : (
                     <Badge tone="neutral">Açılmadı</Badge>

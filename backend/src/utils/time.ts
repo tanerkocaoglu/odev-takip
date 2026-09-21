@@ -18,6 +18,16 @@ export function localTodayISO(): string {
 }
 
 /**
+ * Hafta başladı mı? (spec.md §5.1): `bugün >= week.start_date`. Başlamamış
+ * (gelecekteki) bir hafta doldurulamaz — öğretmen ekranında yalnızca
+ * salt-okunur önizleme olarak gösterilir ve backend yazma uçları 403 döner.
+ * Tek tarih kaynağı burasıdır (kopya `start_date > bugün` mantığı yazılmaz).
+ */
+export function hasWeekStarted(week: { start_date: string }): boolean {
+  return localTodayISO() >= week.start_date;
+}
+
+/**
  * Ders günü bu haftada geçti mi? (spec.md §5.1: "ders günü geçtiği halde
  * draft olanlar üstte ve vurgulu görünür"). Hafta tamamen bittiyse de geçmiş.
  */

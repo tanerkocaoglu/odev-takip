@@ -62,6 +62,7 @@ export default function ReportEntryPage() {
   const returnLabel = returnTo.startsWith('/admin') ? 'Gönderim ekranına dön' : 'Geri dön';
 
   const [payload, setPayload] = useState<TeacherReportPayload | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [topic, setTopic] = useState('');
@@ -84,14 +85,21 @@ export default function ReportEntryPage() {
   const readyRef = useRef(false);
   const cellRefs = useRef(new Map<string, HTMLElement>());
 
-  // ---- Yükleme (get-or-create) ----
+  // ---- Yükleme (rapor varsa o; yoksa ve hafta başladıysa get-or-create) ----
   useEffect(() => {
     let cancelled = false;
     teacherApi
-      .openReport(classCourseId, weekId)
-      .then((data) => {
+      .openReportEntry(classCourseId, weekId)
+      .then(async (view) => {
+        // Hafta başlamış ama rapor henüz yoksa taslak oluşturulur; hafta
+        // başlamadıysa (`read_only`) hiçbir şey yazılmaz, önizleme gösterilir.
+        const data =
+          view.read_only || view.report.id
+            ? view
+            : await teacherApi.openReport(classCourseId, weekId);
         if (cancelled) return;
         setPayload(data);
+        setReadOnly(data.read_only);
         reportIdRef.current = data.report.id;
         originalDueRef.current = data.report.homework?.due_date ?? '';
         setTopic(data.report.topic_covered ?? '');
@@ -99,7 +107,8 @@ export default function ReportEntryPage() {
         setHwDesc(data.report.homework?.description ?? '');
         setDueDate(data.report.homework?.due_date ?? '');
         setEntries(data.entries);
-        readyRef.current = true;
+        // Otomatik kaydetme yalnızca gerçekten yazılabilir bir raporda çalışır.
+        readyRef.current = !data.read_only && data.report.id !== null;
       })
       .catch((err) => {
         if (!cancelled) {
@@ -140,15 +149,15 @@ export default function ReportEntryPage() {
     }
   }, [buildInput]);
 
-  // ---- Otomatik kaydetme: debounce ~2 sn ----
+  // ---- Otomatik kaydetme: debounce ~2 sn (salt-okunur önizlemede kapalı) ----
   useEffect(() => {
-    if (!readyRef.current || !reportIdRef.current) return;
+    if (readOnly || !readyRef.current || !reportIdRef.current) return;
     setSaveState('saving');
     const timer = setTimeout(() => {
       flushSave();
     }, 2000);
     return () => clearTimeout(timer);
-  }, [topic, prevText, hwDesc, dueDate, entries, flushSave]);
+  }, [topic, prevText, hwDesc, dueDate, entries, flushSave, readOnly]);
 
   function updateEntry(studentId: string, patch: Partial<ReportEntry>) {
     setEntries((prev) =>
@@ -262,14 +271,15 @@ export default function ReportEntryPage() {
   const isLastWeek = report.homework === null && dueDate === '';
   const isCompleted = report.status !== 'draft';
 
-  const saveIndicator =
-    saveState === 'saving' ? (
-      <span className="text-xs text-muted">Kaydediliyor…</span>
-    ) : saveState === 'saved' ? (
-      <span className="text-xs text-status-sent">Kaydedildi</span>
-    ) : saveState === 'error' ? (
-      <span className="text-xs text-att-absent">Kaydedilemedi</span>
-    ) : null;
+  const saveIndicator = readOnly
+    ? null
+    : saveState === 'saving' ? (
+        <span className="text-xs text-muted">Kaydediliyor…</span>
+      ) : saveState === 'saved' ? (
+        <span className="text-xs text-status-sent">Kaydedildi</span>
+      ) : saveState === 'error' ? (
+        <span className="text-xs text-att-absent">Kaydedilemedi</span>
+      ) : null;
 
   return (
     <div className="space-y-2">
@@ -292,13 +302,20 @@ export default function ReportEntryPage() {
             {returnLabel}
           </button>
           {saveIndicator}
-          {!isCompleted && (
+          {!isCompleted && !readOnly && (
             <PrimaryButton onClick={handleComplete} disabled={completing}>
               {completing ? 'Tamamlanıyor…' : 'Raporu tamamla'}
             </PrimaryButton>
           )}
         </div>
       </div>
+
+      {readOnly && (
+        <p className="rounded-md border border-att-late/40 bg-att-late/5 px-3 py-2 text-sm text-att-late">
+          Bu hafta henüz başlamadı — yalnızca önizleme. Hafta başladığında rapor
+          doldurulabilir.
+        </p>
+      )}
 
       {isCompleted && (
         <p className="rounded-md border border-status-completed/30 bg-status-completed/5 px-3 py-2 text-sm text-status-completed">
@@ -322,6 +339,7 @@ export default function ReportEntryPage() {
             className={inputClass}
             value={prevText}
             onChange={(e) => setPrevText(e.target.value)}
+            disabled={readOnly}
             placeholder="Geçen haftanın ödevi…"
           />
         </Field>
@@ -331,6 +349,7 @@ export default function ReportEntryPage() {
             className={inputClass}
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
+            disabled={readOnly}
             placeholder="Bu hafta işlenen konu…"
           />
         </Field>
@@ -344,6 +363,7 @@ export default function ReportEntryPage() {
             className={inputClass}
             value={hwDesc}
             onChange={(e) => setHwDesc(e.target.value)}
+            disabled={readOnly}
             placeholder="Önümüzdeki haftanın ödevi…"
           />
         </Field>
@@ -358,6 +378,7 @@ export default function ReportEntryPage() {
             className={inputClass + ' tabular'}
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
+            disabled={readOnly}
             onBlur={() => {
               if (!dueDate && originalDueRef.current) setDueDate(originalDueRef.current);
             }}
@@ -365,7 +386,8 @@ export default function ReportEntryPage() {
         </Field>
       </section>
 
-      {/* Toplu doldurma kısayolu */}
+      {/* Toplu doldurma kısayolu (salt-okunur önizlemede gizli) */}
+      {!readOnly && (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <button
           type="button"
@@ -424,6 +446,7 @@ export default function ReportEntryPage() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Masaüstü: tablo */}
       <div className="compact elevation-1 hidden overflow-hidden rounded-md border border-border bg-surface md:block">
@@ -473,6 +496,7 @@ export default function ReportEntryPage() {
                         })
                       }
                       onKeyDown={(e) => handleCellKeyDown(e, row, 0)}
+                      disabled={readOnly}
                       className={inputClass}
                     >
                       {(Object.keys(ATTENDANCE_LABELS) as Attendance[]).map((a) => (
@@ -496,6 +520,7 @@ export default function ReportEntryPage() {
                       }
                       onKeyDown={(e) => handleCellKeyDown(e, row, 1)}
                       onFocus={(e) => e.target.select()}
+                      disabled={readOnly}
                       className={inputClass + ' tabular'}
                     />
                   </td>
@@ -505,7 +530,7 @@ export default function ReportEntryPage() {
                       type="number"
                       min={1}
                       max={10}
-                      disabled={interestDisabled}
+                      disabled={readOnly || interestDisabled}
                       value={entry.interest_score ?? ''}
                       onChange={(e) =>
                         updateEntry(entry.student_id, {
@@ -521,7 +546,7 @@ export default function ReportEntryPage() {
                     <textarea
                       ref={setCellRef(`${row}-3`)}
                       rows={1}
-                      disabled={false}
+                      disabled={readOnly}
                       value={entry.teacher_note ?? ''}
                       onChange={(e) =>
                         updateEntry(entry.student_id, { teacher_note: e.target.value })
@@ -569,7 +594,8 @@ export default function ReportEntryPage() {
                           attendance: e.target.value as Attendance,
                         })
                       }
-                      className="h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text"
+                      disabled={readOnly}
+                      className="h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
                     >
                       {(Object.keys(ATTENDANCE_LABELS) as Attendance[]).map((a) => (
                         <option key={a} value={a}>
@@ -591,7 +617,8 @@ export default function ReportEntryPage() {
                             homework_score: parseScore(e.target.value),
                           })
                         }
-                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text"
+                        disabled={readOnly}
+                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
                       />
                     </Field>
                     <Field label="Ders içi performans puanı" htmlFor="m-int">
@@ -600,7 +627,7 @@ export default function ReportEntryPage() {
                         type="number"
                         min={1}
                         max={10}
-                        disabled={interestDisabled}
+                        disabled={readOnly || interestDisabled}
                         value={entry.interest_score ?? ''}
                         onChange={(e) =>
                           updateEntry(entry.student_id, {
@@ -619,7 +646,8 @@ export default function ReportEntryPage() {
                       onChange={(e) =>
                         updateEntry(entry.student_id, { teacher_note: e.target.value })
                       }
-                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
+                      disabled={readOnly}
+                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text disabled:bg-bg"
                     />
                   </Field>
                 </div>

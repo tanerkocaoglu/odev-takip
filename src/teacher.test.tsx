@@ -39,6 +39,17 @@ describe('teacherApi', () => {
     expect(init.method ?? 'GET').toBe('GET');
   });
 
+  it('openReportEntry, class_course_id + week_id ile GET atar', async () => {
+    const fetchMock = mockFetch(200, { report: {}, read_only: true, entries: [] });
+    vi.stubGlobal('fetch', fetchMock);
+    await teacherApi.openReportEntry('cc1', 'w1');
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `${BASE_URL}/teacher/reports/entry?class_course_id=cc1&week_id=w1`,
+    );
+    expect(init.method ?? 'GET').toBe('GET');
+  });
+
   it('openReport, class_course_id + week_id ile POST atar', async () => {
     const fetchMock = mockFetch(201, { report: {}, entries: [] });
     vi.stubGlobal('fetch', fetchMock);
@@ -157,6 +168,23 @@ describe('TeacherDashboardPage', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('hafta henüz başlamadıysa önizleme banner\'ı ve "Önizleme" rozeti gösterilir', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, { ...DASHBOARD, week_not_started: true }),
+    );
+    render(
+      <MemoryRouter>
+        <TeacherDashboardPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('ÖKLİD · Matematik')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Bu hafta henüz başlamadı/)).toBeInTheDocument();
+    expect(screen.getAllByText('Önizleme').length).toBeGreaterThan(0);
+  });
 });
 
 const REPORT = {
@@ -232,8 +260,33 @@ describe('ReportEntryPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('teslim rozeti tıklanabilir değildir (yalnızca metin)', async () => {
-    const withSubmission = {
+  it('hafta henüz başlamadıysa salt-okunur önizleme: alanlar kapalı, aksiyon yok', async () => {
+    const preview = {
+      ...REPORT,
+      report: { ...REPORT.report, id: null },
+      read_only: true,
+    };
+    vi.stubGlobal('fetch', mockFetch(200, preview));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText(/Bu hafta henüz başlamadı/)).toBeInTheDocument();
+    expect(screen.getByLabelText('İşlenen konu')).toBeDisabled();
+    expect(screen.getByLabelText('Yapılacak ödev')).toBeDisabled();
+    expect(screen.getByLabelText('Teslim tarihi')).toBeDisabled();
+    expect(screen.getByLabelText('Verilmiş olan ödev')).toBeDisabled();
+    expect(screen.getByLabelText('Devamsızlık')).toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Raporu tamamla' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Tümünü geldi yap')).not.toBeInTheDocument();
+  });
+
+  it('teslim rozeti tıklanabilir değildir (yalnızca metin)', async () => {    const withSubmission = {
       ...REPORT,
       entries: REPORT.entries.map((e, i) => ({
         ...e,

@@ -428,6 +428,15 @@ export const teacherApi = {
   /** Salt-okunur tek rapor — admin "Tüm raporlar" görünümü. */
   getReport: (reportId: string) =>
     apiFetch<TeacherReportPayload>(`/teacher/reports/${encodeURIComponent(reportId)}`),
+  /**
+   * Rapor giriş ekranının yükleme ucu: rapor varsa onu, yoksa (henüz
+   * oluşturulmamış) DB'ye yazmadan sentetik önizlemeyi döner. Hafta henüz
+   * başlamadıysa `read_only: true` gelir (spec §5.1).
+   */
+  openReportEntry: (classCourseId: string, weekId: string) =>
+    apiFetch<TeacherReportPayload>(
+      `/teacher/reports/entry${query({ class_course_id: classCourseId, week_id: weekId })}`,
+    ),
   /** Get-or-create: rapor + satırlar + draft homeworks döner. */
   openReport: (classCourseId: string, weekId: string) =>
     apiFetch<TeacherReportPayload>('/teacher/reports', {

@@ -800,6 +800,13 @@ describe('POST /api/v1/teacher/reports/:id/complete (üst alan zorunluluğu)', (
 });
 
 describe('Yılın son haftası (spec §5.2 sınır durumu)', () => {
+  // Son hafta kaydı 2026-08-10'da başlar; global fake saat 2026-08-04'te
+  // olduğu için hafta "henüz başlamamış" sayılır ve yazma 403 döner. Bu
+  // describe haftayı başlamış kabul etmek için saati start_date'e alır
+  // (spec §5.1).
+  beforeAll(() => vi.setSystemTime(new Date('2026-08-10T10:00:00')));
+  afterAll(() => vi.setSystemTime(FAKE_NOW));
+
   it('tek haftalı yılda due_date null; tarih girilmeden tamamla 400, girilince 200', async () => {
     // 1) Rapor oluştur — sonraki hafta yok, due_date hesaplanamaz, homework yok.
     const created = await request(app)
@@ -945,12 +952,132 @@ describe('Rapor öğrenci listesi — henüz başlamamış enrollment (spec §5.
     expect(ids2).toHaveLength(0);
 
     // Hafta 3 başı 2026-08-10 >= enrollment başı 2026-08-05 → artık aktif.
+    // Hafta 3 henüz başlamadığı için yazma yok; salt-okunur önizleme satırları
+    // öğrenciyi içerir (spec §5.1). Önizleme DB'ye satır yazmaz.
     const w3 = await request(app)
-      .post('/api/v1/teacher/reports')
-      .set('Authorization', `Bearer ${teacherToken}`)
-      .send({ class_course_id: 't-cc-future', week_id: WEEK3.id });
-    expect(w3.status).toBe(201);
+      .get(`/api/v1/teacher/reports/entry?class_course_id=t-cc-future&week_id=${WEEK3.id}`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(w3.status).toBe(200);
+    expect(w3.body.read_only).toBe(true);
+    expect(w3.body.report.id).toBeNull();
     const ids3 = (w3.body.entries as Array<{ student_id: string }>).map((e) => e.student_id);
     expect(ids3).toContain('t-stu-rec-future');
+  });
+});
+
+describe('Gelecek hafta (henüz başlamamış) — salt-okunur önizleme + yazma reddi (spec §5.1)', () => {
+  it('GET /reports/entry rapor oluşturmadan read_only önizleme döner', async () => {
+    const before = db
+      .prepare(`SELECT COUNT(*) AS n FROM reports WHERE class_course_id = ? AND week_id = ?`)
+      .get(CC_OWN, WEEK3.id) as { n: number };
+    expect(before.n).toBe(0);
+
+    const res = await request(app)
+      .get(`/api/v1/teacher/reports/entry?class_course_id=${CC_OWN}&week_id=${WEEK3.id}`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.read_only).toBe(true);
+    expect(res.body.report.id).toBeNull();
+    expect(res.body.report.status).toBe('draft');
+    expect(res.body.report.week.start_date).toBe(WEEK3.start);
+    expect(res.body.report.class_name).toBe('Test Sınıf');
+    expect(res.body.report.course_name).toBe('Ders 1');
+    // Hafta 3 başında aktif 3 öğrenci (4. öğrenci hafta 2'de ayrıldı).
+    expect((res.body.entries as unknown[]).length).toBe(3);
+
+    // Önizleme HİÇBİR ŞEY yazmadı.
+    const after = db
+      .prepare(`SELECT COUNT(*) AS n FROM reports WHERE class_course_id = ? AND week_id = ?`)
+      .get(CC_OWN, WEEK3.id) as { n: number };
+    expect(after.n).toBe(0);
+  });
+
+  it('POST /reports gelecek hafta için 403 döner ve rapor oluşmaz', async () => {
+    const res = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: CC_OWN, week_id: WEEK3.id });
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+
+    const row = db
+      .prepare(`SELECT COUNT(*) AS n FROM reports WHERE class_course_id = ? AND week_id = ?`)
+      .get(CC_OWN, WEEK3.id) as { n: number };
+    expect(row.n).toBe(0);
+  });
+
+  it('mevcut gelecek-hafta raporu (kalıntı) da PUT/complete 403; GET read_only', async () => {
+    // Üretimde düzeltme öncesi oluşmuş olabilecek "Taslak" kalıntısını taklit.
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO reports
+         (id, class_course_id, week_id, topic_covered, prev_homework_id,
+          prev_homework_text, status, completed_at, created_by, updated_at)
+       VALUES (?, ?, ?, NULL, NULL, NULL, 'draft', NULL, 'test-teacher', ?)`,
+    ).run('t-report-future-residue', CC_OWN, WEEK3.id, now);
+
+    const view = await request(app)
+      .get(`/api/v1/teacher/reports/entry?class_course_id=${CC_OWN}&week_id=${WEEK3.id}`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(view.status).toBe(200);
+    expect(view.body.read_only).toBe(true);
+    expect(view.body.report.id).toBe('t-report-future-residue');
+
+    const put = await request(app)
+      .put('/api/v1/teacher/reports/t-report-future-residue')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ topic_covered: 'Gelecek hafta yazma denemesi' });
+    expect(put.status).toBe(403);
+    expect(put.body.error.code).toBe('FORBIDDEN');
+
+    const complete = await request(app)
+      .post('/api/v1/teacher/reports/t-report-future-residue/complete')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(complete.status).toBe(403);
+  });
+
+  it('admin de gelecek haftaya yazamaz (403)', async () => {
+    const post = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ class_course_id: CC_OTHER, week_id: WEEK3.id });
+    expect(post.status).toBe(403);
+    expect(post.body.error.code).toBe('FORBIDDEN');
+
+    const put = await request(app)
+      .put('/api/v1/teacher/reports/t-report-future-residue')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ topic_covered: 'Admin gelecek deneme' });
+    expect(put.status).toBe(403);
+  });
+
+  it('dashboard gelecek haftada week_not_started=true döner', async () => {
+    // Aktif yılın ilk haftasından önce: fallback en erken haftaya düşer ve
+    // o hafta henüz başlamamıştır.
+    vi.setSystemTime(new Date('2026-07-01T10:00:00'));
+    try {
+      const res = await request(app)
+        .get('/api/v1/teacher/dashboard')
+        .set('Authorization', `Bearer ${teacherToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.week_not_started).toBe(true);
+      expect(res.body.week.id).toBe(WEEK1.id);
+    } finally {
+      vi.setSystemTime(FAKE_NOW);
+    }
+  });
+
+  it('hafta başladığında (bugün == start_date) yazma serbest', async () => {
+    vi.setSystemTime(new Date('2026-08-10T09:00:00'));
+    try {
+      const res = await request(app)
+        .post('/api/v1/teacher/reports')
+        .set('Authorization', `Bearer ${teacherToken}`)
+        .send({ class_course_id: 't-cc-5', week_id: WEEK3.id });
+      expect(res.status).toBe(201);
+      expect(res.body.read_only).toBe(false);
+    } finally {
+      vi.setSystemTime(FAKE_NOW);
+    }
   });
 });

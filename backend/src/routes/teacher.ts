@@ -29,7 +29,7 @@ import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
-import { isOverdue, localTodayISO } from '../utils/time.js';
+import { hasWeekStarted, isOverdue, localTodayISO } from '../utils/time.js';
 import type { AuthUser } from '../types.js';
 
 const router = Router();
@@ -52,6 +52,72 @@ function assertCanFill(user: AuthUser, cc: { teacher_id: string }): void {
  * açıklaması. `homework` null ise (yılın son haftası, tarih henüz
  * girilmedi) form "teslim tarihini siz belirleyin" durumundadır (spec §5.2).
  */
+type PrevSubmission = {
+  is_late: number;
+  status: string;
+  files: Array<{ key: string; filename: string }>;
+};
+
+/**
+ * Geçen haftanın ödevi (`prev_homework_id`) için öğrenci bazında teslim
+ * durumu — rapor giriş ekranındaki teslim rozetleri (spec.md §5.1). Rapor
+ * satırları da bu veriden beslenir; hem mevcut rapor payload'ı hem de
+ * gelecek haftanın sentetik önizlemesi bu tek fonksiyonu kullanır.
+ */
+function loadPrevSubmissions(prevHomeworkId: string | null): Map<string, PrevSubmission> {
+  if (!prevHomeworkId) return new Map();
+  const rows = db
+    .prepare(
+      `SELECT s.id AS submission_id, s.student_id, s.is_late, s.status
+       FROM submissions s WHERE s.homework_id = ?`,
+    )
+    .all(prevHomeworkId) as Array<{
+    submission_id: string;
+    student_id: string;
+    is_late: number;
+    status: string;
+  }>;
+  const fileRows = db
+    .prepare(
+      `SELECT sf.submission_id, sf.key, sf.filename
+       FROM submission_files sf
+       JOIN submissions s ON s.id = sf.submission_id
+       WHERE s.homework_id = ?`,
+    )
+    .all(prevHomeworkId) as Array<{
+    submission_id: string;
+    key: string;
+    filename: string;
+  }>;
+  const filesBySubmission = new Map<string, Array<{ key: string; filename: string }>>();
+  for (const f of fileRows) {
+    const list = filesBySubmission.get(f.submission_id) ?? [];
+    list.push({ key: f.key, filename: f.filename });
+    filesBySubmission.set(f.submission_id, list);
+  }
+  return new Map(
+    rows.map((r) => [
+      r.student_id,
+      {
+        is_late: r.is_late,
+        status: r.status,
+        files: filesBySubmission.get(r.submission_id) ?? [],
+      },
+    ]),
+  );
+}
+
+/** Hafta başlamadıysa (gelecek hafta) rapora yazma reddi (spec.md §5.1). */
+function assertWeekStarted(week: { start_date: string }): void {
+  if (!hasWeekStarted(week)) {
+    throw new AppError(
+      'FORBIDDEN',
+      403,
+      'Bu hafta henüz başlamadı; rapor hafta başladığında doldurulabilir.',
+    );
+  }
+}
+
 function buildReportPayload(reportId: string): unknown {
   const report = db
     .prepare(
@@ -129,54 +195,7 @@ function buildReportPayload(reportId: string): unknown {
     teacher_note: string | null;
   }>;
 
-  // Teslim rozetleri: geçen haftanın ödevi (prev_homework) için öğrenci
-  // bazında teslim durumu (spec.md §5.1 "Teslim durumu" rozeti). Rapor giriş
-  // ekranı bu veriden beslenir (CLAUDE.md Aşama 4).
-  let prevSubmissions = new Map<
-    string,
-    { is_late: number; status: string; files: Array<{ key: string; filename: string }> }
-  >();
-  if (report.prev_homework_id) {
-    const rows = db
-      .prepare(
-        `SELECT s.id AS submission_id, s.student_id, s.is_late, s.status
-         FROM submissions s WHERE s.homework_id = ?`,
-      )
-      .all(report.prev_homework_id) as Array<{
-      submission_id: string;
-      student_id: string;
-      is_late: number;
-      status: string;
-    }>;
-    const fileRows = db
-      .prepare(
-        `SELECT sf.submission_id, sf.key, sf.filename
-         FROM submission_files sf
-         JOIN submissions s ON s.id = sf.submission_id
-         WHERE s.homework_id = ?`,
-      )
-      .all(report.prev_homework_id) as Array<{
-      submission_id: string;
-      key: string;
-      filename: string;
-    }>;
-    const filesBySubmission = new Map<string, Array<{ key: string; filename: string }>>();
-    for (const f of fileRows) {
-      const list = filesBySubmission.get(f.submission_id) ?? [];
-      list.push({ key: f.key, filename: f.filename });
-      filesBySubmission.set(f.submission_id, list);
-    }
-    prevSubmissions = new Map(
-      rows.map((r) => [
-        r.student_id,
-        {
-          is_late: r.is_late,
-          status: r.status,
-          files: filesBySubmission.get(r.submission_id) ?? [],
-        },
-      ]),
-    );
-  }
+  const prevSubmissions = loadPrevSubmissions(report.prev_homework_id);
 
   const entriesWithSubmission = entries.map((e) => ({
     ...e,
@@ -208,6 +227,9 @@ function buildReportPayload(reportId: string): unknown {
       day_of_week: report.day_of_week,
       lesson_time: report.lesson_time,
     },
+    // Hafta henüz başlamadıysa yalnızca önizleme: tüm alanlar salt-okunur
+    // (spec.md §5.1). Frontend bu bayrağa göre input'ları kapatır.
+    read_only: !hasWeekStarted({ start_date: report.week_start }),
     entries: entriesWithSubmission,
   };
 }
@@ -311,6 +333,10 @@ router.get('/dashboard', (req, res) => {
       label: week.label,
     },
     items,
+    // Hafta henüz başlamadıysa (bugün < start_date) kayıtlar yalnızca
+    // salt-okunur önizlemedir; dashboard bunu banner/rozetle bildirir
+    // (spec.md §5.1). Yazma engeli backend guard'ındadır.
+    week_not_started: !hasWeekStarted(week),
     // İç hatırlatma (Aşama 6): gecikmiş taslak sayısı — dashboard üstünde
     // "Bu hafta N raporunuz gecikti" banner'ı için (mevcut is_overdue'dan
     // türetilir; arka plan mekanizması yok).
@@ -371,6 +397,8 @@ router.post('/reports', (req, res) => {
       'Seçilen hafta bu sınıfın eğitim yılında değil.',
     );
   }
+  // Henüz başlamamış haftaya yazma yok (spec §5.1) — mevcut rapor dalı dahil.
+  assertWeekStarted(week);
 
   // Zaten varsa aynı rapor döner (idempotent — dashboard açılışta çalıştırır).
   const existing = db
@@ -543,6 +571,12 @@ router.put('/reports/:id', (req, res) => {
   if (report.status === 'sent' && user.role !== 'admin') {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }
+  // Henüz başlamamış haftaya yazma yok (spec §5.1) — admin dahil herkes.
+  assertWeekStarted(
+    db.prepare(`SELECT start_date FROM weeks WHERE id = ?`).get(report.week_id) as {
+      start_date: string;
+    },
+  );
   const input = putReportSchema.parse(req.body);
 
   const homework = db
@@ -694,6 +728,12 @@ router.post('/reports/:id/complete', (req, res) => {
   if (report.status === 'sent') {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }
+  // Henüz başlamamış hafta tamamlanamaz (spec §5.1) — admin dahil herkes.
+  assertWeekStarted(
+    db.prepare(`SELECT start_date FROM weeks WHERE id = ?`).get(report.week_id) as {
+      start_date: string;
+    },
+  );
 
   // "Sınıfın ilk aktif haftası" istisnası (spec §5.1): bir sınıfın gördüğü ilk
   // haftada devredilen bir önceki ödev bağı yoktur; bu yüzden `present`/`late`
@@ -942,6 +982,179 @@ router.get('/reports/filters', (req, res) => {
   }>;
 
   res.json({ classes, weeks });
+});
+
+/**
+ * Henüz oluşturulmamış bir rapor için salt-okunur önizleme verisi. DB'ye
+ * **hiçbir şey yazmaz** (spec.md §5.1: gelecek hafta önizlemesi) — başlık
+ * `class_courses`+`weeks`ten, satırlar aktif enrollment'lardan türetilir.
+ * `report.id` null gelir ("henüz yok" sinyali).
+ */
+function buildEntryPreview(classCourseId: string, week: WeekRecord): unknown {
+  const cc = db
+    .prepare(
+      `SELECT cc.id, cc.class_id, cc.day_of_week, cc.lesson_time,
+              c.name AS class_name, co.name AS course_name, t.full_name AS teacher_name
+       FROM class_courses cc
+       JOIN classes c ON c.id = cc.class_id
+       JOIN courses co ON co.id = cc.course_id
+       JOIN users t ON t.id = cc.teacher_id
+       WHERE cc.id = ?`,
+    )
+    .get(classCourseId) as {
+    id: string;
+    class_id: string;
+    day_of_week: number;
+    lesson_time: string | null;
+    class_name: string;
+    course_name: string;
+    teacher_name: string;
+  };
+
+  const allWeeks = db.prepare(`SELECT * FROM weeks`).all() as unknown as WeekRecord[];
+  // Verilmiş ödev bağı: yılın ilk haftası / sınıfın ilk aktif haftası / önceki
+  // rapor yoksa boş açılır (spec §5.1). POST ile birebir aynı kural.
+  const firstActiveWeekId = firstActiveWeekIdForClass(cc.class_id);
+  const isFirstActiveWeek = firstActiveWeekId !== null && firstActiveWeekId === week.id;
+  let prevHomeworkId: string | null = null;
+  if (!isFirstActiveWeek) {
+    const previousWeek = getPreviousWeek(allWeeks, week);
+    if (previousWeek) {
+      const prev = db
+        .prepare(`SELECT id FROM homeworks WHERE class_course_id = ? AND week_id = ?`)
+        .get(cc.id, previousWeek.id) as { id: string } | undefined;
+      prevHomeworkId = prev?.id ?? null;
+    }
+  }
+  const prevDesc = prevHomeworkId
+    ? ((
+        db.prepare(`SELECT description FROM homeworks WHERE id = ?`).get(prevHomeworkId) as
+          | { description: string }
+          | undefined
+      )?.description ?? null)
+    : null;
+
+  const dueDate = calculateDueDate(week, cc.day_of_week, allWeeks);
+
+  const students = db
+    .prepare(
+      `SELECT s.id AS student_id, u.full_name AS student_name
+       FROM enrollments e
+       JOIN students s ON s.id = e.student_id AND s.deleted_at IS NULL
+       JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+       WHERE e.class_id = ?
+         AND e.start_date <= ?
+         AND (e.end_date IS NULL OR e.end_date >= ?)
+       ORDER BY u.full_name_normalized`,
+    )
+    .all(cc.class_id, week.start_date, week.start_date) as Array<{
+    student_id: string;
+    student_name: string;
+  }>;
+
+  const prevSubmissions = loadPrevSubmissions(prevHomeworkId);
+
+  return {
+    report: {
+      id: null,
+      class_course_id: cc.id,
+      week_id: week.id,
+      status: 'draft',
+      completed_at: null,
+      updated_at: new Date().toISOString(),
+      topic_covered: null,
+      prev_homework_text: prevDesc,
+      homework: dueDate !== null ? { description: '', due_date: dueDate } : null,
+      week: {
+        week_no: week.week_no,
+        start_date: week.start_date,
+        end_date: week.end_date,
+        label: week.label,
+      },
+      class_name: cc.class_name,
+      course_name: cc.course_name,
+      teacher_name: cc.teacher_name,
+      day_of_week: cc.day_of_week,
+      lesson_time: cc.lesson_time,
+    },
+    read_only: !hasWeekStarted(week),
+    entries: students.map((s) => ({
+      student_id: s.student_id,
+      student_name: s.student_name,
+      // Yeni rapor satırları 'absent' başlar (spec §5.1) — önizleme de aynı
+      // varsayılanı gösterir; yazma olmadığı için kalıcı değildir.
+      attendance: 'absent' as const,
+      homework_score: null,
+      interest_score: null,
+      teacher_note: null,
+      submission: prevSubmissions.get(s.student_id) ?? null,
+    })),
+  };
+}
+
+const entryQuerySchema = z.object({
+  class_course_id: z.string().trim().min(1),
+  week_id: z.string().trim().min(1),
+});
+
+/**
+ * GET /teacher/reports/entry — rapor giriş ekranının yükleme ucu. Rapor
+ * varsa onu, yoksa DB'ye **yazmadan** sentetik önizlemeyi döner; ikisi de
+ * `read_only` bayrağı taşır (gelecek hafta → true, spec.md §5.1).
+ *
+ * DİKKAT: `/reports/:id`'den ÖNCE kayıtlıdır; aksi halde `:id` "entry"yi
+ * yakalar (aynı desen `/reports/filters`).
+ */
+router.get('/reports/entry', (req, res) => {
+  const user = req.user!;
+  if (user.role !== 'teacher' && user.role !== 'admin') {
+    throw new AppError('FORBIDDEN', 403, 'Bu ekrana erişim yetkiniz yok.');
+  }
+  const input = entryQuerySchema.parse(req.query);
+
+  const cc = db
+    .prepare(
+      `SELECT cc.*, c.academic_year_id
+       FROM class_courses cc
+       JOIN classes c ON c.id = cc.class_id
+       WHERE cc.id = ? AND cc.deleted_at IS NULL`,
+    )
+    .get(input.class_course_id) as
+    | {
+        id: string;
+        class_id: string;
+        teacher_id: string;
+        day_of_week: number;
+        academic_year_id: string;
+      }
+    | undefined;
+  if (!cc) {
+    throw new AppError('NOT_FOUND', 404, 'Atama bulunamadı.');
+  }
+  assertCanFill(user, cc);
+
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(input.week_id) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  if (week.academic_year_id !== cc.academic_year_id) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Seçilen hafta bu sınıfın eğitim yılında değil.',
+    );
+  }
+
+  const existing = db
+    .prepare(`SELECT id FROM reports WHERE class_course_id = ? AND week_id = ?`)
+    .get(cc.id, week.id) as { id: string } | undefined;
+  if (existing) {
+    res.json(buildReportPayload(existing.id));
+    return;
+  }
+  res.json(buildEntryPreview(cc.id, week));
 });
 
 /**

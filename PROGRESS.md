@@ -5,6 +5,132 @@
 
 ---
 
+## Henüz başlamamış hafta — salt-okunur önizleme + yazma reddi ✅
+
+### Sorun
+
+Öğretmen "Bu hafta doldurulacaklar" ekranı, aktif eğitim yılında bugünü
+kapsayan hafta yoksa **en yakın gelecek haftaya** düşüyordu
+(`currentDigestWeek()` ve `GET /teacher/dashboard`'ın kendi kopyası:
+`start_date <= bugün` yoksa `ORDER BY start_date ASC LIMIT 1`). Bu gelecek
+hafta normal, doldurulabilir bir rapor formu olarak açılıyor; `POST
+/teacher/reports` (get-or-create) + `PUT /teacher/reports/:id` hiçbir tarih
+kontrolü yapmadığı için **henüz gerçekleşmemiş bir derse devamsızlık/puan/not
+yazılabiliyordu**. Kural "bugün"e bağlı olduğundan ne `CHECK` ne kısmi indeks
+ile şemada zorlanabilir → uygulama katmanı guard'ı şart.
+
+### Mevcut veri durumu (kodlamadan önce salt-okunur doğrulandı)
+
+Bu makinede erişilebilen **tüm** DB artefaktları sorgulandı (`app.db`,
+`test.db`, 4 adet `backups/*.zip` içindeki `veritabani/app.db`):
+
+- Hiçbirinde `start_date > 2026-09-21` olan hafta **yok**; son hafta
+  yerel seed'de 14–20 Eyl (yani bugün itibarıyla geçmiş).
+- ALFA/BETA/SEVA sınıfları ve "Hafta 2, 26 Eylül" senaryosu **yok** — bu,
+  `ogrenciler.csv` ile kurulmuş ayrı bir ortama (muhtemelen üretim) ait; bu
+  ortamdan üretim DB'si okunamıyor.
+- Bir de: yerel seed'de **hiç gelecek hafta olmadığından bug tetiklenemiyor**
+  (son hafta 14–20 Eyl, bugün 21 Eyl → "geçerli hafta" = hafta 21).
+
+**Öneri (a) — olduğu gibi bırak:** Gerçek ortamda bu "Taslak" satırlar varsa
+dokunulmaz. Gerekçe: `draft` durumu `weekly_digests`/kaskad **tetiklemez**;
+düzeltmeden sonra gelecek haftada salt-okunur önizlemede görünür ve hafta
+başlayınca öğretmen üzerine yazabilir (zararsız kalıntı). Silme script'i kalıcı
+bir yazma yüzeyi + veri kaybı riski getirir; 3 satırlık kozmetik kalıntı için
+gereksiz. (Bu makinede hiç satır bulunmadı.)
+
+Gerçek ortamda doğrulama komutu (Render Shell):
+```bash
+cd backend
+node -e "const{DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(process.env.DB_PATH||'db/app.db',{readOnly:true});console.log(d.prepare(\"SELECT r.id,w.start_date,c.name,co.name,r.status FROM reports r JOIN weeks w ON w.id=r.week_id JOIN class_courses cc ON cc.id=r.class_course_id JOIN classes c ON c.id=cc.class_id JOIN courses co ON co.id=cc.course_id WHERE w.start_date > date('now','localtime')\").all())"
+```
+
+### Kararlar (kullanıcı onaylı)
+
+1. Boşlukta **en yakın gelecek hafta salt-okunur önizleme** olarak gösterilir
+   (boş durum değil).
+2. Kapsam **yalnızca öğretmen rapor girişi**; admin/veli "hangi hafta"
+   mantığına dokunulmadı.
+3. Yazma engeli **admin dahil herkes** için geçerli.
+4. Önizleme için **yeni `GET /teacher/reports/entry`** salt-okunur ucu;
+   `POST`/`PUT`/`complete` reddeder (POST "önizleme dönsün" değil).
+5. Önizleme **DB'ye hiç yazmaz** — sentetik olarak türetilir.
+
+### Uygulama
+
+- **`utils/time.ts` → `hasWeekStarted(week)`** (`localTodayISO() >= start_date`)
+  — tek tarih kaynağı; tüm guard'lar bunu kullanır.
+- **`GET /teacher/reports/entry?class_course_id&week_id`** (`/reports/:id`'den
+  önce kayıtlı, `/reports/filters` deseni): rapor varsa `buildReportPayload`
+  (artık `read_only` taşır), yoksa `buildEntryPreview` ile **yazmadan** sentetik
+  önizleme (başlık `class_courses`+`weeks`ten, satırlar aktif enrollment'tan,
+  önceki ödev + son tarih POST ile aynı kuralla). `report.id` null = "henüz yok".
+- **Yazma guard'ı `assertWeekStarted`:** `POST /teacher/reports` (mevcut rapor
+  dalı dahil), `PUT /teacher/reports/:id`, `POST .../complete` → hafta
+  başlamadıysa **403 `FORBIDDEN`** ("Bu hafta henüz başladı; ...").
+- `buildReportPayload` → `read_only`; `GET /teacher/dashboard` →
+  `week_not_started`.
+- **Frontend:** `ReportEntryPage` açılışta `openReportEntry` (GET) çağırır;
+  `read_only` ise tüm input/select/textarea `disabled`, toplu doldurma ve
+  "Raporu tamamla" gizli, otomatik kaydetme kapalı, "Bu hafta henüz başlamadı"
+  banner'ı. Aksi halde rapor varsa kullanılır, yoksa `POST` get-or-create.
+  `TeacherDashboardPage` `week_not_started` banner'ı + "Önizleme" rozeti.
+- `types.ts` (`read_only`, `week_not_started`, `report.id: string | null`),
+  `api.ts` (`openReportEntry`).
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **376/376** (34 dosya; `teacher` +6 — gelecek hafta
+  önizleme/yazma reddi/admin/kalıntı/dashboard/boundary; iki mevcut test
+  gelecek haftayı yazılabilir kabul ettiği için saati `start_date`'e alacak
+  şekilde güncellendi), frontend **132/132** (22 dosya; +3).
+- **Canlı kanıt (izole `db:wipe` şeması + fixture + gerçek sunucu + HTTP):
+  11/11 PASS.**
+  1. Dashboard fallback gelecek hafta (`proof-week-1`) + `week_not_started=true`.
+  2. `GET /reports/entry` → `read_only=true`, `report.id=null`, 2 öğrenci satırı.
+  3. `POST /reports` gelecek hafta → **403**; DB'de **0 rapor** oluştu.
+  4. Kalıntı draft rapor: `GET entry` `read_only=true` + id dolu;
+     `PUT` → **403**, `complete` → **403**; DB'de satır **değişmedi**.
+  5. Başlamış hafta (`2026-09-14`) → `POST` **201**, `read_only=false` →
+     hafta başladığında otomatik düzenlenebilir.
+  Gerçek `backend/db/app.db` **değişmedi** (376 832 bayt, mtime `22:25:51`);
+  temp/fixture/sunucu temizlendi.
+
+### ⚠️ Bilinçli kapsam sınırı (unutulmuş hata değil)
+
+Aynı "boşlukta en erken haftaya düş" mantığını kullanan **dört** yüzey var:
+(1) admin dashboard eksik rapor listesi, (2) admin gönderim ekranının
+varsayılan haftası, (3) ödev özeti ekranının varsayılan haftası, (4)
+`digest-backfill` CLI'ının varsayılan haftası. Bunlar **yazma değil
+listeleme/varsayılan seçim** yüzeyleridir; bu turda **dokunulmadı**.
+Yine de ayrıca kontrol edilmeli: admin dashboard'u bir gelecek haftada
+"bugün 26 kayıt eksik" gibi **yanıltıcı** bir uyarı gösteriyor mu? Şimdilik
+kabul edilen bilinçli sınır.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/time.ts                  (+hasWeekStarted)
+backend/src/routes/teacher.ts              (entry ucu, buildEntryPreview,
+                                            loadPrevSubmissions, assertWeekStarted,
+                                            read_only, week_not_started)
+backend/src/teacher.test.ts                (+6 test; 2 test saati hizalandı)
+src/types.ts                               (read_only, week_not_started, id nullable)
+src/services/api.ts                        (openReportEntry)
+src/pages/teacher/ReportEntryPage.tsx      (salt-okunur önizleme)
+src/pages/teacher/TeacherDashboardPage.tsx (banner + Önizleme rozeti)
+src/teacher.test.tsx                       (+3 test)
+spec.md                                    (§5.1 kural + kapsam sınırı, §6.1)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Bakım araçları R2 farkındalığı — db:backup / cleanup-submissions / wipe-reset ✅
 
 ### Sorun

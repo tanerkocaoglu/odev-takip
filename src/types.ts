@@ -206,6 +206,8 @@ export interface TeacherDashboard {
   items: TeacherDashboardItem[];
   /** Bu hafta günü geçmiş taslak rapor sayısı — iç hatırlatma banner'ı için. */
   overdue_count: number;
+  /** Hafta henüz başlamadıysa (bugün < start_date) kayıtlar salt-okunur önizleme. */
+  week_not_started: boolean;
 }
 
 export interface ReportEntry {
@@ -224,7 +226,8 @@ export interface ReportEntry {
 }
 
 export interface TeacherReportHeader {
-  id: string;
+  /** Henüz oluşturulmamış (gelecek hafta önizlemesi) ise null. */
+  id: string | null;
   class_course_id: string;
   week_id: string;
   status: 'draft' | 'completed' | 'sent';
@@ -243,6 +246,8 @@ export interface TeacherReportHeader {
 
 export interface TeacherReportPayload {
   report: TeacherReportHeader;
+  /** Hafta henüz başlamadıysa true — ekran salt-okunur önizleme (spec §5.1). */
+  read_only: boolean;
   entries: ReportEntry[];
 }
 
