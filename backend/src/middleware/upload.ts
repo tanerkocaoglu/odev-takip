@@ -44,6 +44,49 @@ export const upload = multer({
   },
 });
 
+// ---------- Öğretmen ödev ekleri (yalnızca PDF) ----------
+
+/** Bir ödeve eklenebilecek en fazla PDF sayısı (kullanıcı kararı). */
+export const MAX_HOMEWORK_ATTACHMENTS = 5;
+
+const pdfMulter = multer({
+  storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',
+  limits: { fileSize: MAX_FILE_SIZE, files: MAX_HOMEWORK_ATTACHMENTS },
+  fileFilter: (_req, file, cb) => {
+    const ext = file.originalname.toLowerCase().split('.').pop() ?? '';
+    if (ext === 'pdf' || file.mimetype.toLowerCase() === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new AppError('VALIDATION_ERROR', 400, 'Yalnızca PDF dosyası ekleyebilirsiniz.'));
+    }
+  },
+});
+
+/**
+ * Ödev eki yükleme middleware'i: `files` alanı, yalnızca PDF, dosya başına
+ * 10 MB, istek başına en fazla 5. Multer limit ihlalleri Türkçe mesaja çevrilir.
+ */
+export const pdfUpload: RequestHandler = (req, res, next) => {
+  pdfMulter.array('files', MAX_HOMEWORK_ATTACHMENTS)(req, res, (err: unknown) => {
+    if (err instanceof MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      next(new AppError('VALIDATION_ERROR', 400, 'PDF dosyası en fazla 10 MB olabilir.'));
+      return;
+    }
+    if (err instanceof MulterError && err.code === 'LIMIT_FILE_COUNT') {
+      next(
+        new AppError(
+          'VALIDATION_ERROR',
+          400,
+          `Bir ödeve en fazla ${MAX_HOMEWORK_ATTACHMENTS} PDF ekleyebilirsiniz.`,
+        ),
+      );
+      return;
+    }
+    next(err);
+  });
+};
+
 // ---------- CSV (toplu öğrenci içe aktarma) ----------
 
 const CSV_MIMES = new Set([

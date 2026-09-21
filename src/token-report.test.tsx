@@ -105,6 +105,34 @@ describe('TokenReportPage', () => {
     expect(statuses).toEqual(['present', 'missing']);
   });
 
+  it('snapshot ek alanı taşısa bile public sayfa ek dosya göstermez', async () => {
+    const leaked = {
+      ...SNAPSHOT,
+      courses: SNAPSHOT.courses.map((c) =>
+        c.class_course_id === 'cc1'
+          ? {
+              ...c,
+              homework_attachments: [
+                { id: 'a1', key: 'k1.pdf', filename: 'gizli-odev-eki.pdf', size: 1, mime: 'application/pdf', ext: 'pdf' },
+              ],
+              prev_homework_attachments: [
+                { id: 'a2', key: 'k2.pdf', filename: 'gizli-gecen-ek.pdf', size: 1, mime: 'application/pdf', ext: 'pdf' },
+              ],
+            }
+          : c,
+      ),
+    };
+    vi.stubGlobal('fetch', mockFetch(200, { snapshot: leaked, sent_at: null }));
+    renderTokenPage('tok');
+
+    await waitFor(() => {
+      expect(screen.getByText('ÖKLİD')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('gizli-odev-eki.pdf')).not.toBeInTheDocument();
+    expect(screen.queryByText('gizli-gecen-ek.pdf')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ekler')).not.toBeInTheDocument();
+  });
+
   it('iptal edilmiş token 410 gösterir', async () => {
     vi.stubGlobal(
       'fetch',

@@ -415,8 +415,8 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
        VALUES (?, ?, ?, NULL, NULL, NULL, 'completed', ?, ?, ?)`,
     );
     const insHw = db.prepare(
-      `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+      `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
     const insEntry = db.prepare(
       `INSERT INTO report_entries

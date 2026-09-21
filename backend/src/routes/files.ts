@@ -1,17 +1,22 @@
 /**
  * Korumalı dosya rotası — `GET /api/v1/files/:key` (spec.md §8, CLAUDE.md).
  *
- * `express.static` KULLANILMAZ. Rota `auth` + yetki matrisi içerir:
- * - öğrenci: kendi teslimi
- * - öğretmen: kendi ödevinin teslimi
- * - veli: çocuğunun teslimi (guardian_id eşleşmesi)
- * - admin: hepsi
+ * `express.static` KULLANILMAZ. Rota `auth` + yetki matrisi içerir. İki kaynak
+ * vardır (key küresel benzersizdir; önce teslim, sonra ödev eki denenir):
+ * - **Teslim dosyası** (`submission_files → submissions → homeworks`):
+ *   öğrenci kendi teslimi; öğretmen kendi ödevinin teslimi; veli çocuğununki;
+ *   admin hepsi.
+ * - **Ödev eki** (`homework_attachments → homeworks`; migration #13):
+ *   öğretmen dersin sahibi; admin hepsi; öğrenci ödevin sınıfına kayıtlı ve
+ *   rapor `completed`/`sent` ise; veli çocuğu o sınıfa kayıtlı ve rapor
+ *   `completed`/`sent` ise. Böylece taslak bir raporun ekleri öğrenci/veliye
+ *   sızmaz.
  *
- * Yerel modda `res.sendFile()`. R2 modunda (Aşama 6) imzalı URL'ye 302.
- * Saklama politikası (§8): `files_purged_at` doluysa 404.
+ * Yerel modda `res.sendFile()`. R2 modunda imzalı URL'ye 302.
+ * Saklama politikası (§8): teslimde `files_purged_at` doluysa 404.
  *
  * `GET /:key/thumb` aynı yetkiyi kullanarak grid için küçük thumbnail'ı servis
- * eder (migration #8 `thumb_key`); thumbnail yoksa orijinale düşer.
+ * eder; thumbnail yoksa orijinale düşer (ödev ekleri PDF'tir → her zaman orijinal).
  */
 
 import { Router, type Response as ExpressResponse } from 'express';
@@ -37,7 +42,7 @@ router.use((_req, res, next) => {
 
 router.use(requireAuth);
 
-interface FileRow {
+interface SubmissionFileRow {
   key: string;
   thumb_key: string | null;
   mime: string;
@@ -48,8 +53,18 @@ interface FileRow {
   guardian_id: string | null;
 }
 
+interface AttachmentFileRow {
+  key: string;
+  mime: string;
+  storage: StorageDriver;
+  teacher_id: string;
+  class_id: string;
+  week_start: string;
+  report_status: string;
+}
+
 /** key → submission_files → submissions → homeworks → class_courses zinciri. */
-function loadFileRow(key: string): FileRow | undefined {
+function loadSubmissionFileRow(key: string): SubmissionFileRow | undefined {
   return db
     .prepare(
       `SELECT sf.key, sf.thumb_key, sf.mime, sf.storage,
@@ -63,11 +78,27 @@ function loadFileRow(key: string): FileRow | undefined {
        JOIN students st ON st.id = s.student_id
        WHERE sf.key = ?`,
     )
-    .get(key) as FileRow | undefined;
+    .get(key) as SubmissionFileRow | undefined;
 }
 
-/** Yetki matrisi — her rol için tek yol. */
-function assertAccess(user: AuthUser, row: FileRow): void {
+/** key → homework_attachments → homeworks → class_courses/reports/weeks. */
+function loadAttachmentFileRow(key: string): AttachmentFileRow | undefined {
+  return db
+    .prepare(
+      `SELECT ha.key, ha.mime, ha.storage,
+              cc.teacher_id, cc.class_id, w.start_date AS week_start,
+              r.status AS report_status
+       FROM homework_attachments ha
+       JOIN reports r ON r.id = ha.report_id
+       JOIN class_courses cc ON cc.id = r.class_course_id
+       JOIN weeks w ON w.id = r.week_id
+       WHERE ha.key = ?`,
+    )
+    .get(key) as AttachmentFileRow | undefined;
+}
+
+/** Teslim dosyası yetki matrisi — her rol için tek yol. */
+function assertSubmissionAccess(user: AuthUser, row: SubmissionFileRow): void {
   let allowed = false;
   if (user.role === 'admin') {
     allowed = true;
@@ -77,6 +108,54 @@ function assertAccess(user: AuthUser, row: FileRow): void {
     allowed = row.teacher_id === user.id;
   } else if (user.role === 'guardian') {
     allowed = user.guardian_id === row.guardian_id;
+  }
+  if (!allowed) {
+    throw new AppError('FORBIDDEN', 403, 'Bu dosyaya erişim yetkiniz yok.');
+  }
+}
+
+/** Öğrenci/veli için: ödevin sınıfına (hafta başında) kayıtlı mı? */
+function enrollmentCoversClass(
+  role: 'student' | 'guardian',
+  user: AuthUser,
+  row: AttachmentFileRow,
+): boolean {
+  if (role === 'student') {
+    if (!user.student_id) return false;
+    const hit = db
+      .prepare(
+        `SELECT 1 FROM enrollments e
+          WHERE e.student_id = ? AND e.class_id = ?
+            AND e.start_date <= ? AND (e.end_date IS NULL OR e.end_date >= ?)`,
+      )
+      .get(user.student_id, row.class_id, row.week_start, row.week_start);
+    return hit !== undefined;
+  }
+  if (!user.guardian_id) return false;
+  const hit = db
+    .prepare(
+      `SELECT 1 FROM enrollments e
+        JOIN students s ON s.id = e.student_id
+        WHERE s.guardian_id = ? AND e.class_id = ?
+          AND e.start_date <= ? AND (e.end_date IS NULL OR e.end_date >= ?)`,
+    )
+    .get(user.guardian_id, row.class_id, row.week_start, row.week_start);
+  return hit !== undefined;
+}
+
+/**
+ * Ödev eki yetki matrisi. Öğrenci/veli yalnızca **yayımlanmış** (completed/sent)
+ * raporun ekini görür — taslak rapor eki sızmaz.
+ */
+function assertAttachmentAccess(user: AuthUser, row: AttachmentFileRow): void {
+  let allowed = false;
+  if (user.role === 'admin') {
+    allowed = true;
+  } else if (user.role === 'teacher') {
+    allowed = row.teacher_id === user.id;
+  } else if (user.role === 'student' || user.role === 'guardian') {
+    const published = row.report_status === 'completed' || row.report_status === 'sent';
+    allowed = published && enrollmentCoversClass(user.role, user, row);
   }
   if (!allowed) {
     throw new AppError('FORBIDDEN', 403, 'Bu dosyaya erişim yetkiniz yok.');
@@ -109,17 +188,26 @@ router.get(
   '/:key',
   asyncHandler<{ key: string }>(async (req, res) => {
     const user = req.user!;
-    const row = loadFileRow(req.params.key);
-    if (!row) {
-      throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
-    }
-    assertAccess(user, row);
+    const key = req.params.key;
 
-    if (row.files_purged_at) {
-      throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+    const submission = loadSubmissionFileRow(key);
+    if (submission) {
+      assertSubmissionAccess(user, submission);
+      if (submission.files_purged_at) {
+        throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+      }
+      await sendStored(res, submission.storage, submission.key, submission.mime);
+      return;
     }
 
-    await sendStored(res, row.storage, row.key, row.mime);
+    const attachment = loadAttachmentFileRow(key);
+    if (attachment) {
+      assertAttachmentAccess(user, attachment);
+      await sendStored(res, attachment.storage, attachment.key, attachment.mime);
+      return;
+    }
+
+    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
   }),
 );
 
@@ -127,18 +215,28 @@ router.get(
   '/:key/thumb',
   asyncHandler<{ key: string }>(async (req, res) => {
     const user = req.user!;
-    const row = loadFileRow(req.params.key);
-    if (!row) {
-      throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
-    }
-    assertAccess(user, row);
+    const key = req.params.key;
 
-    if (row.files_purged_at) {
-      throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+    const submission = loadSubmissionFileRow(key);
+    if (submission) {
+      assertSubmissionAccess(user, submission);
+      if (submission.files_purged_at) {
+        throw new AppError('NOT_FOUND', 404, 'Dosya saklama süresi dolduğu için silindi.');
+      }
+      // Eski kayıtta thumbnail yoksa orijinali servis et (yine de doğru yetki).
+      await sendStored(res, submission.storage, submission.thumb_key ?? submission.key, submission.mime);
+      return;
     }
 
-    // Eski kayıtta thumbnail yoksa orijinali servis et (yine de doğru yetki).
-    await sendStored(res, row.storage, row.thumb_key ?? row.key, row.mime);
+    const attachment = loadAttachmentFileRow(key);
+    if (attachment) {
+      assertAttachmentAccess(user, attachment);
+      // PDF'lerin thumbnail'ı yoktur → orijinal.
+      await sendStored(res, attachment.storage, attachment.key, attachment.mime);
+      return;
+    }
+
+    throw new AppError('NOT_FOUND', 404, 'Dosya bulunamadı.');
   }),
 );
 

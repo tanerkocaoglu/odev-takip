@@ -362,6 +362,38 @@ export async function saveUpload(file: UploadedFile): Promise<StoredFile> {
 }
 
 /**
+ * Öğretmen ödev eki — yalnızca PDF. Görsel işleme/thumbnail YOK; dosya aynen
+ * saklanır. Magic-byte ile PDF olduğu doğrulanır (beyan edilen uzantı/mime
+ * uyuşmazsa da reddedilir).
+ */
+export async function savePdfUpload(file: UploadedFile): Promise<StoredFile> {
+  const actual = detectFileFormat(file.buffer);
+  if (actual !== 'pdf') {
+    throw new AppError('VALIDATION_ERROR', 400, 'Yalnızca PDF dosyası ekleyebilirsiniz.');
+  }
+  const declared = declaredFormat(file.originalname, file.mimetype);
+  if (declared !== null && declared !== 'pdf') {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      400,
+      'Dosyanın içeriği uzantısıyla uyuşmuyor. Lütfen dosyayı kontrol edip yeniden yükleyin.',
+    );
+  }
+
+  const key = generateKey('pdf');
+  await putObject(key, file.buffer, 'application/pdf');
+  return {
+    key,
+    filename: file.originalname,
+    size: file.buffer.length,
+    mime: 'application/pdf',
+    ext: 'pdf',
+    thumbKey: null,
+    storage: storageDriver,
+  };
+}
+
+/**
  * Key'in yerel disk yolunu döner. `GET /api/v1/files/:key` (local sürücü)
  * `res.sendFile()` kullanır; `express.static` kullanılmaz. Key formatı sıkı
  * doğrulanır — path traversal (`..`, `/`) burada engellenir.

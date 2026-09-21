@@ -460,7 +460,6 @@ function buildReportBlockForWeek(
       class_course_id: cc.id,
       week_id: week.id,
       description: `${['Alıştırma', 'Deney raporu', 'Yazı ödevi', 'Kelime listesi'][cc.courseIdx]} — hafta ${week.week_no}`,
-      attachments: null,
       due_date: dueDate,
     });
 

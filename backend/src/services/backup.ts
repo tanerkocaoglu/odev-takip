@@ -236,14 +236,54 @@ function readBackupRows(dbCopyPath: string): BackupFileRow[] {
   }
 }
 
+/** Öğretmen ödev eki satırı (migration #13) — yedek hiyerarşisi için. */
+interface BackupAttachmentRow {
+  key: string;
+  filename: string;
+  storage: 'local' | 'r2';
+  size: number;
+  course_name: string;
+  week_no: number;
+}
+
+/**
+ * VACUUM kopyasındaki ödev eklerini okur. Metadata sorgusu başarısız olursa
+ * (şema yok vb.) boş döner — yedek yine üretilir.
+ */
+function readAttachmentRows(dbCopyPath: string): BackupAttachmentRow[] {
+  try {
+    const copy = new DatabaseSync(dbCopyPath, { readOnly: true });
+    try {
+      return copy
+        .prepare(
+          `SELECT ha.key AS key, ha.filename AS filename, ha.storage AS storage,
+                  ha.size AS size, co.name AS course_name, w.week_no AS week_no
+             FROM homework_attachments ha
+             JOIN reports      r  ON r.id  = ha.report_id
+             JOIN class_courses cc ON cc.id = r.class_course_id
+             JOIN courses      co ON co.id = cc.course_id
+             JOIN weeks        w  ON w.id  = r.week_id`,
+        )
+        .all() as unknown as BackupAttachmentRow[];
+    } finally {
+      copy.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Satırları anlamlı hiyerarşiye (orijinaller) + `_depo/`ya (thumbnail +
  * sahipsiz yerel) dağıtır. R2 nesneleri **akış ile** indirilir; sıralıdır
  * (paralellik yok) → bellek/disk baskısı tek nesneyle sınırlı kalır.
  * Yerel `uploads/` içindeki sahipsiz dosyalar da `_depo/`ya alınır.
+ * Ödev ekleri `Odev_Ekleri/Ders/Hafta_N/` altına yerleştirilir (öğrenciye bağlı
+ * olmadıkları için ayrı ağaç).
  */
 async function buildStructuredTree(
   rows: BackupFileRow[],
+  attachmentRows: BackupAttachmentRow[],
   uploadsDir: string,
   stagingDir: string,
 ): Promise<void> {
@@ -288,6 +328,29 @@ async function buildStructuredTree(
         accounted,
       );
     }
+  }
+
+  // Ödev ekleri (öğretmen PDF) — öğrenciye bağlı değil, ders/hafta ağacına.
+  for (const row of attachmentRows) {
+    const relDir = path.join(
+      'Odev_Ekleri',
+      sanitizeSegment(row.course_name),
+      `Hafta_${row.week_no}`,
+    );
+    const absDir = path.join(treeRoot, relDir);
+    fs.mkdirSync(absDir, { recursive: true });
+
+    let used = usedByDir.get(relDir);
+    if (!used) {
+      used = new Set<string>();
+      usedByDir.set(relDir, used);
+    }
+
+    const name = uniqueEntryName(
+      used,
+      sanitizeFilename(row.filename || fallbackFilename(row.key)),
+    );
+    await copyStored(uploadsDir, row.storage, row.key, path.join(absDir, name), accounted);
   }
 
   if (uploadsExists) {
@@ -412,7 +475,10 @@ export async function createBackup(options: BackupOptions = {}): Promise<string>
 
     // 2) Disk güvenliği: zip'e girecek toplam içeriği kontrol et.
     const rows = readBackupRows(dbCopy);
-    const estimated = rows.reduce((sum, r) => sum + (r.size ?? 0), 0);
+    const attachmentRows = readAttachmentRows(dbCopy);
+    const estimated =
+      rows.reduce((sum, r) => sum + (r.size ?? 0), 0) +
+      attachmentRows.reduce((sum, r) => sum + (r.size ?? 0), 0);
     const limit = backupMaxBytes(options);
     const estimatedWithThumbs = Math.ceil(estimated * 1.05);
     if (limit !== null && estimatedWithThumbs > limit) {
@@ -425,7 +491,7 @@ export async function createBackup(options: BackupOptions = {}): Promise<string>
 
     // 3) DB ilişkisiyle anlamlı hiyerarşiyi geçici klasöre kur.
     fs.mkdirSync(stagingDir, { recursive: true });
-    await buildStructuredTree(rows, uploadsDir, stagingDir);
+    await buildStructuredTree(rows, attachmentRows, uploadsDir, stagingDir);
 
     // 4) DB kopyası + geçici ağacı tek .zip'te birleştir.
     const zip = new AdmZip();

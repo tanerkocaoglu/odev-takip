@@ -23,6 +23,10 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { upload, MAX_FILES } from '../middleware/upload.js';
+import {
+  loadAttachmentsForHomeworkIds,
+  type AttachmentMeta,
+} from '../services/homeworkAttachments.js';
 import { saveUpload, deleteStored, type StoredFile } from '../services/storage.js';
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { isLateSubmission } from '../utils/time.js';
@@ -130,7 +134,11 @@ const HOMEWORK_SQL = `
   WHERE r.status IN ('completed','sent') AND h.description <> ''
 `;
 
-function buildHomeworkItem(row: HomeworkRow, filesBySubmission: Map<string, unknown[]>): unknown {
+function buildHomeworkItem(
+  row: HomeworkRow,
+  filesBySubmission: Map<string, unknown[]>,
+  attachmentsByHomework: Map<string, AttachmentMeta[]>,
+): unknown {
   return {
     id: row.id,
     description: row.description,
@@ -138,6 +146,9 @@ function buildHomeworkItem(row: HomeworkRow, filesBySubmission: Map<string, unkn
     course_name: row.course_name,
     teacher_name: row.teacher_name,
     class_name: row.class_name,
+    // Öğretmenin ödeve eklediği PDF'ler (migration #13). Puan/not gibi
+    // gizlenmez; öğrenci ödevi yaparken eki görebilmelidir.
+    attachments: attachmentsByHomework.get(row.id) ?? [],
     week: {
       week_no: row.week_no,
       start_date: row.week_start,
@@ -168,8 +179,11 @@ router.get('/homeworks', (req, res) => {
   const filesBySubmission = loadSubmissionFiles(
     rows.map((r) => r.submission_id).filter((id): id is string => id !== null),
   );
+  const attachmentsByHomework = loadAttachmentsForHomeworkIds(rows.map((r) => r.id));
 
-  res.json({ items: rows.map((row) => buildHomeworkItem(row, filesBySubmission)) });
+  res.json({
+    items: rows.map((row) => buildHomeworkItem(row, filesBySubmission, attachmentsByHomework)),
+  });
 });
 
 // ---------- POST /student/homeworks/:id/submit ----------
@@ -297,7 +311,8 @@ router.post(
       .prepare(HOMEWORK_SQL + ' AND h.id = ?')
       .get(studentId, studentId, homework.id) as unknown as HomeworkRow;
     const filesBySubmission = loadSubmissionFiles(item.submission_id ? [item.submission_id] : []);
-    res.json({ item: buildHomeworkItem(item, filesBySubmission) });
+    const attachmentsByHomework = loadAttachmentsForHomeworkIds([item.id]);
+    res.json({ item: buildHomeworkItem(item, filesBySubmission, attachmentsByHomework) });
   }),
 );
 

@@ -404,7 +404,6 @@ CREATE TABLE homeworks (
   class_course_id TEXT NOT NULL REFERENCES class_courses(id),  -- denormalize
   week_id         TEXT NOT NULL REFERENCES weeks(id),
   description     TEXT NOT NULL,
-  attachments     TEXT,        -- JSON dizi; öğretmenin yüklediği dosyalar
   due_date        TEXT NOT NULL   -- otomatik: bir sonraki ders günü
 ) STRICT;
 
@@ -413,6 +412,40 @@ CREATE INDEX idx_homeworks_lookup ON homeworks(class_course_id, week_id);
 ```
 > "Veren hoca" ve "verildiği hafta" ayrıca saklanmaz — `class_course_id`
 > ve `week_id` üzerinden gelir.
+>
+> Öğretmenin ödeve eklediği PDF'ler bu tabloda JSON olarak tutulmaz;
+> **`homework_attachments` tek doğru kaynaktır** (migration #13; `submissions.files`
+> JSON'unun `submission_files`'a taşınmasıyla aynı ilke). Migration #1'in
+> kullanılmayan `attachments TEXT` kolonu #13 ile **düşürülmüştür**.
+
+**`homework_attachments`** — öğretmen ödev ekleri (migration #13)
+```sql
+CREATE TABLE homework_attachments (
+  id          TEXT PRIMARY KEY,
+  report_id   TEXT NOT NULL REFERENCES reports(id),  -- sahiplik rapor üzerinde
+  key         TEXT NOT NULL,   -- storage anahtarı; GET /api/v1/files/:key
+  filename    TEXT NOT NULL,   -- orijinal dosya adı (UTF-8)
+  size        INTEGER NOT NULL,
+  mime        TEXT NOT NULL,   -- yalnızca application/pdf
+  ext         TEXT NOT NULL,   -- pdf
+  storage     TEXT NOT NULL DEFAULT 'local'
+                CHECK (storage IN ('local','r2')),
+  UNIQUE (key)
+) STRICT;
+
+CREATE INDEX idx_homework_attachments_report ON homework_attachments(report_id);
+```
+> Sahiplik **`reports.id`** üzerindendir, `homeworks.id` değil: `homeworks`
+> satırı yalnızca sonraki ders haftası varsa (`due_date` hesaplanabiliyorsa)
+> açılır; yılın **son haftasında** satır yoktur. Rapor her zaman vardır ve
+> `homeworks` raporla 1:1'dir — böylece son haftada da ek eklenebilir. Sonraki
+> haftaya taşıma `reports.prev_homework_id → homeworks.report_id` ile çözülür.
+>
+> Yalnızca **PDF** kabul edilir (magic-byte doğrulaması); ödev başına en fazla
+> **5 PDF**, dosya başına **10 MB**. Ekler ödevin göründüğü her yerde görünür
+> ("Yapılacak ödev" ve sonraki hafta "Verilmiş ödev"). Public `/r/{token}`
+> snapshot'ına **hiç yazılmaz** (§5.4). `key` küresel benzersizdir; erişim
+> matrisi §8'dedir.
 
 **`report_entries`** — öğrenci satırları
 ```sql
@@ -646,6 +679,13 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
      sorgularıyla birebir aynıdır.
    - **Teslim durumu:** her öğrenci satırında geçen haftanın ödevine
      `submission` var mı rozeti + tıklayınca dosyaları önizleme.
+   - **Ödev ekleri (migration #13):** öğretmen "Yapılacak ödev"e opsiyonel
+     olarak birden fazla **PDF** ekler (ödev başına en fazla 5, dosya başına
+     10 MB; magic-byte PDF doğrulaması). Metin alanı zorunlu kalır; ek tamamen
+     opsiyoneldir. Ekler ödevin göründüğü her yerde görünür: bu hafta
+     "Yapılacak ödev", sonraki hafta "Verilmiş ödev". Ekleme/kaldırma rapor
+     durumuyla aynı kurala tabidir (`draft`/`completed` öğretmen, `sent` yalnız
+     admin). Public `/r/{token}` ekleri **asla** göstermez (§5.4).
 3. Öğretmen doldurur: işlenen konu, yapılacak ödev, ve her satır için
    devamsızlık + 2 puan + not.
 4. Otomatik `draft` olarak kaydedilir (debounce ~2sn).
@@ -703,9 +743,11 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
 ### 5.3 Öğrencinin ödev yüklemesi
 
 1. Öğrenci giriş yapar → **"Ödevlerim"**. Ekranda yalnızca şunlar vardır:
-   ders adı, öğretmen adı, hafta, ödev açıklaması, son tarih ve teslim durumu
-   (yüklendi / yüklenmedi / geç yüklendi). **Puan, öğretmen notu, ders içi performans
-   ve rapor içeriği bu ekranda yoktur.**
+   ders adı, öğretmen adı, hafta, ödev açıklaması, son tarih, öğretmenin eklediği
+   **ödev ekleri (PDF)** ve teslim durumu (yüklendi / yüklenmedi / geç yüklendi).
+   **Puan, öğretmen notu, ders içi performans ve rapor içeriği bu ekranda yoktur.**
+   (Ödev ekleri puan/not değildir; öğrencinin ödevi yapabilmesi için gereken
+   materyaldir ve girişli olarak korumalı rotadan açılır.)
 2. Yükleme: çoklu dosya, izin verilen tipler `jpg/jpeg/png/heic/pdf`,
    dosya başına max 10 MB. **Teslim başına toplam max 30 dosya** uygulanır.
    Bir ödeve yapılan her yükleme mevcut dosyaların üzerine yazmaz; **ekler**
@@ -1259,18 +1301,29 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
   > R2'de DB kaydı olmayan "sahipsiz" nesneler yedeğe girmez (yalnızca DB'ye bağlı
   > nesneler yedeklenir).
 - **Dosya erişimi** (Aşama 4'ten itibaren): `express.static` kullanılmaz.
-  `GET /api/v1/files/:key` rotası `auth` middleware'i + yetki kontrolü içerir
-  (öğrenci: kendi teslimi; öğretmen: kendi ödevinin teslimi; veli: çocuğununki;
-  admin: hepsi). Rota, `submission_files.storage`'a bakar: `local` ise
-  `res.sendFile()`, `r2` ise **5 dakika ömürlü imzalı GET URL'ine `302`**
-  yönlendirir (proxy/stream değil). `GET /api/v1/files/:key/thumb` aynı yetkiyle
-  thumbnail'ı servis eder; `thumb_key` boşsa orijinale düşer.
+  `GET /api/v1/files/:key` rotası `auth` middleware'i + yetki kontrolü içerir.
+  Key önce `submission_files`, yoksa `homework_attachments` içinde aranır:
+  - **Teslim dosyası** (öğrenci: kendi teslimi; öğretmen: kendi ödevinin teslimi;
+    veli: çocuğununki; admin: hepsi).
+  - **Ödev eki** (migration #13): öğretmen yalnızca **kendi** dersinin eki;
+    admin hepsi; öğrenci ödevin sınıfına kayıtlı **ve** rapor `completed`/`sent`
+    ise; veli çocuğu o sınıfa kayıtlı **ve** rapor `completed`/`sent` ise.
+    Böylece taslak bir raporun ekleri öğrenci/veliye sızmaz.
+
+  Rota, satırdaki `storage`'a bakar: `local` ise `res.sendFile()`, `r2` ise
+  **5 dakika ömürlü imzalı GET URL'ine `302`** yönlendirir (proxy/stream değil).
+  `GET /api/v1/files/:key/thumb` aynı yetkiyle thumbnail'ı servis eder;
+  `thumb_key` boşsa orijinale düşer (ödev ekleri PDF'tir → her zaman orijinal).
 - Bucket public değildir; erişim yalnızca yetki kontrolünden geçen kısa ömürlü
-  imzalı URL ile olur.
+  imzalı URL ile olur. **Public `/r/{token}` snapshot'ı ödev eki anahtarı
+  taşımaz** (§5.4) — girişsiz bir sayfadan ek erişimi yapısal olarak imkânsızdır.
 
 **Saklama politikası**
 - Ödev teslim **dosyaları**: 1 yıl sonra silinir, `files_purged_at` işaretlenir.
   Teslim kaydının kendisi (kim ne zaman yükledi) kalır.
+- Öğretmen **ödev ekleri** (`homework_attachments`) teslim dosyalarından
+  ayrıdır ve **süresiz** saklanır (rapor gibi); `cleanup-submissions` kapsamına
+  girmez. `db:backup` bunları da kapsar.
 - Rapor kayıtları (puanlar, notlar, digest snapshot'ları): eğitim yılı
   bitiminden itibaren 2 yıl, sonra anonimleştirilir.
 - Silme işi Faz 6'da otomatikleştirilir; öncesinde manuel bir bakım komutu
@@ -1295,6 +1348,9 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 - Klasörleme `homeworks.class_course_id` (ödevin verildiği andaki atama)
   üzerinden yapılır; öğrenci sonradan sınıf değiştirse bile **tarihsel ders/sınıf**
   korunur, güncel `enrollments`'a bakılmaz.
+- Öğretmen **ödev ekleri** öğrenciye bağlı olmadığı için ayrı ağaca konur:
+  `Odev_Ekleri/Ders_Adi/Hafta_N/orijinal_dosya_adi`. `local`/`r2` ayrımı
+  `homework_attachments.storage` üzerinden yapılır (teslimle aynı sürücü mantığı).
 - Klasör/dosya adları ASCII'ye indirgenir (harf durumu korunur), boşluk ve
   geçersiz karakterler `_` olur; aynı klasörde ad çakışırsa `_2`, `_3`… eklenir
   (sessiz üzerine yazma yok).

@@ -29,6 +29,7 @@ import type { StudentHomework } from '../../types';
 import { formatDate } from '../../utils/date';
 import { studentApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { EmptyState, FormError } from '../../components/admin/ui';
+import HomeworkAttachments from '../../components/HomeworkAttachments';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -318,6 +319,20 @@ function PendingCard({
             Son tarih:{' '}
             <span className="font-medium text-text">{formatDate(item.due_date)}</span>
           </p>
+          {(item.attachments ?? []).length > 0 && (
+            <div className="mt-3">
+              <HomeworkAttachments
+                attachments={item.attachments ?? []}
+                onOpen={(key) => {
+                  openProtectedFile(key).catch((err) =>
+                    window.alert(
+                      err instanceof ApiClientError ? err.message : 'Dosya açılamadı.',
+                    ),
+                  );
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </article>
@@ -359,6 +374,22 @@ function DoneCard({
         Son tarih: {formatDate(item.due_date)}
         {item.submission && <> · Teslim: {formatDate(item.submission.submitted_at.slice(0, 10))}</>}
       </p>
+
+      {(item.attachments ?? []).length > 0 && (
+        <div className="px-4 pt-2">
+          <HomeworkAttachments
+            attachments={item.attachments ?? []}
+            onOpen={(key) => {
+              setOpenError(null);
+              openProtectedFile(key).catch((err) =>
+                setOpenError(
+                  err instanceof ApiClientError ? err.message : 'Dosya açılırken bir hata oluştu.',
+                ),
+              );
+            }}
+          />
+        </div>
+      )}
 
       {item.submission && (
         <div className="px-4 pt-3">

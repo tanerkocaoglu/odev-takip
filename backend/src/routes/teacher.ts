@@ -19,13 +19,20 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
+import { pdfUpload, MAX_HOMEWORK_ATTACHMENTS } from '../middleware/upload.js';
 import { writeAuditLog } from '../services/audit.js';
 import {
   ensurePendingDigests,
   firstActiveWeekIdForClass,
   maybeReadyDigests,
 } from '../services/digests.js';
+import {
+  countAttachmentsByReport,
+  loadAttachmentsByReportId,
+} from '../services/homeworkAttachments.js';
+import { savePdfUpload, deleteStored, type StoredFile } from '../services/storage.js';
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { normalizeTurkish } from '../utils/text.js';
 import {
@@ -151,6 +158,38 @@ function assertClassDayInWeek(week: WeekRecord, dayOfWeek: number): void {
   );
 }
 
+/**
+ * Ödev eki yazma kapısı — `PUT /reports/:id` ile birebir aynı kurallar:
+ * `sent` raporda öğretmen 403 (admin ekleyebilir), hafta başlamış olmalı,
+ * hafta tanımı geçerli olmalı (ders günü aralık içinde).
+ */
+function assertAttachmentWriteAllowed(user: AuthUser, report: OwnedReportRow): void {
+  if (report.status === 'sent' && user.role !== 'admin') {
+    throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
+  }
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(report.week_id) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  assertWeekStarted(week);
+  assertClassDayInWeek(week, report.day_of_week);
+}
+
+/** Saklanan ekleri sürücüsünden kaldırır — en iyi çaba; hata yutulur. */
+async function removeStoredFiles(
+  files: Array<{ key: string; storage: StoredFile['storage'] }>,
+): Promise<void> {
+  for (const f of files) {
+    try {
+      await deleteStored(f.storage, f.key);
+    } catch {
+      // Geri alma yolu; dosya zaten yoksa/erişilemezse umursama.
+    }
+  }
+}
+
 function buildReportPayload(reportId: string): unknown {
   const report = db
     .prepare(
@@ -192,22 +231,32 @@ function buildReportPayload(reportId: string): unknown {
   };
 
   let prevHomeworkText: string | null;
+  let prevHomeworkReportId: string | null = null;
   if (report.prev_homework_id) {
     const prev = db
-      .prepare(`SELECT description FROM homeworks WHERE id = ?`)
-      .get(report.prev_homework_id) as { description: string } | undefined;
+      .prepare(`SELECT description, report_id FROM homeworks WHERE id = ?`)
+      .get(report.prev_homework_id) as
+      | { description: string; report_id: string }
+      | undefined;
     prevHomeworkText = report.prev_homework_text ?? prev?.description ?? null;
+    prevHomeworkReportId = prev?.report_id ?? null;
   } else {
     prevHomeworkText = report.prev_homework_text ?? null;
   }
 
   const homework = db
     .prepare(
-      `SELECT description, due_date FROM homeworks WHERE report_id = ?`,
+      `SELECT id, description, due_date FROM homeworks WHERE report_id = ?`,
     )
     .get(reportId) as
-    | { description: string | null; due_date: string }
+    | { id: string; description: string | null; due_date: string }
     | undefined;
+
+  // Ödev ekleri (migration #13): bu raporun "Yapılacak ödev"i ve varsa geçen
+  // haftanın ("Verilmiş ödev") ekleri. Sahiplik rapor üzerindendir; bu yüzden
+  // yılın son haftasında `homeworks` satırı olmasa da ekler görünür/eklenebilir.
+  const homeworkAttachments = loadAttachmentsByReportId(reportId);
+  const prevHomeworkAttachments = loadAttachmentsByReportId(prevHomeworkReportId);
 
   const entries = db
     .prepare(
@@ -250,8 +299,13 @@ function buildReportPayload(reportId: string): unknown {
       updated_at: report.updated_at,
       topic_covered: report.topic_covered,
       prev_homework_text: prevHomeworkText,
+      prev_homework_id: report.prev_homework_id,
+      // Geçen haftanın ödev ekleri ("Verilmiş ödev" satırı altında gösterilir).
+      prev_homework_attachments: prevHomeworkAttachments,
+      // Bu raporun "Yapılacak ödev" ekleri — `homeworks` satırı olmasa da var.
+      homework_attachments: homeworkAttachments,
       homework: homework
-        ? { description: homework.description, due_date: homework.due_date }
+        ? { id: homework.id, description: homework.description, due_date: homework.due_date }
         : null,
       week: {
         week_no: report.week_no,
@@ -531,8 +585,8 @@ router.post('/reports', (req, res) => {
     if (dueDate !== null) {
       db.prepare(
         `INSERT INTO homeworks
-           (id, report_id, class_course_id, week_id, description, attachments, due_date)
-         VALUES (?, ?, ?, ?, '', NULL, ?)`,
+           (id, report_id, class_course_id, week_id, description, due_date)
+         VALUES (?, ?, ?, ?, '', ?)`,
       ).run(randomUUID(), reportId, cc.id, week.id, dueDate);
     }
     db.exec('COMMIT');
@@ -717,8 +771,8 @@ router.put('/reports/:id', (req, res) => {
       // Yılın son haftası: satır yoktu, öğretmen tarihi girince oluşturulur.
       db.prepare(
         `INSERT INTO homeworks
-           (id, report_id, class_course_id, week_id, description, attachments, due_date)
-         VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+           (id, report_id, class_course_id, week_id, description, due_date)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       ).run(
         randomUUID(),
         id,
@@ -889,6 +943,110 @@ router.post('/reports/:id/complete', (req, res) => {
 
   res.json(buildReportPayload(id));
 });
+
+// ---------- Ödev ekleri (öğretmen PDF — migration #13) ----------
+
+/**
+ * `POST /teacher/reports/:id/attachments` — "Yapılacak ödev"e PDF ekler.
+ * Durum/hafta kapısı `PUT /reports/:id` ile aynıdır (`assertAttachmentWriteAllowed`).
+ * Ödev başına en fazla 5 PDF (dosya başına 10 MB); magic-byte PDF doğrulaması
+ * `savePdfUpload` içindedir.
+ */
+router.post(
+  '/reports/:id/attachments',
+  pdfUpload,
+  asyncHandler<{ id: string }>(async (req, res) => {
+    const user = req.user!;
+    const report = loadOwnedReport(user, req.params.id);
+    assertAttachmentWriteAllowed(user, report);
+
+    const files = (req.files ?? []) as Express.Multer.File[];
+    if (files.length === 0) {
+      throw new AppError('VALIDATION_ERROR', 400, 'En az bir PDF ekleyin.');
+    }
+    if (countAttachmentsByReport(report.id) + files.length > MAX_HOMEWORK_ATTACHMENTS) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        400,
+        `Bir ödeve en fazla ${MAX_HOMEWORK_ATTACHMENTS} PDF ekleyebilirsiniz.`,
+      );
+    }
+
+    const stored: StoredFile[] = [];
+    try {
+      for (const file of files) stored.push(await savePdfUpload(file));
+    } catch (err) {
+      await removeStoredFiles(stored);
+      throw err;
+    }
+
+    try {
+      db.exec('BEGIN');
+      const insert = db.prepare(
+        `INSERT INTO homework_attachments
+           (id, report_id, key, filename, size, mime, ext, storage)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const a of stored) {
+        insert.run(
+          randomUUID(),
+          report.id,
+          a.key,
+          a.filename,
+          a.size,
+          a.mime,
+          a.ext,
+          a.storage,
+        );
+      }
+      // Yarış güvencesi: transaction içinde toplamı yeniden doğrula.
+      if (countAttachmentsByReport(report.id) > MAX_HOMEWORK_ATTACHMENTS) {
+        throw new AppError(
+          'VALIDATION_ERROR',
+          400,
+          `Bir ödeve en fazla ${MAX_HOMEWORK_ATTACHMENTS} PDF ekleyebilirsiniz.`,
+        );
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      await removeStoredFiles(stored);
+      throw err;
+    }
+
+    res.status(201).json({ attachments: loadAttachmentsByReportId(report.id) });
+  }),
+);
+
+/**
+ * `DELETE /teacher/reports/:id/attachments/:attachmentId` — eki kaldırır.
+ * DB satırı önce silinir, nesne sonra (COMMIT sonrası) — hata olsa da en fazla
+ * öksüz nesne kalır (zararsız).
+ */
+router.delete(
+  '/reports/:id/attachments/:attachmentId',
+  asyncHandler<{ id: string; attachmentId: string }>(async (req, res) => {
+    const user = req.user!;
+    const report = loadOwnedReport(user, req.params.id);
+    assertAttachmentWriteAllowed(user, report);
+
+    const row = db
+      .prepare(
+        `SELECT id, key, storage FROM homework_attachments WHERE id = ? AND report_id = ?`,
+      )
+      .get(req.params.attachmentId, report.id) as
+      | { id: string; key: string; storage: StoredFile['storage'] }
+      | undefined;
+    if (!row) {
+      throw new AppError('NOT_FOUND', 404, 'Ek bulunamadı.');
+    }
+
+    db.prepare('DELETE FROM homework_attachments WHERE id = ?').run(row.id);
+    await removeStoredFiles([{ key: row.key, storage: row.storage }]);
+
+    res.json({ attachments: loadAttachmentsByReportId(report.id) });
+  }),
+);
 
 // ---------- Geçmiş raporlarım ----------
 

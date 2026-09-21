@@ -690,6 +690,49 @@ registerMigration(12, 'submission_file_storage', () => {
   );
 });
 
+/**
+ * Migration #13 — `homework_attachments` (öğretmen ödev ekleri) + legacy
+ * `homeworks.attachments` kolonunun düşürülmesi (spec §3.2).
+ *
+ * Öğretmenin "Yapılacak ödev"e eklediği PDF'ler `submission_files`'a paralel
+ * ayrı bir tabloda tutulur — JSON metin alanında değil (migration #4'ün
+ * "tek doğru kaynak" ilkesi). `storage` sütunu nesnenin `local`/`r2` sürücüsünde
+ * olduğunu satırda saklar (#12 ile aynı desen).
+ *
+ * **Sahiplik `reports.id` üzerindendir** (`homeworks.id` DEĞİL): `homeworks`
+ * satırı yalnızca sonraki ders haftası varsa (`due_date` hesaplanabiliyorsa)
+ * oluşturulur; yılın **son haftasında** satır hiç açılmaz. Oysa rapor her
+ * zaman vardır ve `homeworks` raporla 1:1'dir (`UNIQUE(report_id)`). Böylece
+ * öğretmen yılın son haftasında da ek ekleyebilir; sonraki haftaya taşıma
+ * `reports.prev_homework_id → homeworks.report_id` üzerinden çözülür.
+ *
+ * `homeworks.attachments TEXT` (migration #1) hiç okunmamış/yazılmamış ölü
+ * kolondur; basit `DROP COLUMN` (indeks/CHECK/generated referansı yok) ile
+ * kaldırılır. Tablo yeniden kurulmaz; `foreignKeysOff` gerekmez.
+ *
+ * Yedek `db:migrate` CLI'ında alınır; transaction + hata→ROLLBACK runner'dadır.
+ */
+registerMigration(13, 'homework_attachments', () => {
+  db.exec(`ALTER TABLE homeworks DROP COLUMN attachments`);
+
+  db.exec(`
+    CREATE TABLE homework_attachments (
+      id          TEXT PRIMARY KEY,
+      report_id   TEXT NOT NULL REFERENCES reports(id),
+      key         TEXT NOT NULL,
+      filename    TEXT NOT NULL,
+      size        INTEGER NOT NULL,
+      mime        TEXT NOT NULL,
+      ext         TEXT NOT NULL,
+      storage     TEXT NOT NULL DEFAULT 'local'
+                    CHECK (storage IN ('local','r2')),
+      UNIQUE (key)
+    ) STRICT;
+
+    CREATE INDEX idx_homework_attachments_report ON homework_attachments(report_id);
+  `);
+});
+
 /** Bilinen en yüksek migration sürümü (CLI'ın bekleyen iş olup olmadığını anlaması için). */
 export function latestMigrationVersion(): number {
   return migrations.reduce((max, m) => (m.version > max ? m.version : max), 0);

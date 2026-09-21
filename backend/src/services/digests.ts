@@ -22,6 +22,10 @@ import { localTodayISO } from '../utils/time.js';
 import { resolveBaseUrl } from '../utils/env.js';
 import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import { writeAuditLog } from './audit.js';
+import {
+  loadAttachmentsForHomeworkIds,
+  type AttachmentMeta,
+} from './homeworkAttachments.js';
 
 /** Digest token'ı UUID DEĞİLDİR — kimlik doğrulamasız sayfayı açtığı için fiilen paroladır (CLAUDE.md). */
 export function newDigestToken(): string {
@@ -337,6 +341,13 @@ export interface DigestSnapshotCourse {
     graded_in_week: GradedInWeek | null;
   } | null;
   entry: DigestSnapshotEntry | null;
+  /**
+   * Öğretmen ödev ekleri. **Yalnızca admin önizleme yanıtında** doldurulur
+   * (`previewDigest`); `buildSnapshot` bunları ÜRETMEZ, dolayısıyla saklanan
+   * `weekly_digests.snapshot` ve public `/r/{token}` asla ek taşımaz.
+   */
+  homework_attachments?: AttachmentMeta[];
+  prev_homework_attachments?: AttachmentMeta[];
 }
 
 export interface DigestSnapshot {
@@ -694,7 +705,22 @@ export function previewDigest(digestId: string): DigestSnapshot {
   if (!classId) {
     throw new AppError('CONFLICT', 409, 'Bu öğrencinin haftada aktif sınıfı yok.');
   }
-  return buildSnapshot(digest.student_id, digest.week_id, classId);
+  const snapshot = buildSnapshot(digest.student_id, digest.week_id, classId);
+  // Ödev ekleri YALNIZCA bu önizleme yanıtına eklenir. `buildSnapshot` çıktısı
+  // `sendDigest`'te saklanan ve public `/r/{token}`'da okunan snapshot'tır;
+  // oraya ek girmez (public yapısal olarak ek göremez).
+  const byHomework = loadAttachmentsForHomeworkIds(
+    snapshot.courses.flatMap((c) => [c.homework?.id, c.prev_homework_id]),
+  );
+  for (const course of snapshot.courses) {
+    course.homework_attachments = course.homework?.id
+      ? (byHomework.get(course.homework.id) ?? [])
+      : [];
+    course.prev_homework_attachments = course.prev_homework_id
+      ? (byHomework.get(course.prev_homework_id) ?? [])
+      : [];
+  }
+  return snapshot;
 }
 
 export interface SendDigestResult {

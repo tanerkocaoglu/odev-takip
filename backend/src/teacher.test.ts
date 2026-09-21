@@ -144,8 +144,8 @@ beforeAll(async () => {
      VALUES (?, ?, ?, ?, NULL, NULL, 'completed', ?, ?, ?)`,
   ).run('t-report-w1', CC_OWN, WEEK1.id, 'Konu 1', now, 'test-teacher', now);
   db.prepare(
-    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     't-homework-w1',
     't-report-w1',
@@ -312,7 +312,12 @@ describe('POST /api/v1/teacher/reports (get-or-create)', () => {
     expect(report.prev_homework_text).toBe('Geçen haftanın ödevi');
     // Yapılacak ödev boş başlar; son tarih sunucuda hesaplanır:
     // ödev week 2'de verildi → week 3'teki aynı ders günü (Pazartesi) = 2026-08-10.
-    expect(report.homework).toEqual({ description: '', due_date: '2026-08-10' });
+    expect(report.homework).toEqual({
+      id: expect.any(String),
+      description: '',
+      due_date: '2026-08-10',
+    });
+    expect(report.homework_attachments).toEqual([]);
     expect(report.class_name).toBe('Test Sınıf');
     expect(report.course_name).toBe('Ders 1');
 
@@ -846,6 +851,7 @@ describe('Yılın son haftası (spec §5.2 sınır durumu)', () => {
       });
     expect(put.status).toBe(200);
     expect(put.body.report.homework).toEqual({
+      id: expect.any(String),
       description: 'Son hafta ödevi',
       due_date: '2026-08-15',
     });

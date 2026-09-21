@@ -88,6 +88,10 @@ beforeAll(() => {
   db.exec(`ALTER TABLE weekly_digests DROP COLUMN last_viewed_at`);
   // Migration #7 (must_change_password) geri alınır — #2 çağında kolon YOKTU.
   db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
+  // Migration #13 (homework_attachments) geri alınır — #2 çağında tablo YOKTU
+  // ve `homeworks.attachments` (migration #1) HÂLÂ vardı.
+  db.exec(`DROP TABLE homework_attachments`);
+  db.exec(`ALTER TABLE homeworks ADD COLUMN attachments TEXT`);
   db.exec(`PRAGMA user_version = 2`);
 
   // ---- Eski şemayla (kolonsuz) veri ekle ----
@@ -131,10 +135,11 @@ describe('migration #3 backfill', () => {
     const version = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    // #3 backfill + #4..#12 (submission_files, username_login, schools_grade_view,
+    // #3 backfill + #4..#13 (submission_files, username_login, schools_grade_view,
     // must_change_password, submission_file_thumb, not_null_password_phone,
-    // entry_score_check, digest_class_id, submission_file_storage) koşar.
-    expect(version.user_version).toBe(12);
+    // entry_score_check, digest_class_id, submission_file_storage,
+    // homework_attachments) koşar.
+    expect(version.user_version).toBe(13);
   });
 
   it('yeni indeksler normalized ad üzerinde çakışmayı yakalar', () => {
@@ -163,6 +168,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     db.exec(`ALTER TABLE users DROP COLUMN must_change_password`);
     rebuildDigestsWithoutClassId();
     rebuildSubmissionFilesWithoutStorage();
+    rebuildHomeworkAttachmentsToV12();
     db.exec(`PRAGMA user_version = 6`);
 
     const before = db
@@ -190,7 +196,7 @@ describe('migration #7 — must_change_password rewind (7↔6)', () => {
     const after = db
       .prepare(`SELECT user_version FROM pragma_user_version`)
       .get() as { user_version: number };
-    expect(after.user_version).toBe(12);
+    expect(after.user_version).toBe(13);
 
     const row = db
       .prepare(`SELECT must_change_password FROM users WHERE id = 'm7-user'`)
@@ -268,6 +274,7 @@ function revertNotnullToV8(): void {
   }
   rebuildDigestsWithoutClassId();
   rebuildSubmissionFilesWithoutStorage();
+  rebuildHomeworkAttachmentsToV12();
   db.exec('PRAGMA user_version = 8');
 }
 
@@ -317,7 +324,7 @@ describe('migration #9 — password_hash / whatsapp_phone NOT NULL rewind (9↔8
 
     runMigrations();
 
-    expect(userVersion()).toBe(12);
+    expect(userVersion()).toBe(13);
     expect(columnInfo('users', 'password_hash').notnull).toBe(1);
     expect(columnInfo('guardians', 'whatsapp_phone').notnull).toBe(1);
     expect(db.prepare(`SELECT password_hash FROM users WHERE id = 'm9-student'`).get()).toEqual({
@@ -456,6 +463,7 @@ function revertEntryCheckToV9(withCheck = true): void {
   }
   rebuildDigestsWithoutClassId();
   rebuildSubmissionFilesWithoutStorage();
+  rebuildHomeworkAttachmentsToV12();
   db.exec('PRAGMA user_version = 9');
 }
 
@@ -511,7 +519,7 @@ describe('migration #10 — report_entries puan CHECK rewind (10↔9)', () => {
 
     expect(userVersion()).toBe(9);
     runMigrations();
-    expect(userVersion()).toBe(12);
+    expect(userVersion()).toBe(13);
 
     // Veri korundu.
     expect(
@@ -618,6 +626,7 @@ function rebuildDigestsWithoutClassId(): void {
 function revertDigestClassIdToV10(): void {
   rebuildDigestsWithoutClassId();
   rebuildSubmissionFilesWithoutStorage();
+  rebuildHomeworkAttachmentsToV12();
   db.exec('PRAGMA user_version = 10');
 }
 
@@ -731,7 +740,7 @@ describe('migration #11 — weekly_digests.class_id backfill + rewind (11↔10)'
 
     expect(userVersion()).toBe(10);
     runMigrations();
-    expect(userVersion()).toBe(12);
+    expect(userVersion()).toBe(13);
 
     const normal = db
       .prepare(`SELECT class_id, token, status FROM weekly_digests WHERE id = 'm11-digest-1'`)
@@ -808,6 +817,7 @@ describe('migration #12 — submission_files.storage backfill + rewind (12↔11)
 
     // v11'e geri sar: storage kolonu yok, veri kalır.
     rebuildSubmissionFilesWithoutStorage();
+    rebuildHomeworkAttachmentsToV12();
     db.exec('PRAGMA user_version = 11');
     expect(userVersion()).toBe(11);
     const colsBefore = (
@@ -816,7 +826,7 @@ describe('migration #12 — submission_files.storage backfill + rewind (12↔11)
     expect(colsBefore).not.toContain('storage');
 
     runMigrations();
-    expect(userVersion()).toBe(12);
+    expect(userVersion()).toBe(13);
 
     const row = db
       .prepare(`SELECT key, storage FROM submission_files WHERE id = 'm12-sf'`)
@@ -829,6 +839,127 @@ describe('migration #12 — submission_files.storage backfill + rewind (12↔11)
       db.prepare(`UPDATE submission_files SET storage = 'x' WHERE id = 'm12-sf'`).run(),
     ).toThrow();
 
+    expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
+  });
+});
+
+// ===========================================================================
+// Migration #13 — `homework_attachments` + legacy kolon düşürme rewind (13↔12)
+// ===========================================================================
+
+/** Tablonun kolon adları (test yardımcısı). */
+function columnsOf(table: string): string[] {
+  return (
+    db.prepare(`PRAGMA table_info('${table}')`).all() as Array<{ name: string }>
+  ).map((c) => c.name);
+}
+
+/**
+ * v13'ü geri alır: `homework_attachments` tablosunu düşürür, legacy
+ * `homeworks.attachments` kolonunu geri ekler → v12 şeması. `user_version`'a
+ * dokunmaz.
+ */
+function rebuildHomeworkAttachmentsToV12(): void {
+  db.exec(`DROP TABLE IF EXISTS homework_attachments`);
+  if (!columnsOf('homeworks').includes('attachments')) {
+    db.exec(`ALTER TABLE homeworks ADD COLUMN attachments TEXT`);
+  }
+}
+
+/** #13 testi için en küçük ödev zinciri (yıl→hafta→sınıf→ders→rapor→ödev). */
+function insertM13Fixture(): void {
+  const now = '2026-09-13T10:00:00.000Z';
+  db.prepare(
+    `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+     VALUES ('m13-year', '2026-2027', '2026-09-01', '2027-06-30', 1)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+     VALUES ('m13-week', 'm13-year', 1, '2026-09-07', '2026-09-13', '07.09 - 13.09.2026')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+     VALUES ('m13-class', 'm13-year', 'M13 Sınıf', 'm13 sinif', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO courses (id, name, name_normalized, deleted_at)
+     VALUES ('m13-course', 'M13 Ders', 'm13 ders', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO class_courses (id, class_id, course_id, teacher_id, day_of_week, lesson_time, deleted_at)
+     VALUES ('m13-cc', 'm13-class', 'm13-course', 'test-teacher', 1, '09:00', NULL)`,
+  ).run();
+  db.prepare(
+    `INSERT INTO reports (id, class_course_id, week_id, topic_covered, status, completed_at, created_by, updated_at)
+     VALUES ('m13-report', 'm13-cc', 'm13-week', 'Konu', 'completed', ?, 'test-teacher', ?)`,
+  ).run(now, now);
+  db.prepare(
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES ('m13-hw', 'm13-report', 'm13-cc', 'm13-week', 'Ödev', '2026-09-14')`,
+  ).run();
+}
+
+describe('migration #13 — homework_attachments + legacy kolon düşürme rewind (13↔12)', () => {
+  afterEach(() => {
+    if (userVersion() < 13) runMigrations();
+  });
+
+  it('v12 şemasından koşunca tabloyu kurar, legacy kolonu düşürür; veri ve FK korunur', () => {
+    resetDb();
+    insertTestUsers();
+    insertM13Fixture();
+
+    // v12'ye geri sar: yeni tablo YOK, legacy `attachments` kolonu VAR.
+    rebuildHomeworkAttachmentsToV12();
+    db.exec('PRAGMA user_version = 12');
+    expect(userVersion()).toBe(12);
+    expect(
+      (db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='homework_attachments'`,
+        )
+        .get() as unknown),
+    ).toBeUndefined();
+    expect(columnsOf('homeworks')).toContain('attachments');
+
+    runMigrations();
+    expect(userVersion()).toBe(13);
+    expect(
+      (db
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='homework_attachments'`,
+        )
+        .get() as { name: string } | undefined)?.name,
+    ).toBe('homework_attachments');
+    expect(columnsOf('homeworks')).not.toContain('attachments');
+
+    // Mevcut ödev satırı korunur.
+    const hw = db.prepare(`SELECT description FROM homeworks WHERE id = 'm13-hw'`).get() as {
+      description: string;
+    };
+    expect(hw.description).toBe('Ödev');
+
+    // Yeni tablo: ekleme çalışır, UNIQUE(key) ve FK korur (sahiplik rapor).
+    db.prepare(
+      `INSERT INTO homework_attachments (id, report_id, key, filename, size, mime, ext, storage)
+       VALUES ('m13-att', 'm13-report', '1234-bbbbbbbbbbbbbbbb.pdf', 'odev.pdf', 2048, 'application/pdf', 'pdf', 'local')`,
+    ).run();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO homework_attachments (id, report_id, key, filename, size, mime, ext, storage)
+           VALUES ('m13-att2', 'm13-report', '1234-bbbbbbbbbbbbbbbb.pdf', 'x.pdf', 1, 'application/pdf', 'pdf', 'local')`,
+        )
+        .run(),
+    ).toThrow(); // UNIQUE(key)
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO homework_attachments (id, report_id, key, filename, size, mime, ext, storage)
+           VALUES ('m13-att3', 'yok-report', '9999-cccccccccccccccc.pdf', 'x.pdf', 1, 'application/pdf', 'pdf', 'local')`,
+        )
+        .run(),
+    ).toThrow(); // FK
     expect((db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length).toBe(0);
   });
 });

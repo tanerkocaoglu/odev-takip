@@ -87,8 +87,8 @@ beforeAll(async () => {
      VALUES (?, ?, ?, ?, NULL, NULL, 'completed', ?, 'test-teacher', ?)`,
   );
   const insertHomework = db.prepare(
-    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   const now = BASE_NOW.toISOString();
   insertReport.run('ord-rep-pazar2', CC_PAZAR2, WEEK_SAT.id, 'Pazar konusu', now, now);

@@ -16,7 +16,9 @@ import type { ReactNode } from 'react';
 import type { DigestSnapshot, DigestSnapshotCourse } from '../types';
 import { DAY_LABELS } from '../types';
 import { formatDate } from '../utils/date';
+import { openProtectedFile } from '../services/api';
 import { AttendanceBadge, Badge } from './admin/ui';
+import HomeworkAttachments from './HomeworkAttachments';
 
 /** Sol kenar şeridi — devamsızlık veya "rapor girilmedi" durumundan türetilir. */
 type CourseStripe = 'missing' | 'neutral' | 'present' | 'late' | 'absent' | 'excused';
@@ -146,6 +148,15 @@ export default function ReportSnapshot({
                     <dt className="font-medium text-muted">Verilmiş ödev:</dt>
                     <dd className="text-text">{course.prev_homework_text || '—'}</dd>
                   </div>
+                  {course.prev_homework_attachments &&
+                    course.prev_homework_attachments.length > 0 && (
+                      <div className="mt-1.5">
+                        <HomeworkAttachments
+                          attachments={course.prev_homework_attachments}
+                          onOpen={(key) => void openProtectedFile(key).catch(() => {})}
+                        />
+                      </div>
+                    )}
                   {renderPrevHomework?.(course)}
                 </div>
               ) : null}
@@ -168,6 +179,14 @@ export default function ReportSnapshot({
                       </span>
                     )}
                   </dd>
+                </div>
+              )}
+              {course.homework_attachments && course.homework_attachments.length > 0 && (
+                <div className="sm:col-span-2">
+                  <HomeworkAttachments
+                    attachments={course.homework_attachments}
+                    onOpen={(key) => void openProtectedFile(key).catch(() => {})}
+                  />
                 </div>
               )}
             </dl>

@@ -131,8 +131,8 @@ beforeAll(async () => {
      VALUES (?, ?, ?, NULL, NULL, NULL, 'completed', ?, ?, ?)`,
   ).run('g-report-0', 'g-cc-1', WEEK1.id, gNow, 'test-teacher', gNow);
   db.prepare(
-    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-     VALUES (?, ?, 'g-cc-1', ?, ?, NULL, ?)`,
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES (?, ?, 'g-cc-1', ?, ?, ?)`,
   ).run('g-hw-0', 'g-report-0', WEEK1.id, 'Önceki haftanın ödevi', '2026-08-03');
 
   // Hafta 2 raporu bu hafta g-hw-0'ı puanlar (prev_homework_id) + yeni ödev verir.
@@ -143,8 +143,8 @@ beforeAll(async () => {
      VALUES (?, ?, ?, NULL, ?, NULL, 'completed', ?, ?, ?)`,
   ).run('g-report-1', 'g-cc-1', WEEK2.id, 'g-hw-0', gNow, 'test-teacher', gNow);
   db.prepare(
-    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-     VALUES (?, ?, 'g-cc-1', ?, ?, NULL, ?)`,
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES (?, ?, 'g-cc-1', ?, ?, ?)`,
   ).run('g-hw-1', 'g-report-1', WEEK2.id, 'Sayfa 10', '2026-08-10');
   db.prepare(
     `INSERT INTO submissions

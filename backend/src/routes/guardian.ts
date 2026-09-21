@@ -18,6 +18,7 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { classIdForStudentAtWeek, firstActiveWeekNoForClass, isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
+import { loadAttachmentsForHomeworkIds } from '../services/homeworkAttachments.js';
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
@@ -308,12 +309,20 @@ router.get('/reports/:id', (req, res) => {
         })),
       });
 
+      // Öğretmen ödev ekleri (migration #13): hem bu haftanın "Yapılacak
+      // ödev"i hem "Verilmiş ödev"i için. Canlı DB'den; snapshot'a girmez.
+      const attachmentsByHomework = loadAttachmentsForHomeworkIds([
+        ...homeworks.map((h) => h.id),
+        ...prevHomeworks.map((h) => h.homework_id),
+      ]);
+
       submissions = homeworks.map((h) => {
         const sub = subRows.find((s) => s.homework_id === h.id);
         return {
           course_name: h.course_name,
           description: h.description,
           due_date: h.due_date,
+          attachments: attachmentsByHomework.get(h.id) ?? [],
           submission: sub ? shapeSubmission(sub) : null,
         };
       });
@@ -326,6 +335,7 @@ router.get('/reports/:id', (req, res) => {
           course_name: h.course_name,
           description: h.description,
           due_date: h.due_date,
+          attachments: attachmentsByHomework.get(h.homework_id) ?? [],
           submission: sub ? shapeSubmission(sub) : null,
         };
       });

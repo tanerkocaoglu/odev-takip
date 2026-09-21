@@ -5,6 +5,161 @@
 
 ---
 
+## Öğretmen ödev ekleri (PDF) — migration #13 ✅
+
+### Kapsam
+
+Öğretmen rapor giriş ekranında "Yapılacak ödev" alanına metnin yanında
+**opsiyonel olarak birden fazla PDF** ekleyebilir. Ekler ödevin göründüğü her
+yerde görünür (bu hafta "Yapılacak ödev", sonraki hafta "Verilmiş ödev") ve
+**yalnızca girişli kullanıcılar** (öğretmen/öğrenci/veli/admin) erişir. Public
+`/r/{token}` ekleri **asla** görmez. Metin alanı zorunlu kalır; ek opsiyoneldir.
+
+### Kararlar (kullanıcı onaylı)
+
+1. Ödev başına **5 PDF**, dosya başına **10 MB** (öğrencinin 30×10 MB'ından bağımsız).
+2. Düzenleme **rapor durumuyla aynı kural**: `draft`/`completed` öğretmen,
+   `sent` öğretmen 403 / admin serbest; hafta başlamadıysa yazma yok.
+3. Kullanılmayan legacy `homeworks.attachments TEXT` kolonu **düşürülür**.
+4. Ekler hem "Yapılacak ödev" hem "Verilmiş ödev" bölümünde görünür.
+5. Ekler **süresiz** saklanır (teslimden ayrı); `cleanup-submissions` kapsamı
+   dışı, `db:backup` kapsamı içinde.
+
+### Uygulama
+
+- **Migration #13 (`homework_attachments`):** `submission_files`'a paralel
+  STRICT tablo (`key UNIQUE`, `storage local|r2`, `idx_homework_attachments_report`);
+  legacy `attachments` kolonu `DROP COLUMN`. Mevcut dosya altyapısı yeniden
+  kullanılır — yeni depolama mekanizması yok.
+  **Sahiplik `report_id` üzerindedir (homework_id değil):** `homeworks` satırı
+  yalnızca sonraki ders haftası varsa açılır; yılın **son haftasında** satır
+  yoktur, oysa rapor her zaman vardır ve `homeworks` raporla 1:1'dir. Böylece
+  son haftada da ek eklenebilir (ilk tasarımın `homework_id`'si bu yüzden
+  değiştirildi — gerçek kullanımda son haftada buton görünmüyordu).
+- **`storage.savePdfUpload`:** magic-byte PDF zorunlu, görsel işleme yok, aynen
+  saklanır. **`middleware/upload.pdfUpload`:** PDF-only multer, 5×10 MB.
+- **`services/homeworkAttachments.ts`:** toplu meta yükleme + kota sayımı.
+- **Uçlar:** `POST/DELETE /teacher/reports/:id/attachments[/:attachmentId]`;
+  durum/hafta kapısı `PUT /reports/:id` ile birebir (`assertAttachmentWriteAllowed`).
+- **`GET /files/:key`:** key önce `submission_files`, yoksa `homework_attachments`;
+  ek yetki matrisi — admin hepsi, öğretmen sahibi, öğrenci/veli **yalnızca rapor
+  `completed`/`sent`** ve sınıf kaydı varsa. `nosniff` + `storage`→sendFile/302 aynen.
+- **Girişli görünürlük:** öğretmen payload'ı (`homework.attachments`,
+  `prev_homework_attachments`), öğrenci `homework.attachments`, veli
+  `submissions[]/prev_submissions[].attachments`, admin digest **önizlemesi**
+  (`homework_attachments`/`prev_homework_attachments`).
+- **Public yapısal koruma:** `buildSnapshot` ek ÜRETMEZ; ekler yalnızca
+  `previewDigest` yanıtında canlı eklenir → saklanan `weekly_digests.snapshot`
+  ve public `/r/{token}` ek alanı/anahtarı taşımaz.
+- **Frontend:** kompakt `HomeworkAttachments` bileşeni (küçük "PDF ekle" +
+  tek satır çipler; dropzone yok), `ReportEntryPage`, `HomeworkListPage`,
+  `SubmissionHistory`/`GuardianReportDetailPage`, admin `ReportSnapshot`.
+- **Yedek:** `db:backup` ekleri de kapsar (`Odev_Ekleri/Ders/Hafta_N/…`, R2 akışı).
+
+> **Son hafta davranışı (netleştirme):** Yılın son haftasında `homeworks`
+> satırı olmadığından ek yalnızca **rapora** bağlıdır. Ek **silinmez**; öğretmen
+> kendi rapor ekranında, admin tüm yüzeylerde ve ikisi de `GET /files/:key` ile
+> erişir. Ek, sonraki dönemde hafta tanımlanıp **eski son haftanın teslim tarihi
+> girildiğinde** (`homeworks` satırı oluşur) ve ardından yeni haftanın raporu
+> açıldığında `prev_homework_id` üzerinden "Verilmiş ödev"e taşınır.
+> `prev_homework_id` rapor **oluşturulurken** hesaplandığından, yeni haftanın
+> raporu teslim tarihinden ÖNCE açılmışsa bağ kurulmaz — bu, ödev bağının
+> (ekten bağımsız) mevcut davranışıdır.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **449/449** (39 dosya; +19: `homework-attachments` 18,
+  migration #13 rewind 1), frontend **140/140** (23 dosya; +2: ReportEntryPage
+  ek akışı, public snapshot ek göstermez).
+- **Son hafta eki KAYBOLMAZ (iki test):**
+  1. "yılın son haftasında (`homeworks` satırı YOK) ek eklenir ve KAYBOLMAZ":
+     DB satırı **rapora bağlı**, nesne **diskte**, öğretmen **ve** admin
+     `/files/:key` → 200, öğretmen payload'ında `homework=null` ama
+     `homework_attachments` dolu.
+  2. "sonraki dönemde hafta tanımlanıp teslim tarihi girilince ek 'Verilmiş
+     ödev'e taşınır": yeni hafta eklenir → eski son haftanın raporuna teslim
+     tarihi girilir (`homeworks` satırı oluşur) → yeni haftanın raporu açılır;
+     `prev_homework_id` bağlanır ve `prev_homework_attachments` eki taşır.
+- **Canlı kanıt (izole DB + gerçek HTTP): 16/16 PASS** — son hafta raporu
+  (`homework=null`) → PDF 201 → DB+disk+öğretmen/admin erişimi; yeni hafta
+  tanımlanıp teslim tarihi girilince ek "Verilmiş ödev"e taşınır; anonim erişim
+  401. Gerçek `app.db` değişmedi.
+- **Migration #13 rewind kanıtı:** `migration-backfill.test.ts > migration #13
+  — homework_attachments + legacy kolon düşürme rewind (13↔12)` **PASS**.
+  v12'ye geri sarılır (tablo düşürülür, `attachments` kolonu geri eklenir),
+  `user_version=12` doğrulanır → `runMigrations` → **v13**: tablo kurulur,
+  legacy kolon düşer, mevcut ödev satırı korunur, `UNIQUE(key)` + FK çalışır,
+  `foreign_key_check` temiz.
+- **Rol matrisi kanıtı (her satır ayrı test):** `homework-attachments.test.ts`
+  **16/16 PASS**:
+  - draft: admin 200, sahibi öğretmen 200, öğrenci 403, veli 403;
+  - başka öğretmen 403; completed: aynı sınıf öğrencisi/velisi 200;
+  - başka sınıf öğrencisi/velisi 403; kimliksiz 401;
+  - ekleme 201 + disk, magic-byte PNG-as-PDF 400, PDF olmayan uzantı 400,
+    5 sınırı (6. → 400), öğrenci/veli/başka öğretmen yükleme 403;
+  - sent: öğretmen ekle/sil 403, admin sil 200 (dosya diskten gitti) + ekle 201.
+- **Public snapshot yapısal kanıtı:** testte snapshot JSON'unda ne ek anahtarı
+  ne `attachments`/`homework_attachments`/`prev_homework_attachments` **alanı**
+  bulunur; `'homework_attachments' in course === false`. Saklanan snapshot da temiz.
+- **Canlı kanıt (izole `DB_PATH`+`UPLOADS_DIR` + gerçek Express + gerçek HTTP):
+  28/28 PASS.** Bugün 2026-09-21; hafta 14–20 Eyl: migration #13 şema durumu
+  (kolon düştü, tablo var, v13); öğretmen 2 PDF (201 + disk); draft'ta rol
+  matrisi (admin/sahip 200; öğrenci/veli/başka öğretmen 403; anonim 401);
+  complete sonrası aynı sınıf öğrenci/veli 200; öğrenci ödevinde ve sonraki
+  hafta "Verilmiş ödev"de 2 ek; digest gönderimi sonrası **public snapshot ek
+  anahtarı/alanı taşımaz**; admin önizleme + veli detayı 2 ek; sent'te öğretmen
+  403 / admin 201.   Gerçek `backend/db/app.db` kanıt sırasında **değişmedi** (380 928 bayt,
+  mtime `21.09.2026 14:11:53`); geçici betik/temp DB+uploads silindi.
+- **Dev DB migration (gerçek ortam notu):** sunucu açılışta migration
+  çalıştırmaz (tasarım gereği — CLI). Dev `backend/db/app.db` v9'da kaldığı
+  için öğretmen/admin ekranları `no such table: homework_attachments` verdi;
+  `npm run db:migrate` ile **v9 → v13** uygulandı. Ardından #13'ün sahiplik
+  alanı `homework_id → report_id` olarak düzeltilince (henüz commit edilmemiş
+  migration; dev tablosu **boştu**) dev DB kontrollü geri sarıldı
+  (`homework_attachments` düşürüldü, `homeworks.attachments` geri eklendi,
+  `user_version=12`) ve yeniden `npm run db:migrate` ile **12 → 13** uygulandı.
+  Yedekler: `backups/dershane-yedek-20260921-163822.zip` (v9→13),
+  `...-164741.zip` (düzeltilmiş #13). Sonuç: `user_version=13`,
+  `homework_attachments(report_id,…)` var, `homeworks` legacy kolonu yok.
+  **Deploy sonrası `npm run db:migrate` çalıştırılması zorunludur.**
+
+### Etkilenen dosyalar
+
+```
+backend/src/db/migrations.ts                 (#13 homework_attachments + legacy drop)
+backend/src/db/migration-backfill.test.ts    (#13 rewind + önceki rewind'lere #13 undo)
+backend/src/db/seed.ts                       (attachments kolonu kaldırıldı)
+backend/src/middleware/upload.ts             (pdfUpload, MAX_HOMEWORK_ATTACHMENTS)
+backend/src/services/storage.ts              (savePdfUpload)
+backend/src/services/homeworkAttachments.ts  (yeni)
+backend/src/routes/teacher.ts                (ekle/sil + payload zenginleştirme)
+backend/src/routes/files.ts                  (union lookup + ek yetki matrisi)
+backend/src/routes/student.ts                (homeworks attachments)
+backend/src/routes/guardian.ts               (submissions/prev_submissions attachments)
+backend/src/services/digests.ts              (yalnız önizlemede ekler)
+backend/src/services/backup.ts               (Odev_Ekleri yedeği)
+backend/src/test/helpers.ts                  (CLEAN_TABLES + homework_attachments)
+backend/src/homework-attachments.test.ts     (yeni; 16 test)
+backend/src/{admin-dashboard,guardian,report-order,student,teacher}.test.ts (INSERT)
+src/types.ts   src/services/api.ts
+src/components/HomeworkAttachments.tsx      (yeni, kompakt)
+src/components/ReportSnapshot.tsx
+src/components/customer/SubmissionHistory.tsx
+src/pages/teacher/ReportEntryPage.tsx
+src/pages/student/HomeworkListPage.tsx
+src/pages/guardian/GuardianReportDetailPage.tsx
+src/{teacher,token-report}.test.tsx
+spec.md                                      (§3.2, §5.1, §5.3, §8)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Geri çekilmiş digest — "Düzenle" görünür + yeniden gönderim ✅
 
 ### Sorun

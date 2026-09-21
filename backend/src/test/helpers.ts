@@ -20,6 +20,7 @@ const CLEAN_TABLES = [
   'submission_files',
   'submissions',
   'report_entries',
+  'homework_attachments',
   'homeworks',
   'reports',
   'enrollments',

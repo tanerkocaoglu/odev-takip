@@ -20,6 +20,7 @@ import type {
   GuardianChild,
   GuardianReportDetail,
   GuardianReportItem,
+  HomeworkAttachment,
   HomeworkSummary,
   LoginRequest,
   Paged,
@@ -458,6 +459,24 @@ export const teacherApi = {
     apiFetch<TeacherReportPayload>(`/teacher/reports/${reportId}/complete`, {
       method: 'POST',
     }),
+  /**
+   * "Yapılacak ödev"e PDF ekler (migration #13). Durum/hafta kapısı sunucuda;
+   * yanıt güncel ek listesidir.
+   */
+  addAttachments: (reportId: string, files: File[]) => {
+    const form = new FormData();
+    for (const file of files) form.append('files', file);
+    return apiFetch<{ attachments: HomeworkAttachment[] }>(
+      `/teacher/reports/${reportId}/attachments`,
+      { method: 'POST', body: form },
+    );
+  },
+  /** Ödev ekini kaldırır; yanıt güncel ek listesidir. */
+  removeAttachment: (reportId: string, attachmentId: string) =>
+    apiFetch<{ attachments: HomeworkAttachment[] }>(
+      `/teacher/reports/${reportId}/attachments/${attachmentId}`,
+      { method: 'DELETE' },
+    ),
   /** Teslimi olan ödevler (teslim kontrol seçici) — spec.md §6. */
   submissionHomeworks: () =>
     apiFetch<{ items: TeacherHomeworkWithSubmissions[] }>('/teacher/submissions'),

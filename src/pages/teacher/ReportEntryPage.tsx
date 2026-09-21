@@ -9,13 +9,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type {
   Attendance,
+  HomeworkAttachment,
   ReportEntry,
   ReportSaveInput,
   TeacherReportPayload,
 } from '../../types';
 import { ATTENDANCE_LABELS, DAY_LABELS } from '../../types';
-import { teacherApi, ApiClientError } from '../../services/api';
+import { teacherApi, openProtectedFile, ApiClientError } from '../../services/api';
 import { Badge, Field, FormError, LoadingState, PrimaryButton } from '../../components/admin/ui';
+import HomeworkAttachments from '../../components/HomeworkAttachments';
 
 const inputClass =
   'h-8 w-full rounded-md border border-border bg-surface px-2 text-[13px] text-text placeholder:text-muted focus:border-accent';
@@ -80,6 +82,12 @@ export default function ReportEntryPage() {
   const [bulkInterest, setBulkInterest] = useState('');
   const [mobileIndex, setMobileIndex] = useState(0);
 
+  // Ödev ekleri (PDF) — migration #13. Yalnızca bu haftanın ekleri düzenlenir;
+  // geçen haftanın ekleri salt-okunur gösterilir.
+  const [homeworkAttachments, setHomeworkAttachments] = useState<HomeworkAttachment[]>([]);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
   const reportIdRef = useRef<string | null>(null);
   const originalDueRef = useRef('');
   const readyRef = useRef(false);
@@ -106,6 +114,7 @@ export default function ReportEntryPage() {
         setPrevText(data.report.prev_homework_text ?? '');
         setHwDesc(data.report.homework?.description ?? '');
         setDueDate(data.report.homework?.due_date ?? '');
+        setHomeworkAttachments(data.report.homework_attachments ?? []);
         setEntries(data.entries);
         // Otomatik kaydetme yalnızca gerçekten yazılabilir bir raporda çalışır.
         readyRef.current = !data.read_only && data.report.id !== null;
@@ -228,6 +237,44 @@ export default function ReportEntryPage() {
     }
   }
 
+  async function openFile(key: string) {
+    try {
+      await openProtectedFile(key);
+    } catch (err) {
+      window.alert(err instanceof ApiClientError ? err.message : 'Dosya açılamadı.');
+    }
+  }
+
+  async function handleAddAttachments(files: File[]) {
+    const id = reportIdRef.current;
+    if (!id) return;
+    setAttachmentBusy(true);
+    setAttachmentError(null);
+    try {
+      const res = await teacherApi.addAttachments(id, files);
+      setHomeworkAttachments(res.attachments);
+    } catch (err) {
+      setAttachmentError(err instanceof ApiClientError ? err.message : 'Ek yüklenemedi.');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }
+
+  async function handleRemoveAttachment(attachmentId: string) {
+    const id = reportIdRef.current;
+    if (!id) return;
+    setAttachmentBusy(true);
+    setAttachmentError(null);
+    try {
+      const res = await teacherApi.removeAttachment(id, attachmentId);
+      setHomeworkAttachments(res.attachments);
+    } catch (err) {
+      setAttachmentError(err instanceof ApiClientError ? err.message : 'Ek kaldırılamadı.');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  }
+
   function bulkMakePresent() {
     setEntries((prev) => prev.map((e) => ({ ...e, attendance: 'present' as Attendance })));
   }
@@ -337,6 +384,7 @@ export default function ReportEntryPage() {
       )}
 
       <FormError message={completeMsg} />
+      <FormError message={attachmentError} />
 
       {/* Sınıf düzeyi alanlar */}
       <section className="elevation-1 grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-2">
@@ -349,6 +397,14 @@ export default function ReportEntryPage() {
             disabled={readOnly}
             placeholder="Geçen haftanın ödevi…"
           />
+          {(payload.report.prev_homework_attachments ?? []).length > 0 && (
+            <div className="mt-1.5">
+              <HomeworkAttachments
+                attachments={payload.report.prev_homework_attachments ?? []}
+                onOpen={(key) => void openFile(key)}
+              />
+            </div>
+          )}
         </Field>
         <Field label="İşlenen konu" htmlFor="topic" error={completeErrors.topic_covered}>
           <input
@@ -373,6 +429,16 @@ export default function ReportEntryPage() {
             disabled={readOnly}
             placeholder="Önümüzdeki haftanın ödevi…"
           />
+          {/* `homework` null olsa da (yılın son haftası) ekler rapora bağlıdır. */}
+          <div className="mt-1.5">
+            <HomeworkAttachments
+              attachments={homeworkAttachments}
+              onOpen={(key) => void openFile(key)}
+              onAdd={!readOnly ? (files) => void handleAddAttachments(files) : undefined}
+              onRemove={!readOnly ? (id) => void handleRemoveAttachment(id) : undefined}
+              busy={attachmentBusy}
+            />
+          </div>
         </Field>
         <Field
           label="Teslim tarihi"

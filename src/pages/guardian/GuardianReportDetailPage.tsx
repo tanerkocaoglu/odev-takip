@@ -13,6 +13,7 @@ import type { GuardianReportDetail } from '../../types';
 import { guardianApi, openProtectedFile, ApiClientError } from '../../services/api';
 import GuardianReportView from '../../components/customer/GuardianReportView';
 import SubmissionHistory from '../../components/customer/SubmissionHistory';
+import HomeworkAttachments from '../../components/HomeworkAttachments';
 import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 function DetailSkeleton() {
@@ -95,19 +96,33 @@ export default function GuardianReportDetailPage() {
         sentAt={data.digest.sent_at}
         renderPrevHomework={(course) => {
           const prev = prevByClassCourse.get(course.class_course_id);
+          const teacherAttachments = prev?.attachments ?? [];
           const files = prev?.submission?.files ?? [];
-          if (files.length === 0) return null;
+          if (teacherAttachments.length === 0 && files.length === 0) return null;
           return (
-            <div className="mt-2">
-              <p className="text-xs text-muted">
-                Öğrencinin bu ödeve yüklediği dosyalar
-              </p>
-              <SubmissionFileGrid
-                variant="server"
-                files={files}
-                collapsible
-                onOpenPdf={(key) => void openFile(key)}
-              />
+            <div className="mt-2 space-y-2">
+              {teacherAttachments.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted">Öğretmenin eklediği dosyalar</p>
+                  <HomeworkAttachments
+                    attachments={teacherAttachments}
+                    onOpen={(key) => void openFile(key)}
+                  />
+                </div>
+              )}
+              {files.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted">
+                    Öğrencinin bu ödeve yüklediği dosyalar
+                  </p>
+                  <SubmissionFileGrid
+                    variant="server"
+                    files={files}
+                    collapsible
+                    onOpenPdf={(key) => void openFile(key)}
+                  />
+                </div>
+              )}
             </div>
           );
         }}

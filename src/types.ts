@@ -227,6 +227,16 @@ export interface ReportEntry {
   } | null;
 }
 
+/** Öğretmen ödev eki (PDF) meta bilgisi — migration #13. */
+export interface HomeworkAttachment {
+  id: string;
+  key: string;
+  filename: string;
+  size: number;
+  mime: string;
+  ext: string;
+}
+
 export interface TeacherReportHeader {
   /** Henüz oluşturulmamış (gelecek hafta önizlemesi) ise null. */
   id: string | null;
@@ -237,7 +247,16 @@ export interface TeacherReportHeader {
   updated_at: string;
   topic_covered: string | null;
   prev_homework_text: string | null;
-  homework: { description: string | null; due_date: string } | null;
+  /** Geçen haftanın ödevi referansı (ekleri için). */
+  prev_homework_id: string | null;
+  /** "Verilmiş ödev" satırı altında gösterilen geçen haftanın ekleri. */
+  prev_homework_attachments: HomeworkAttachment[];
+  /**
+   * Bu raporun "Yapılacak ödev" ekleri. `homework` null olsa bile (yılın son
+   * haftası — `homeworks` satırı yok) dolu olabilir; sahiplik rapor üzerindedir.
+   */
+  homework_attachments: HomeworkAttachment[];
+  homework: { id: string; description: string | null; due_date: string } | null;
   week: { week_no: number; start_date: string; end_date: string; label: string };
   class_name: string;
   course_name: string;
@@ -344,6 +363,8 @@ export interface StudentHomework {
   course_name: string;
   teacher_name: string;
   class_name: string;
+  /** Öğretmenin ödeve eklediği PDF'ler (migration #13). */
+  attachments: HomeworkAttachment[];
   week: { week_no: number; start_date: string; end_date: string; label: string };
   submission: HomeworkSubmission | null;
 }
@@ -416,6 +437,12 @@ export interface DigestSnapshotCourse {
     } | null;
   } | null;
   entry: DigestSnapshotEntry | null;
+  /**
+   * Öğretmen ödev ekleri. **Yalnızca admin önizleme yanıtında** bulunur;
+   * saklanan/public snapshot'ta alan bile yoktur (yapısal public koruması).
+   */
+  homework_attachments?: HomeworkAttachment[];
+  prev_homework_attachments?: HomeworkAttachment[];
 }
 
 export interface DigestSnapshot {
@@ -608,6 +635,8 @@ export interface GuardianReportDetail {
     course_name: string;
     description: string;
     due_date: string;
+    /** Öğretmenin ödeve eklediği PDF'ler (migration #13). */
+    attachments: HomeworkAttachment[];
     submission: GuardianReportSubmission | null;
   }>;
   /**
@@ -621,6 +650,8 @@ export interface GuardianReportDetail {
     course_name: string;
     description: string;
     due_date: string;
+    /** Öğretmenin ödeve eklediği PDF'ler (migration #13). */
+    attachments: HomeworkAttachment[];
     submission: GuardianReportSubmission | null;
   }>;
 }

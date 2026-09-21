@@ -296,6 +296,60 @@ describe('ReportEntryPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('ödev ekleri: "PDF ekle" yükler; geçen hafta ekleri salt-okunur görünür', async () => {
+    const ATT = (id: string, filename: string) => ({
+      id,
+      key: `${id}-aaaaaaaaaaaaaaaa.pdf`,
+      filename,
+      size: 10,
+      mime: 'application/pdf',
+      ext: 'pdf',
+    });
+    const withAtt = {
+      ...REPORT,
+      report: {
+        ...REPORT.report,
+        prev_homework_id: 'h0',
+        prev_homework_attachments: [ATT('pa1', 'gecen.pdf')],
+        homework_attachments: [ATT('a1', 'odev.pdf')],
+        homework: { id: 'h1', description: 'Ödev', due_date: '2026-01-12' },
+      },
+    };
+    const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            attachments: [...withAtt.report.homework_attachments, ATT('a2', 'yeni.pdf')],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => withAtt });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    // Bu haftanın eki + geçen haftanın eki görünür; "PDF ekle" butonu var.
+    expect(screen.getByText('odev.pdf')).toBeInTheDocument();
+    expect(screen.getByText('gecen.pdf')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /PDF ekle/ })).toBeInTheDocument();
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'yeni.pdf', {
+      type: 'application/pdf',
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByText('yeni.pdf')).toBeInTheDocument());
+  });
+
   it('hafta henüz başlamadıysa salt-okunur önizleme: alanlar kapalı, aksiyon yok', async () => {
     const preview = {
       ...REPORT,

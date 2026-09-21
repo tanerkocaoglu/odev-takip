@@ -91,8 +91,8 @@ function insertCompletedReport(
      VALUES (?, ?, ?, NULL, NULL, NULL, 'completed', ?, ?, ?)`,
   ).run(reportId, ccId, weekId, now, createdBy, now);
   db.prepare(
-    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(homeworkId, reportId, ccId, weekId, description, dueDate);
 }
 
@@ -189,8 +189,8 @@ beforeAll(async () => {
      VALUES (?, ?, ?, NULL, NULL, NULL, 'draft', NULL, 'test-teacher', ?)`,
   ).run('s-report-w2', CC_OWN, W2.id, new Date().toISOString());
   db.prepare(
-    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, attachments, due_date)
-     VALUES (?, ?, ?, ?, 'Taslak ödev', NULL, ?)`,
+    `INSERT INTO homeworks (id, report_id, class_course_id, week_id, description, due_date)
+     VALUES (?, ?, ?, ?, 'Taslak ödev', ?)`,
   ).run('s-hw-w2', 's-report-w2', CC_OWN, W2.id, '2026-08-10');
   // --- Başka sınıfın ödevi (öğrenci o sınıfta değil) — GÖRÜNMEMELİ ---
   insertCompletedReport('s-report-other', 's-hw-other', CC_OTHER, W1.id, 'Başka sınıf ödevi', '2026-08-03');
