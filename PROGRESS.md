@@ -69,7 +69,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`df856fa` — admin "Tüm raporlar" ekranına öğretmen filtresi (dropdown).
 
 ---
 
