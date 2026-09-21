@@ -76,7 +76,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`e00e730` — geri çekilmiş digest'te "Düzenle" görünür + yeniden gönderim.
 
 ---
 
