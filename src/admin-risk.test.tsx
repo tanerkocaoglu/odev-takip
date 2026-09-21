@@ -85,7 +85,34 @@ describe('AdminDashboardPage — riskli öğrenciler sekmesi', () => {
     expect(screen.getByText('Teslim etmeme')).toBeInTheDocument();
   });
 
-  it('riskli öğrenci yoksa boş durum gösterilir', async () => {
+  it('bitmiş hafta var ama riskli öğrenci yoksa boş durum gösterilir', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/admin/dashboard/risk')) return ok({ weeks: RISK.weeks, items: [] });
+      if (url.includes('/admin/dashboard')) return ok(DASH);
+      throw new Error(`beklenmeyen istek: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter>
+        <AdminDashboardPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Panel')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riskli öğrenciler' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Bu kriterlerle riskli öğrenci yok.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('hiç bitmiş hafta yoksa "geçmiş hafta yok" boş durumu gösterilir', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/admin/dashboard/risk')) return ok({ weeks: [], items: [] });
@@ -107,7 +134,7 @@ describe('AdminDashboardPage — riskli öğrenciler sekmesi', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText('Bu kriterlerle riskli öğrenci yok.'),
+        screen.getByText('Henüz değerlendirilecek geçmiş hafta yok.'),
       ).toBeInTheDocument();
     });
   });

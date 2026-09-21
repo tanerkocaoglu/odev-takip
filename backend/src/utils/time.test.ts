@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { isClassDayWithinWeek, isOverdue, localTodayISO } from './time.js';
+import { hasWeekEnded, isClassDayWithinWeek, isOverdue, localTodayISO } from './time.js';
 import type { WeekRecord } from './weeks.js';
 
 function week(startDate: string): WeekRecord {
@@ -47,6 +47,31 @@ describe('isClassDayWithinWeek', () => {
     const w = rangeWeek('2026-09-26', '2026-10-02');
     expect(isClassDayWithinWeek(w, 7)).toBe(true); // Pazar 27
     expect(isClassDayWithinWeek(w, 1)).toBe(true); // Pazartesi 28
+  });
+});
+
+describe('hasWeekEnded', () => {
+  it('geçmiş hafta true; devam eden ve gelecek hafta false', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 28, 10, 0, 0)); // 28.09.2026 Pazartesi
+      expect(hasWeekEnded(rangeWeek('2026-09-14', '2026-09-20'))).toBe(true); // geçen hafta
+      expect(hasWeekEnded(rangeWeek('2026-09-27', '2026-10-03'))).toBe(false); // bugünü kapsayan hafta
+      expect(hasWeekEnded(rangeWeek('2026-10-05', '2026-10-11'))).toBe(false); // gelecek hafta
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('end_date bugünse henüz bitmemiş sayılır; dünse bitmiştir', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 28, 10, 0, 0)); // 28.09.2026
+      expect(hasWeekEnded(rangeWeek('2026-09-22', '2026-09-28'))).toBe(false); // end == bugün
+      expect(hasWeekEnded(rangeWeek('2026-09-21', '2026-09-27'))).toBe(true); // end < bugün
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

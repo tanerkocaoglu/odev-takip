@@ -1057,10 +1057,14 @@ görünen belge tarayıcı tarafında PNG'ye çevrilip indirilir.
 - **Haftalık ödev özeti** (§5.8): sınıf + hafta; tüm derslerin "yapılacak
   ödev"leri, eksik ders "Rapor girilmedi", WhatsApp grubuna paylaşılmak üzere
   **PNG indir**
-- **Riskli öğrenci listesi** (panel sekmesi): son 3 hafta, üç kriter — herhangi
-  biri tetiklerse riskli (OR); nedenler ayrı rozet ("Düşük ortalama" /
-  "Teslim etmeme" / "Devamsızlık"). Tanım: ortalama(ödev+ders içi performans) ≤ 4; verilen
-  ödevlerden ≥ 2'si teslim edilmemiş (ardışık şart yok); ARDIŞIK ≥ 2 hafta
+- **Riskli öğrenci listesi** (panel sekmesi): son 3 **bitmiş** hafta, üç kriter —
+  herhangi biri tetiklerse riskli (OR); nedenler ayrı rozet ("Düşük ortalama" /
+  "Teslim etmeme" / "Devamsızlık"). **Pencere yalnızca gerçekten geçmiş
+  (`end_date < bugün`) haftaları alır** — admin haftaları önceden/toplu
+  tanımlasa bile gelecek veya devam eden haftalar hesaba girmez; bitmiş hafta
+  sayısı 3'ten azsa mevcut bitmiş haftalarla çalışılır (0 ise "henüz
+  değerlendirilecek geçmiş hafta yok"). Tanım: ortalama(ödev+ders içi performans) ≤ 4;
+  verilen ödevlerden ≥ 2'si teslim edilmemiş (ardışık şart yok); ARDIŞIK ≥ 2 hafta
   `absent` (`excused` sayılmaz). Eşikler kod içinde sabit (backend `constants.ts`
   — tek dosya; ileride ayarlanabilir yapılacaksa yalnızca o dosya değişir)
 - **Yedek indir** (db:backup CLI'ını tetikler, tek .zip indirir)

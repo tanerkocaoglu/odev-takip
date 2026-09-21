@@ -4,7 +4,9 @@
  * yalnızca bu dosya değişir, kod içine dağıtılmaz.
  *
  * Tanımlar (kullanıcı onayı):
- * - Pencere: son `lookbackWeeks` hafta (aktif yılın en yeni hafta kayıtları).
+ * - Pencere: son `lookbackWeeks` **bitmiş** hafta (aktif yılın `end_date < bugün`
+ *   olan en yeni kayıtları). Gelecekteki/ongoing haftalar pencereye girmez;
+ *   bitmiş hafta sayısı azsa mevcut bitmiş haftalarla çalışılır.
  * - Düşük ortalama: son N haftada ödev+ders içi performans ortalaması ≤ `avgScoreThreshold`
  *   (devamsız satırlar ortalamaya girmez; taslak raporlar sayılmaz).
  * - Teslim etmeme: son N haftada öğrenciye verilen (completed/sent) ödevlerden

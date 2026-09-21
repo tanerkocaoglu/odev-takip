@@ -28,6 +28,17 @@ export function hasWeekStarted(week: { start_date: string }): boolean {
 }
 
 /**
+ * Hafta bitti mi? (bir haftalık pencere analizleri için): `bugün > week.end_date`.
+ * `hasWeekStarted`'ten farkı: **devam eden** hafta (bugün aralığın içinde) henüz
+ * "bitmiş" sayılmaz. Risk penceresi gibi "son N **geçmiş** hafta" hesapları
+ * yalnızca bitmiş haftaları kullanmalıdır (bugün > end_date).
+ * Tek tarih kaynağı burasıdır (kopya `end_date < bugün` mantığı yazılmaz).
+ */
+export function hasWeekEnded(week: { end_date: string }): boolean {
+  return localTodayISO() > week.end_date;
+}
+
+/**
  * Ders günü bu haftada geçti mi? (spec.md §5.1: "ders günü geçtiği halde
  * draft olanlar üstte ve vurgulu görünür"). Hafta tamamen bittiyse de geçmiş.
  *

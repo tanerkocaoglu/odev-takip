@@ -380,7 +380,7 @@ export const adminApi = {
   /** Admin panel — özet + eksik + matris (spec §5.5). */
   dashboard: (weekId?: string) =>
     apiFetch<AdminDashboard>(`/admin/dashboard${query({ week_id: weekId })}`),
-  /** Riskli öğrenci listesi — son 3 hafta, üç kriter OR (spec §6). */
+  /** Riskli öğrenci listesi — son 3 **bitmiş** hafta, üç kriter OR (spec §6). */
   risk: () => apiFetch<RiskList>('/admin/dashboard/risk'),
   /** Filtreli CSV dışa aktarma — ekranda görünen sütunlar + aktif filtre (spec §5.7). */
   exports: {

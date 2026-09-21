@@ -5,6 +5,93 @@
 
 ---
 
+## Riskli öğrenci penceresi — yalnızca **bitmiş** haftalar ✅
+
+### Sorun
+
+"Riskli öğrenciler" sekmesi, bugün hâlâ 1. haftadayken "Son 3 hafta
+değerlendirildi (Hafta 7, 6, 5)" gösteriyordu. Admin haftaları önceden/toplu
+tanımlıyor; sistem gelecekteki haftaları "son 3 hafta" sanıyordu.
+
+### Kök neden
+
+`services/dashboard.ts` `getRiskData()` pencere sorgusu:
+```sql
+SELECT w.* FROM weeks w ... ORDER BY w.start_date DESC LIMIT 3
+```
+Geçmiş filtresi **yok** → tanımlı en yeni 3 hafta (tarihçe) alınıyor; hepsi
+gelecekte olsa bile. `hasWeekStarted` dahi kullanılmıyordu — üstelik o da
+yetmezdi: gereken kavram "**bitmiş**" hafta (`bugün > end_date`), devam eden
+hafta da pencereye girmemeli.
+
+### Kararlar (kullanıcı onaylı)
+
+1. Pencere = **bitmiş** haftalar (`end_date < bugün`), en yeni `lookbackWeeks`.
+2. Bitmiş hafta sayısı 3'ten azsa **mevcut bitmiş haftalarla** çalışılır
+   (0,1,2); 0 ise arayüz "henüz değerlendirilecek geçmiş hafta yok" der.
+3. Bu turda yalnızca risk penceresi; `currentDigestWeek()` ailesi bilinen ve
+   belgelenmiş sınır olarak kalır.
+
+### Uygulama
+
+- **`utils/time.ts` → `hasWeekEnded(week)`** = `localTodayISO() > week.end_date`
+  (tek tarih kaynağı; `hasWeekStarted` ile simetrik).
+- **`services/dashboard.ts:getRiskData`:** `WHERE w.end_date < ? [bugün]`
+  `ORDER BY w.start_date DESC, w.week_no DESC LIMIT ?`.
+- **`AdminDashboardPage`:** 0 bitmiş hafta → "Henüz değerlendirilecek geçmiş
+  hafta yok." boş durumu.
+- `constants.ts` RISK yorumu, `api.ts` yorumu, `spec.md` §6 penceresi güncellendi.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **421/421** (37 dosya; +4: `time` `hasWeekEnded` 2,
+  `admin-dashboard` risk fixture geçmiş haftalara taşındı + gelecek-hafta
+  dışlama + 0-bitmiş-hafta), frontend **135/135** (+1: 0 hafta boş durumu).
+- **Canlı kanıt (izole DB + gerçek HTTP): 5/5 PASS.** Bugün **2026-09-21**;
+  hafta 1 (07–13 Eyl) bitmiş, hafta 5/6/7 (Eki) gelecek ve **raporlarla dolu**:
+  - Eski filtresiz desen gelecek haftaları seçiyor: **H7, H6, H5** (hata
+    senaryosu kanıtı).
+  - API yanıtı `weeks=[1]` — yalnızca bitmiş hafta; gelecek haftalar yok.
+  - Geçmiş haftadaki bozuk öğrenci listede (`low_score`); **gelecek haftalardaki
+    bozuk öğrenci listede YOK** (dolu raporları sızmadı).
+  - Gerçek `app.db` değişmedi (380 928 bayt, mtime `21.09.2026 14:11:53`);
+    geçici betik/temp DB silindi.
+
+### Kod tabanı taraması — "en son tanımlı haftayı geçmiş varsay" deseni (tam liste)
+
+| # | Yer | Durum |
+|---|---|---|
+| 1 | `services/dashboard.ts:getRiskData` | **Düzeltildi** (bu tur) |
+| 2 | `services/digests.ts:currentDigestWeek()` + tüketicileri: `dashboard.ts:resolveWeekId`, `routes/admin/digests.ts:25`, `services/homeworkSummary.ts:50` (+ frontend `HomeworkSummaryPage.defaultWeekId`), `services/digestBackfill.ts:144`, `routes/teacher.ts:291-304` kopyası | **Bilinçli/belgelenmiş** "başlamış hafta yoksa en erken gelecek haftaya düş" (spec §5.1 kapsam sınırı); dashboard tarafı `week_not_started` ile işaretli. Genişletilmedi. |
+| 3 | `ORDER BY start_date DESC` yalnız **sunum sıralaması**: `teacher.ts:986/1045-1050/1366/1390`, `guardian.ts:91`, `student.ts:165`, `csvExport.ts:179`, `digests.ts:629-632` | Düzeltme gerekmez (hafta seçmiyor) |
+| 4 | `MAX(week_no)` / `ORDER BY week_no DESC` ile "en yüksek numaralı haftayı al" | **Hiç yok** (grep temiz) |
+
+Yani bu, boşlukta-yanlış-hafta ailesinin yeni bir yüzeyiydi; başka **gerçek**
+hata bulunmadı.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/time.ts                      (+hasWeekEnded)
+backend/src/utils/time.test.ts                 (+2 test)
+backend/src/services/dashboard.ts              (getRiskData bitmiş-hafta filtresi)
+backend/src/constants.ts                       (RISK pencere yorumu)
+backend/src/admin-dashboard.test.ts            (risk fixture geçmiş haftalar;
+                                                gelecek-hafta dışlama; 0-hafta)
+src/pages/admin/AdminDashboardPage.tsx         (0 hafta boş durumu)
+src/services/api.ts                            (yorum)
+src/admin-risk.test.tsx                        (+1 test, mevcut güncellendi)
+spec.md                                        (§6 penceresi)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Admin "Tüm raporlar" araması — öğretmen adı genişlemesi ✅
 
 ### Kapsam

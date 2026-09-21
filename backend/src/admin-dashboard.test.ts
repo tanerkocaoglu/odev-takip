@@ -354,13 +354,24 @@ describe('GET /api/v1/admin/dashboard/missing (sayfalı eksik rapor listesi)', (
 });
 
 describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
-  // Kontrollü fixture: risk-class + 4 öğrenci, week 2 ve 3'te completed raporlar.
+  // Kontrollü fixture: risk-class + 5 öğrenci. Risk penceresi yalnızca **bitmiş**
+  // haftaları alır (bugün 2026-08-04): risk-week-b/c (Tem) bitmiş, risk-week-future
+  // (Ağu 10) ise gelecek → pencereye girmemeli.
   // - r-stu-1: düşük ortalama (3/3)          → low_score
   // - r-stu-2: teslim etmeme (2 ödev de yok)  → missing_submission
-  // - r-stu-3: ardışık absent (week 2 + 3)    → consecutive_absence
+  // - r-stu-3: ardışık absent (week b + c)    → consecutive_absence
   // - r-stu-4: temiz (8/9 + teslimler)        → listede YOK
+  // - r-stu-5: yalnızca GELECEK haftada bozuk → listede YOK (sızmamalı)
   beforeAll(() => {
     const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+       VALUES ('risk-week-a', 'ds-year', 4, '2026-07-06', '2026-07-12', 'Risk A'),
+              ('risk-week-b', 'ds-year', 5, '2026-07-13', '2026-07-19', 'Risk B'),
+              ('risk-week-c', 'ds-year', 6, '2026-07-20', '2026-07-26', 'Risk C'),
+              ('risk-week-future', 'ds-year', 7, '2026-08-10', '2026-08-16', 'Risk Gelecek')`,
+    ).run();
+
     db.prepare(
       `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
        VALUES (?, ?, ?, ?, NULL)`,
@@ -386,11 +397,15 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
       `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
        VALUES (?, ?, ?, ?, NULL)`,
     );
-    const names = ['r-stu-1', 'r-stu-2', 'r-stu-3', 'r-stu-4'];
+    const names = ['r-stu-1', 'r-stu-2', 'r-stu-3', 'r-stu-4', 'r-stu-5'];
     names.forEach((s, i) => {
       insU.run(s, `Risk Ogrenci ${i + 1}`, `risk ogrenci ${i + 1}`, `r-ogrenci-${i + 1}`, now);
       insS.run(`${s}-rec`, s);
-      insE.run(`${s}-enr`, `${s}-rec`, 'risk-class', '2026-07-20');
+      // r-stu-5 yalnızca gelecek haftadan itibaren aktif: geçmiş pencere
+      // haftalarında (b/c/1) hiçbir sinyal üretmez; yalnızca gelecek haftadaki
+      // bozuk raporu varsa sızabilirdi.
+      const start = s === 'r-stu-5' ? '2026-08-01' : '2026-07-01';
+      insE.run(`${s}-enr`, `${s}-rec`, 'risk-class', start);
     });
 
     const insRep = db.prepare(
@@ -408,15 +423,14 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
          (id, report_id, student_id, attendance, homework_score, interest_score, teacher_note)
        VALUES (?, ?, ?, ?, ?, ?, NULL)`,
     );
-    for (const wnum of [2, 3]) {
-      const weekId = `ds-week-${wnum}`;
-      const repId = `risk-rep-${wnum}`;
+    for (const [key, weekId] of [['b', 'risk-week-b'], ['c', 'risk-week-c']] as const) {
+      const repId = `risk-rep-${key}`;
       insRep.run(repId, 'risk-cc', weekId, now, 'test-teacher', now);
-      insHw.run(`risk-hw-${wnum}`, repId, 'risk-cc', weekId, `Odev ${wnum}`, `2026-08-1${wnum}`);
-      insEntry.run(`risk-e1-${wnum}`, repId, 'r-stu-1-rec', 'present', 3, 3);
-      insEntry.run(`risk-e2-${wnum}`, repId, 'r-stu-2-rec', 'present', 7, 8);
-      insEntry.run(`risk-e3-${wnum}`, repId, 'r-stu-3-rec', 'absent', null, null);
-      insEntry.run(`risk-e4-${wnum}`, repId, 'r-stu-4-rec', 'present', 8, 9);
+      insHw.run(`risk-hw-${key}`, repId, 'risk-cc', weekId, `Odev ${key}`, '2026-07-27');
+      insEntry.run(`risk-e1-${key}`, repId, 'r-stu-1-rec', 'present', 3, 3);
+      insEntry.run(`risk-e2-${key}`, repId, 'r-stu-2-rec', 'present', 7, 8);
+      insEntry.run(`risk-e3-${key}`, repId, 'r-stu-3-rec', 'absent', null, null);
+      insEntry.run(`risk-e4-${key}`, repId, 'r-stu-4-rec', 'present', 8, 9);
     }
 
     const insSub = db.prepare(
@@ -424,11 +438,16 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
          (id, homework_id, student_id, note, submitted_at, is_late, status, reviewed_by, reviewed_at, files_purged_at)
        VALUES (?, ?, ?, NULL, ?, 0, 'submitted', NULL, NULL, NULL)`,
     );
-    for (const wnum of [2, 3]) {
+    for (const key of ['b', 'c']) {
       for (const s of ['r-stu-1-rec', 'r-stu-3-rec', 'r-stu-4-rec']) {
-        insSub.run(`risk-sub-${wnum}-${s}`, `risk-hw-${wnum}`, s, '2026-08-12T10:00:00.000Z');
+        insSub.run(`risk-sub-${key}-${s}`, `risk-hw-${key}`, s, '2026-07-28T10:00:00.000Z');
       }
     }
+
+    // Gelecek hafta: bozuk ama gelecekte → pencereye girmemeli.
+    insRep.run('risk-rep-future', 'risk-cc', 'risk-week-future', now, 'test-teacher', now);
+    insHw.run('risk-hw-future', 'risk-rep-future', 'risk-cc', 'risk-week-future', 'Odev f', '2026-08-17');
+    insEntry.run('risk-e1-future', 'risk-rep-future', 'r-stu-5-rec', 'present', 1, 1);
   });
 
   it('üç kriteri OR olarak değerlendirir; risk_flags ayrı ayrı; temiz öğrenci listede yok', async () => {
@@ -436,7 +455,13 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
       .get('/api/v1/admin/dashboard/risk')
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
-    expect(res.body.weeks).toHaveLength(3);
+    // Yalnızca bitmiş haftalar: devam eden (week 2, end 08-09) ve gelecek
+    // (week 7) dışarıda; pencere en yeni 3 bitmiş haftayı alır.
+    const weekNos = (res.body.weeks as Array<{ week_no: number }>).map((w) => w.week_no);
+    expect(weekNos).toHaveLength(3);
+    expect(weekNos).not.toContain(7); // gelecek hafta
+    expect(weekNos).not.toContain(2); // devam eden hafta
+    expect([...weekNos].sort((a, b) => a - b)).toEqual([1, 5, 6]);
 
     const items = res.body.items as Array<{
       student_id: string;
@@ -447,6 +472,8 @@ describe('GET /api/v1/admin/dashboard/risk (riskli öğrenci listesi)', () => {
     const byId = Object.fromEntries(items.map((i) => [i.student_id, i]));
 
     expect(byId['r-stu-4-rec']).toBeUndefined();
+    // Gelecek haftadaki bozuk rapor risk hesabına SIZMAMALI.
+    expect(byId['r-stu-5-rec']).toBeUndefined();
     expect(byId['r-stu-1-rec'].risk_flags).toEqual(['low_score']);
     expect(byId['r-stu-1-rec'].avg_score).toBe(3);
     expect(byId['r-stu-2-rec'].risk_flags).toEqual(['missing_submission']);
@@ -505,6 +532,15 @@ describe('GET /api/v1/admin/dashboard — aktif yılda başlamış hafta yok (fa
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(0);
+    expect(res.body.items).toEqual([]);
+  });
+
+  it('hiç bitmiş hafta yoksa risk penceresi boş döner', async () => {
+    const res = await request(app)
+      .get('/api/v1/admin/dashboard/risk')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.weeks).toEqual([]);
     expect(res.body.items).toEqual([]);
   });
 });

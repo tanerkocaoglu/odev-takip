@@ -7,7 +7,7 @@
 
 import { db } from '../db/index.js';
 import { RISK, RISK_FLAGS } from '../constants.js';
-import { hasWeekStarted, isOverdue } from '../utils/time.js';
+import { hasWeekStarted, isOverdue, localTodayISO } from '../utils/time.js';
 import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import { currentDigestWeek } from './digests.js';
 
@@ -289,16 +289,23 @@ export function getMissingReportsView(weekId?: string): {
 
 /**
  * GET /admin/dashboard/risk — riskli öğrenci listesi (spec §6, kullanıcı kararı).
- * Son `RISK.lookbackWeeks` hafta; üç kriter OR; `risk_flags` ayrı rozet.
+ * Son `RISK.lookbackWeeks` **bitmiş** hafta; üç kriter OR; `risk_flags` ayrı rozet.
+ *
+ * Pencere yalnızca **gerçekten geçmiş** (bitmiş) haftaları içerir:
+ * `end_date < bugün`. Admin haftaları önceden/toplu tanımladığından yalnızca
+ * "en yeni tanımlı hafta"ya bakmak gelecekteki haftaları "son hafta" sanmaya yol
+ * açıyordu; henüz gerçekleşmemiş haftalar bu hesaba asla girmez. Bitmiş hafta
+ * sayısı `lookbackWeeks`'ten azsa mevcut bitmiş haftalarla çalışılır.
  */
 export function getRiskData(): { weeks: RiskWeek[]; items: RiskItem[] } {
   const weeks = db
     .prepare(
       `SELECT w.* FROM weeks w
        JOIN academic_years a ON a.id = w.academic_year_id AND a.is_active = 1
-       ORDER BY w.start_date DESC LIMIT ?`,
+       WHERE w.end_date < ?
+       ORDER BY w.start_date DESC, w.week_no DESC LIMIT ?`,
     )
-    .all(RISK.lookbackWeeks) as unknown as WeekRecord[];
+    .all(localTodayISO(), RISK.lookbackWeeks) as unknown as WeekRecord[];
   if (weeks.length === 0) {
     return { weeks: [], items: [] };
   }

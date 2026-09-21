@@ -446,7 +446,13 @@ export default function AdminDashboardPage() {
           ) : riskError ? (
             <FormError message={riskError} />
           ) : risk && risk.items.length === 0 ? (
-            <EmptyState message="Bu kriterlerle riskli öğrenci yok." />
+            <EmptyState
+              message={
+                risk.weeks.length === 0
+                  ? 'Henüz değerlendirilecek geçmiş hafta yok.'
+                  : 'Bu kriterlerle riskli öğrenci yok.'
+              }
+            />
           ) : (
             risk && (
               <div className="overflow-hidden rounded-md border border-border bg-surface">
