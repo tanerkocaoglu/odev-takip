@@ -44,6 +44,49 @@ function pad2(n: number): string {
 }
 
 /**
+ * Haftanın **gerçek başlangıcına göre** göreli gün sırası (1..7).
+ *
+ * `class_courses.day_of_week` ISO 8601 (1=Pazartesi .. 7=Pazar) saklanır; ama
+ * bir haftanın kronolojik dersi hafta başına göre okunur. Hafta başlangıcı
+ * sistemde sabit değildir — her `weeks` kaydının `start_date`'i belirler
+ * (seed Pazartesi, üretimde Cumartesi olabilir). Örn. Cumartesi başlangıçlı
+ * haftada: Cumartesi=1, Pazar=2, ..., Cuma=7.
+ *
+ * Pazartesi başlangıçlı haftada `dayOfWeek` ile birebir aynıdır (davranış
+ * değişmez).
+ */
+export function relativeWeekday(dayOfWeek: number, weekStartDate: string): number {
+  const start = weekdayOf(parseLocalDate(weekStartDate));
+  return ((dayOfWeek - start + 7) % 7) + 1;
+}
+
+/**
+ * Tek-hafta ders listeleri için ortak karşılaştırıcı: önce hafta başına göre
+ * göreli gün, sonra `lesson_time` (yoksa en sona değil, boş string olarak
+ * alfabetik başa). Tüm sıralama yüzeyleri bunu kullanır — kopya mantık yok.
+ */
+export function compareWeekdayLessonTime<T extends { day_of_week: number; lesson_time: string | null }>(
+  weekStartDate: string,
+): (a: T, b: T) => number {
+  return (a, b) =>
+    relativeWeekday(a.day_of_week, weekStartDate) -
+      relativeWeekday(b.day_of_week, weekStartDate) ||
+    (a.lesson_time ?? '').localeCompare(b.lesson_time ?? '');
+}
+
+/**
+ * Çok-haftalı / sayfalı sorgular için SQL parçası: satırın kendi haftasının
+ * `start_date`'ine göre göreli gün sırası. Örn.
+ * `ORDER BY w.start_date DESC, ${relativeDayOrderSql('cc.day_of_week', 'w.start_date')}, cc.lesson_time`.
+ *
+ * `strftime('%w', ...)`: 0=Pazar .. 6=Cumartesi → ISO (1=Pazartesi) dönüşümü.
+ */
+export function relativeDayOrderSql(dayExpr: string, weekStartExpr: string): string {
+  const isoStart = `((CAST(strftime('%w', ${weekStartExpr}) AS INTEGER) + 6) % 7 + 1)`;
+  return `((${dayExpr} - ${isoStart} + 7) % 7 + 1)`;
+}
+
+/**
  * Hafta etiketini tarihten üretir: `gg.aa - gg.aa.yyyy` (nokta ayraçlı,
  * gün ve ay sıfır dolgulu; örn. `07.09 - 13.09.2026`).
  *

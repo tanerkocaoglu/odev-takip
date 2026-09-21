@@ -10,6 +10,7 @@
 import { db } from '../db/index.js';
 import { normalizeTurkish } from '../utils/text.js';
 import { toCsv } from '../utils/csv.js';
+import { relativeDayOrderSql } from '../utils/weeks.js';
 
 const GRADE_LEVEL_LABELS: Record<string, string> = {
   '1': '1. sınıf',
@@ -170,7 +171,9 @@ export function reportsExportCsv(params: {
        JOIN courses co ON co.id = cc.course_id
        JOIN weeks w ON w.id = r.week_id
        WHERE ${where.join(' AND ')}
-       ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time
+       ORDER BY w.start_date DESC,
+                ${relativeDayOrderSql('cc.day_of_week', 'w.start_date')},
+                cc.lesson_time
        LIMIT ${EXPORT_LIMIT}`,
     )
     .all(...values) as Array<{

@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateDueDate,
+  compareWeekdayLessonTime,
   formatWeekLabel,
   getPreviousWeek,
+  relativeWeekday,
   type WeekRecord,
 } from './weeks.js';
 
@@ -67,6 +69,37 @@ describe('getPreviousWeek', () => {
     const weeks = [week('w1', 1, '2025-09-01', '2025-09-07')];
     const prev = getPreviousWeek(weeks, weeks[0]);
     expect(prev).toBeNull();
+  });
+});
+
+describe('relativeWeekday / compareWeekdayLessonTime', () => {
+  it('Cumartesi başlangıçlı haftada Cmt=1, Pazar=2, Pzt=3 ... Cuma=7', () => {
+    const sat = '2026-09-26'; // Cumartesi
+    expect(relativeWeekday(6, sat)).toBe(1); // Cumartesi
+    expect(relativeWeekday(7, sat)).toBe(2); // Pazar
+    expect(relativeWeekday(1, sat)).toBe(3); // Pazartesi
+    expect(relativeWeekday(2, sat)).toBe(4); // Salı
+    expect(relativeWeekday(3, sat)).toBe(5); // Çarşamba
+    expect(relativeWeekday(4, sat)).toBe(6); // Perşembe
+    expect(relativeWeekday(5, sat)).toBe(7); // Cuma
+  });
+
+  it('Pazartesi başlangıçlı haftada kimliktir (ISO ile birebir) — regresyon yok', () => {
+    const mon = '2026-09-21'; // Pazartesi
+    for (let d = 1; d <= 7; d++) {
+      expect(relativeWeekday(d, mon)).toBe(d);
+    }
+  });
+
+  it('karşılaştırıcı göreli gün, eşitlikte lesson_time sıralar', () => {
+    const sat = '2026-09-26';
+    const rows = [
+      { id: 'salı', day_of_week: 2, lesson_time: '09:00' },
+      { id: 'pazar-gec', day_of_week: 7, lesson_time: '15:00' },
+      { id: 'pazar-erken', day_of_week: 7, lesson_time: '10:00' },
+    ];
+    rows.sort(compareWeekdayLessonTime(sat));
+    expect(rows.map((r) => r.id)).toEqual(['pazar-erken', 'pazar-gec', 'salı']);
   });
 });
 

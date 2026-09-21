@@ -28,7 +28,13 @@ import {
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
 import { parsePagination, paged } from '../utils/pagination.js';
 import { normalizeTurkish } from '../utils/text.js';
-import { calculateDueDate, getPreviousWeek, type WeekRecord } from '../utils/weeks.js';
+import {
+  calculateDueDate,
+  compareWeekdayLessonTime,
+  getPreviousWeek,
+  relativeDayOrderSql,
+  type WeekRecord,
+} from '../utils/weeks.js';
 import { hasWeekStarted, isOverdue, localTodayISO } from '../utils/time.js';
 import type { AuthUser } from '../types.js';
 
@@ -306,6 +312,12 @@ router.get('/dashboard', (req, res) => {
           )
           .all(week.id) as unknown as DashboardRow[]);
 
+  // Sıralama haftanın gerçek başlangıcına göredir (Cumartesi başlangıçlı
+  // haftada Pazar, Salı'dan önce gelir). `is_overdue` da aynı göreli güne
+  // dayandığından "gecikmiş üstte" ikisiyle tutarlıdır.
+  const byWeekDay = compareWeekdayLessonTime<{ day_of_week: number; lesson_time: string | null }>(
+    week.start_date,
+  );
   const items = rows
     .map((row) => ({
       class_course_id: row.class_course_id,
@@ -318,10 +330,7 @@ router.get('/dashboard', (req, res) => {
       is_overdue: isOverdue(week, row.day_of_week),
     }))
     .sort(
-      (a, b) =>
-        Number(b.is_overdue) - Number(a.is_overdue) ||
-        a.day_of_week - b.day_of_week ||
-        (a.lesson_time ?? '').localeCompare(b.lesson_time ?? ''),
+      (a, b) => Number(b.is_overdue) - Number(a.is_overdue) || byWeekDay(a, b),
     );
 
   res.json({
@@ -910,7 +919,9 @@ router.get('/reports', (req, res) => {
        JOIN courses co ON co.id = cc.course_id
        JOIN weeks w ON w.id = r.week_id
        WHERE ${where}
-       ORDER BY w.start_date DESC, cc.day_of_week, cc.lesson_time
+       ORDER BY w.start_date DESC,
+                ${relativeDayOrderSql('cc.day_of_week', 'w.start_date')},
+                cc.lesson_time
        LIMIT ? OFFSET ?`,
     )
     .all(...allValues, pagination.limit, pagination.offset) as Array<{

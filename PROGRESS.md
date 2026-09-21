@@ -5,6 +5,105 @@
 
 ---
 
+## Ders sıralaması hafta başına göre + `isOverdue` düzeltmesi ✅
+
+### Sorun
+
+`class_courses.day_of_week` ISO 8601 saklanıyor (1=Pazartesi .. 7=Pazar) ama
+sistemin haftası **veri-güdümlü** olarak `weeks.start_date` ile başlıyor
+(seed Pazartesi, üretimde Cumartesi). Tüm ders listeleri ham `day_of_week`
+sayısına göre sıralanıyordu (`ORDER BY cc.day_of_week, cc.lesson_time` ve
+JS'te `a.day_of_week - b.day_of_week`). Cumartesi başlangıçlı haftada bu,
+Pazar'ı (7) en sona attığı için **Salı (2), Pazar'dan önce** görünüyordu —
+oysa Pazar haftanın daha erken bir günü.
+
+Aynı kök varsayımı `isOverdue`'da da vardı: `start_date + (day_of_week - 1)`
+formülü `start_date`'i Pazartesi kabul ediyordu; Cumartesi başlangıçlı haftada
+Pazar dersi ~6 gün ileri kayıyor, "gecikmiş" vurgusu ve `overdue_count`
+banner'ı yanlış çalışıyordu.
+
+### Kararlar (kullanıcı onaylı)
+
+1. Göreli gün sırası **her haftanın gerçek `start_date`'inden türetilir** —
+   Cumartesi koda sabit yazılmaz (seed/Pazartesi ve olası farklı tanımlar
+   bozulmasın). Cumartesi başlangıçta Cmt=1, Pazar=2, ..., Cuma=7 verir.
+2. Kapsam: **tüm tek-hafta ders listeleri** (öğretmen dashboard, admin
+   eksik+matris, ödev özeti, digest/veli snapshot, veli detay, rapor geçmişi,
+   CSV export).
+3. `isOverdue` bu turda düzeltilir (yalnızca sıralama değil, gecikme
+   banner'ının doğruluğu).
+4. Depolama kuralı **değişmez** (ISO 8601 aynen kalır).
+
+### Uygulama
+
+- **`utils/weeks.ts`:** yeni `relativeWeekday(day_of_week, weekStartDate)`
+  (`((d - weekday(start) + 7) % 7) + 1`), `compareWeekdayLessonTime(start)`
+  ortak karşılaştırıcı ve çok-haftalı/sayfalı sorgular için SQL parçası
+  `relativeDayOrderSql(dayExpr, weekStartExpr)` (`strftime('%w', ...)` →
+  ISO → göreli). Pazartesi başlangıçta `relativeWeekday` kimliktir → mevcut
+  davranış birebir korunur.
+- **`utils/time.ts` → `isOverdue`:** `classDay = start_date +
+  (relativeWeekday - 1)`.
+- **JS karşılaştırıcı** (tek hafta, sayfalamasız): `routes/teacher.ts`
+  (dashboard), `services/dashboard.ts` (eksik + matris), `homeworkSummary.ts`,
+  `digests.ts` (snapshot), `routes/guardian.ts` (ödev/teslim geçmişi).
+- **SQL göreli ORDER BY** (sayfalı / çok-haftalı): `routes/teacher.ts`
+  (geçmiş raporlar, OFFSET'li), `services/csvExport.ts`.
+- `spec.md`: §3.1'e depolama (ISO) vs gösterim (göreli) ayrımı notu; §5.1 ve
+  §5.8 sıralama ifadeleri güncellendi. **Şema/migration yok.**
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **386/386** (35 dosya; +10: `report-order` 4, `weeks`
+  +3 göreli gün/karşılaştırıcı, `time` +3 Cumartesi başlangıçlı `isOverdue`),
+  frontend **132/132** (22 dosya) — değişmedi. Mevcut Pazartesi başlangıçlı
+  fixture'lar (teacher/homework-summary/dashboard/guardian/digests/csv) tümü
+  regresyonsuz geçti.
+- **Canlı kanıt (izole DB + gerçek Express sunucusu + gerçek HTTP login):**
+  - **Cumartesi başlangıçlı hafta** (`2026-09-19` Cmt): dashboard sırası
+    **Pazar Dersi (day_of_week=7) → Salı Dersi (day_of_week=2)**; `is_overdue`
+    ayrı ayrı: Pazar **true**, Salı **false** (bugün Pzt 21.09).
+  - **Pazartesi başlangıçlı hafta (regresyon, seed deseni):**
+    `2026-09-21` Pzt → sıra **Pazartesi → Cuma**, `is_overdue` ikisi de false;
+    davranış değişmedi.
+  - Gerçek `backend/db/app.db` değişmedi (kanıt yalnızca temp DB'de);
+    betik + temp DB silindi.
+
+### ⚠️ Bilinçli kapsam sınırı
+
+`routes/admin/classCourses.ts` liste sorguları (`ORDER BY c.name,
+cc.day_of_week, ...`) **tek bir haftaya bağlı değildir** (tüm yılın atamaları);
+bu yüzden göreli sıra türetilecek bir `week.start_date` yoktur ve dokunulmadı.
+Admin sınıf-ders atama listesi ham ISO gün sırasını göstermeye devam eder.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/weeks.ts                   (+relativeWeekday,
+                                              +compareWeekdayLessonTime,
+                                              +relativeDayOrderSql)
+backend/src/utils/weeks.test.ts              (+3 test)
+backend/src/utils/time.ts                    (isOverdue göreli gün)
+backend/src/utils/time.test.ts               (+3 Cumartesi başlangıç testi)
+backend/src/routes/teacher.ts                (dashboard + geçmiş SQL)
+backend/src/services/dashboard.ts            (eksik + matris)
+backend/src/services/homeworkSummary.ts      (satır sırası)
+backend/src/services/digests.ts              (snapshot ders sırası)
+backend/src/services/csvExport.ts            (göreli SQL ORDER BY)
+backend/src/routes/guardian.ts               (ödev/teslim geçmişi sırası)
+backend/src/report-order.test.ts             (yeni; Cumartesi sıralama +
+                                              isOverdue + regresyon)
+spec.md                                      (§3.1 not, §5.1, §5.8)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Henüz başlamamış hafta — salt-okunur önizleme + yazma reddi ✅
 
 ### Sorun

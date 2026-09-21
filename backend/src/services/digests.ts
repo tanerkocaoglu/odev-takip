@@ -20,7 +20,7 @@ import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { localTodayISO } from '../utils/time.js';
 import { resolveBaseUrl } from '../utils/env.js';
-import type { WeekRecord } from '../utils/weeks.js';
+import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import { writeAuditLog } from './audit.js';
 
 /** Digest token'ı UUID DEĞİLDİR — kimlik doğrulamasız sayfayı açtığı için fiilen paroladır (CLAUDE.md). */
@@ -412,6 +412,13 @@ export function buildSnapshot(
     homework_description: string | null;
     due_date: string | null;
   }>;
+
+  // Ders sırası haftanın gerçek başlangıcına göre (Cumartesi başlangıçlı
+  // haftada Pazar, Salı'dan önce) — veli ekranı ve /r/{token} aynı snapshot'ı
+  // kullanır.
+  rows.sort(
+    compareWeekdayLessonTime<{ day_of_week: number; lesson_time: string | null }>(week.start_date),
+  );
 
   // Sonraki ders haftası snapshot başına bir kez çözülür; `null` yalnızca
   // gerçek son hafta içindir, tutarsızlık fırlatır (bkz. resolveGradedInWeek).

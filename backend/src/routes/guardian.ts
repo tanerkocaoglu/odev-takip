@@ -19,7 +19,7 @@ import { AppError } from '../errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { classIdForStudentAtWeek, firstActiveWeekNoForClass, isLinkPreviewBot, markDigestViewed } from '../services/digests.js';
 import { loadSubmissionFiles } from '../services/submissionFiles.js';
-import type { WeekRecord } from '../utils/weeks.js';
+import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import type { AuthUser } from '../types.js';
 
 const router = Router();
@@ -224,7 +224,8 @@ router.get('/reports/:id', (req, res) => {
     if (classId) {
       const homeworks = db
         .prepare(
-          `SELECT h.id, h.description, h.due_date, co.name AS course_name
+          `SELECT h.id, h.description, h.due_date, co.name AS course_name,
+                  cc.day_of_week, cc.lesson_time
            FROM homeworks h
            JOIN class_courses cc ON cc.id = h.class_course_id AND cc.deleted_at IS NULL
            JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
@@ -236,6 +237,8 @@ router.get('/reports/:id', (req, res) => {
         description: string;
         due_date: string;
         course_name: string;
+        day_of_week: number;
+        lesson_time: string | null;
       }>;
 
       // Bu haftanın puanladığı ödevler: her dolu dersin `prev_homework_id`'si.
@@ -243,7 +246,8 @@ router.get('/reports/:id', (req, res) => {
       const prevHomeworks = db
         .prepare(
           `SELECT cc.id AS class_course_id, r.prev_homework_id AS homework_id,
-                  co.name AS course_name, h.description, h.due_date
+                  co.name AS course_name, h.description, h.due_date,
+                  cc.day_of_week, cc.lesson_time
            FROM reports r
            JOIN class_courses cc ON cc.id = r.class_course_id AND cc.deleted_at IS NULL
            JOIN courses co ON co.id = cc.course_id AND co.deleted_at IS NULL
@@ -259,7 +263,16 @@ router.get('/reports/:id', (req, res) => {
         course_name: string;
         description: string;
         due_date: string;
+        day_of_week: number;
+        lesson_time: string | null;
       }>;
+
+      // Sıra haftanın gerçek başlangıcına göredir (spec §5.1 gün sırası).
+      const byWeekDay = compareWeekdayLessonTime<{ day_of_week: number; lesson_time: string | null }>(
+        week.start_date,
+      );
+      homeworks.sort(byWeekDay);
+      prevHomeworks.sort(byWeekDay);
 
       const subRows = db
         .prepare(

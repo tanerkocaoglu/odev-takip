@@ -15,7 +15,7 @@
 
 import { db } from '../db/index.js';
 import { AppError } from '../errors.js';
-import type { WeekRecord } from '../utils/weeks.js';
+import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import { currentDigestWeek, firstActiveWeekNoForClass } from './digests.js';
 
 export type HomeworkSummaryStatus = 'completed' | 'sent' | 'missing';
@@ -93,6 +93,12 @@ export function buildHomeworkSummary(classId: string, weekId: string): HomeworkS
     firstActiveWeek === null
       ? week.week_no
       : Math.max(week.week_no - firstActiveWeek + 1, 1);
+
+  // Satır sırası haftanın gerçek başlangıcına göre (Cumartesi başlangıçlı
+  // haftada Pazar, Salı'dan önce gelir) — spec §5.8 "sıra ders günü/saat".
+  rows.sort(
+    compareWeekdayLessonTime<{ day_of_week: number; lesson_time: string | null }>(week.start_date),
+  );
 
   return {
     week: {

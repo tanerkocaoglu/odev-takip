@@ -3,7 +3,7 @@
  * UTC üzerinden gün çıkarımı yapılmaz. Zaman dilimi Europe/Istanbul.
  */
 
-import type { WeekRecord } from './weeks.js';
+import { relativeWeekday, type WeekRecord } from './weeks.js';
 
 /**
  * Yerel takvimde bugün (YYYY-MM-DD) — makine yerel saatine göre.
@@ -30,11 +30,17 @@ export function hasWeekStarted(week: { start_date: string }): boolean {
 /**
  * Ders günü bu haftada geçti mi? (spec.md §5.1: "ders günü geçtiği halde
  * draft olanlar üstte ve vurgulu görünür"). Hafta tamamen bittiyse de geçmiş.
+ *
+ * Ders günü, haftanın **gerçek başlangıcına göre** hesaplanır: `start_date`'ten
+ * `relativeWeekday - 1` gün sonrası. `day_of_week` ISO (1=Pazartesi) olduğundan
+ * `start_date`'i doğrudan `day_of_week` ile eşlemek yalnızca Pazartesi
+ * başlangıçlı haftalarda doğru olurdu; Cumartesi başlangıçlı haftada Pazar
+ * dersi yanlışlıkla ~6 gün ileri kayardı.
  */
 export function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
   const [y, m, d] = week.start_date.split('-').map(Number);
   const classDay = new Date(y, m - 1, d);
-  classDay.setDate(classDay.getDate() + (dayOfWeek - 1));
+  classDay.setDate(classDay.getDate() + (relativeWeekday(dayOfWeek, week.start_date) - 1));
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return classDay < today;

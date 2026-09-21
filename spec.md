@@ -315,6 +315,16 @@ CREATE INDEX idx_class_courses_teacher ON class_courses(teacher_id);
 > `day_of_week` ödev son tarihinin otomatik hesaplanması için zorunludur
 > (§5.2). Bir öğretmen birden fazla `class_course` kaydında yer alır
 > (ortalama 10). Bir sınıfta ders sayısı sabit 4 DEĞİLDİR.
+>
+> **Depolama: ISO 8601 (1=Pazartesi .. 7=Pazar).** Ama kullanıcıya dönük
+> listelerde dersler bu ham sayıya göre değil, **haftanın gerçek başlangıcına
+> göre göreli** sıralanır. Hafta başlangıcı sabit değildir; her `weeks`
+> kaydının `start_date`'i belirler (seed Pazartesi, üretimde Cumartesi
+> olabilir). Örn. Cumartesi başlangıçlı haftada sıra: Cumartesi, Pazar,
+> Pazartesi, Salı, Çarşamba, Perşembe, Cuma. "Ders günü geçti mi"
+> (`is_overdue`) hesabı da aynı göreli güne dayanır; ham `day_of_week`
+> `start_date` ile doğrudan toplanmaz. Ortak kural: `relativeWeekday()`
+> (`utils/weeks.ts`).
 
 **`enrollments`** — öğrenci-sınıf, tarihli
 ```sql
@@ -581,8 +591,10 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 > değiştirilmemiştir.
 
 1. Öğretmen giriş yapar → "Bu hafta doldurulacaklar". Öğretmen başına ~10
-   kayıt olacağı için bu liste `day_of_week` + `lesson_time` sırasına göre
-   dizilir; tamamlananlar listeden düşer, ders günü geçtiği halde `draft`
+   kayıt olacağı için bu liste **haftanın gerçek başlangıcına göre göreli**
+   `ders günü` + `lesson_time` sırasına göre dizilir (Cumartesi başlangıçlı
+   haftada Pazar, Salı'dan önce gelir — §3.1 notu); tamamlananlar listeden
+   düşer, ders günü geçtiği halde `draft`
    olanlar üstte ve vurgulu görünür.
 2. Bir kaydı açar. Sistem otomatik doldurur:
    - **Verilmiş olan ödev:** `week_no - 1` için aynı `class_course_id`'nin
@@ -947,8 +959,8 @@ görünen belge tarayıcı tarafında PNG'ye çevrilip indirilir.
   yalnızca doğru, tutarlı görseli indirir; paylaşımı kendi eliyle yapar.
 - **Kapsam:** yalnızca admin — `GET /api/v1/admin/homework-summary`
   (`class_id` zorunlu, `week_id` opsiyonel → aktif hafta).
-- Satırlar: **öğretmen adı | ders adı | yapılacak ödev**; sıra `day_of_week`,
-  `lesson_time`.
+- Satırlar: **öğretmen adı | ders adı | yapılacak ödev**; sıra **haftanın
+  gerçek başlangıcına göre göreli** ders günü, `lesson_time` (§3.1 notu).
 - **Eksik ders atlanmaz:** raporu `completed`/`sent` olmayan (ya da ödevi
   bulunmayan) ders satırı **"Rapor girilmedi"** olarak listelenir. "Tüm raporlar
   tamam" kısıtı bu ekranda **uygulanmaz** — o kısıt yalnızca digest

@@ -8,7 +8,7 @@
 import { db } from '../db/index.js';
 import { RISK, RISK_FLAGS } from '../constants.js';
 import { isOverdue } from '../utils/time.js';
-import type { WeekRecord } from '../utils/weeks.js';
+import { compareWeekdayLessonTime, type WeekRecord } from '../utils/weeks.js';
 import { currentDigestWeek } from './digests.js';
 
 export interface MissingReport {
@@ -117,6 +117,9 @@ export function buildMissingReports(week: WeekRecord): MissingReport[] {
     report_status: string | null;
   }>;
 
+  const byWeekDay = compareWeekdayLessonTime<{ day_of_week: number; lesson_time: string | null }>(
+    week.start_date,
+  );
   return rows
     .map((r) => ({
       class_course_id: r.class_course_id,
@@ -131,12 +134,7 @@ export function buildMissingReports(week: WeekRecord): MissingReport[] {
       report_id: r.report_id,
       is_overdue: isOverdue(week, r.day_of_week),
     }))
-    .sort(
-      (a, b) =>
-        Number(b.is_overdue) - Number(a.is_overdue) ||
-        a.day_of_week - b.day_of_week ||
-        (a.lesson_time ?? '').localeCompare(b.lesson_time ?? ''),
-    );
+    .sort((a, b) => Number(b.is_overdue) - Number(a.is_overdue) || byWeekDay(a, b));
 }
 
 /**
@@ -217,6 +215,12 @@ export function getDashboardOverview(weekId?: string): DashboardOverview {
       report_id: r.report_id,
     });
     matrix.set(r.class_id, entry);
+  }
+
+  // Matris içi ders sırası da haftanın gerçek başlangıcına göre.
+  const matrixByWeekDay = compareWeekdayLessonTime<MatrixCourse>(week.start_date);
+  for (const entry of matrix.values()) {
+    entry.courses.sort(matrixByWeekDay);
   }
 
   const digests = db
