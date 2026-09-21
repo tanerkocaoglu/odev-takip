@@ -199,6 +199,8 @@ export interface TeacherDashboardItem {
   report_id: string | null;
   status: string | null;
   is_overdue: boolean;
+  /** Hafta tanımı hatalı: dersin günü hafta aralığının dışında (spec §3.1). */
+  week_range_invalid: boolean;
 }
 
 export interface TeacherDashboard {
@@ -248,6 +250,8 @@ export interface TeacherReportPayload {
   report: TeacherReportHeader;
   /** Hafta henüz başlamadıysa true — ekran salt-okunur önizleme (spec §5.1). */
   read_only: boolean;
+  /** Hafta tanımı hatalı: dersin günü hafta aralığının dışında (spec §3.1). */
+  week_range_invalid: boolean;
   entries: ReportEntry[];
 }
 

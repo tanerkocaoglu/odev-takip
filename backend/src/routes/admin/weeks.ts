@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db } from '../../db/index.js';
 import { AppError } from '../../errors.js';
-import { formatWeekLabel } from '../../utils/weeks.js';
+import { formatWeekLabel, validateWeekRange } from '../../utils/weeks.js';
 
 const router = Router();
 
@@ -41,6 +41,14 @@ router.post('/weeks', (req, res) => {
     | undefined;
   if (!year) {
     throw new AppError('NOT_FOUND', 404, 'Eğitim yılı bulunamadı.');
+  }
+  // Hafta tam 7 gün olmalı (başlangıç + 6 gün); aksi hâlde `day_of_week` ile
+  // hesaplanan gerçek ders tarihi hafta aralığının dışına düşer (spec.md §3.1).
+  const rangeError = validateWeekRange(week.start_date, week.end_date);
+  if (rangeError) {
+    throw new AppError('VALIDATION_ERROR', 400, rangeError.message, {
+      [rangeError.field]: rangeError.message,
+    });
   }
   // Hafta aralığı yıl aralığı dışına taşamaz (due_date hesabını bozar).
   if (week.start_date < year.start_date || week.end_date > year.end_date) {
@@ -83,10 +91,34 @@ router.patch('/weeks/:id', (req, res) => {
   const input = weekPatchSchema.parse(req.body);
 
   const current = db
-    .prepare(`SELECT id, start_date, end_date FROM weeks WHERE id = ?`)
-    .get(id) as { id: string; start_date: string; end_date: string } | undefined;
+    .prepare(`SELECT id, academic_year_id, start_date, end_date FROM weeks WHERE id = ?`)
+    .get(id) as
+    | { id: string; academic_year_id: string; start_date: string; end_date: string }
+    | undefined;
   if (!current) {
     throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+
+  // Tarih girdisi varsa birleştirilmiş aralık doğrulanır: tam 7 gün + yıl
+  // aralığı (POST ile aynı kural; PATCH'te yıl kontrolü yoktu — spec.md §3.1).
+  const changesDates = input.start_date !== undefined || input.end_date !== undefined;
+  const nextStart = input.start_date ?? current.start_date;
+  const nextEnd = input.end_date ?? current.end_date;
+  if (changesDates) {
+    const rangeError = validateWeekRange(nextStart, nextEnd);
+    if (rangeError) {
+      throw new AppError('VALIDATION_ERROR', 400, rangeError.message, {
+        [rangeError.field]: rangeError.message,
+      });
+    }
+    const year = db
+      .prepare(`SELECT start_date, end_date FROM academic_years WHERE id = ?`)
+      .get(current.academic_year_id) as
+      | { start_date: string; end_date: string }
+      | undefined;
+    if (year && (nextStart < year.start_date || nextEnd > year.end_date)) {
+      throw new AppError('VALIDATION_ERROR', 400, 'Hafta aralığı eğitim yılı dışına taşamaz.');
+    }
   }
 
   const sets: string[] = [];
@@ -102,9 +134,7 @@ router.patch('/weeks/:id', (req, res) => {
   if (sets.length > 0) {
     // Tarih değiştiği anda etiket de tarihten yeniden üretilir.
     sets.push('label = ?');
-    values.push(
-      formatWeekLabel(input.start_date ?? current.start_date, input.end_date ?? current.end_date),
-    );
+    values.push(formatWeekLabel(nextStart, nextEnd));
     values.push(id);
     db.prepare(`UPDATE weeks SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   }

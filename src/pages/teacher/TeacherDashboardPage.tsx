@@ -132,7 +132,11 @@ export default function TeacherDashboardPage() {
                 to={`/teacher/reports/${item.class_course_id}/${data.week!.id}`}
                 className={
                   'card-interactive elevation-1 block rounded-2xl border bg-surface p-4 md:flex md:min-h-0 md:items-center md:rounded-md md:px-4 md:py-3 ' +
-                  (item.is_overdue ? 'border-att-late/50 bg-att-late/5' : 'border-border')
+                  (item.week_range_invalid
+                    ? 'border-att-absent/50 bg-att-absent/5'
+                    : item.is_overdue
+                      ? 'border-att-late/50 bg-att-late/5'
+                      : 'border-border')
                 }
               >
                 <div className="flex items-center gap-3 md:min-w-0 md:flex-1">
@@ -155,13 +159,19 @@ export default function TeacherDashboardPage() {
                   />
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-0 md:ml-3 md:shrink-0">
-                  {item.is_overdue && <Badge tone="warning">Günü geçti</Badge>}
-                  {data.week_not_started ? (
-                    <Badge tone="neutral">Önizleme</Badge>
-                  ) : item.status === 'draft' ? (
-                    <StatusBadge status="draft" />
+                  {item.week_range_invalid ? (
+                    <Badge tone="danger">Hafta tanımı hatalı</Badge>
                   ) : (
-                    <Badge tone="neutral">Açılmadı</Badge>
+                    <>
+                      {item.is_overdue && <Badge tone="warning">Günü geçti</Badge>}
+                      {data.week_not_started ? (
+                        <Badge tone="neutral">Önizleme</Badge>
+                      ) : item.status === 'draft' ? (
+                        <StatusBadge status="draft" />
+                      ) : (
+                        <Badge tone="neutral">Açılmadı</Badge>
+                      )}
+                    </>
                   )}
                 </div>
               </Link>

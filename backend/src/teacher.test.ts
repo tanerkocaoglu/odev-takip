@@ -1081,3 +1081,118 @@ describe('Gelecek hafta (henüz başlamamış) — salt-okunur önizleme + yazma
     }
   });
 });
+
+describe('Hafta tanımı 7 gün değilse: savunma katmanı (spec §3.1)', () => {
+  // Bozuk hafta: 2026-07-27..2026-08-01 = 6 gün (Pzt..Cmt). Pazar dersi (7)
+  // → 2026-08-02 hafta aralığının dışında. Ayrı (pasif) yılda tutulur ki
+  // mevcut testleri etkilemesin; aktif yıl yalnızca dashboard testinde açılır.
+  beforeAll(() => {
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO academic_years (id, name, start_date, end_date, is_active)
+       VALUES ('t-year-bad', 'Bozuk Hafta Yılı', '2026-07-20', '2026-08-16', 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO weeks (id, academic_year_id, week_no, start_date, end_date, label)
+       VALUES ('t-week-bad', 't-year-bad', 1, '2026-07-27', '2026-08-01', 'Bozuk Hafta')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO classes (id, academic_year_id, name, name_normalized, deleted_at)
+       VALUES ('t-class-bad', 't-year-bad', 'Bozuk Sınıf', 'bozuk sinif', NULL)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO courses (id, name, name_normalized, deleted_at)
+       VALUES ('t-course-bad', 'Bozuk Ders', 'bozuk ders', NULL)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO class_courses
+         (id, class_id, course_id, teacher_id, day_of_week, lesson_time, deleted_at)
+       VALUES ('t-cc-bad', 't-class-bad', 't-course-bad', 'test-teacher', 7, '09:00', NULL)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO users
+         (id, full_name, full_name_normalized, username, email, password_hash, role,
+          is_active, token_version, deleted_at, created_at)
+       VALUES ('t-stu-bad', 'Öğrenci Bozuk', 'ogrenci bozuk', 'ogrenci-bozuk', NULL, 'x',
+               'student', 1, 1, NULL, ?)`,
+    ).run(now);
+    db.prepare(
+      `INSERT INTO students (id, user_id, guardian_id, deleted_at)
+       VALUES ('t-stu-rec-bad', 't-stu-bad', NULL, NULL)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
+       VALUES ('t-enr-bad', 't-stu-rec-bad', 't-class-bad', '2026-07-20', NULL)`,
+    ).run();
+    // Mevcut (kalıntı) draft rapor → PUT/complete guard'ı da sınanır.
+    db.prepare(
+      `INSERT INTO reports
+         (id, class_course_id, week_id, topic_covered, prev_homework_id,
+          prev_homework_text, status, completed_at, created_by, updated_at)
+       VALUES ('t-report-bad', 't-cc-bad', 't-week-bad', 'Konu', NULL, NULL, 'draft',
+               NULL, 'test-teacher', ?)`,
+    ).run(now);
+  });
+
+  it('POST /teacher/reports aralık dışı ders için 409 döner', async () => {
+    const res = await request(app)
+      .post('/api/v1/teacher/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ class_course_id: 't-cc-bad', week_id: 't-week-bad' });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+    expect(res.body.error.message).toContain('02.08.2026');
+  });
+
+  it('GET /reports/entry week_range_invalid=true + read_only döner', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/reports/entry?class_course_id=t-cc-bad&week_id=t-week-bad')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.week_range_invalid).toBe(true);
+    expect(res.body.read_only).toBe(true);
+  });
+
+  it('PUT /reports/:id aralık dışıysa 409 döner', async () => {
+    const res = await request(app)
+      .put('/api/v1/teacher/reports/t-report-bad')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({ topic_covered: 'Değişmemeli' });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+  });
+
+  it('complete aralık dışıysa 409 döner', async () => {
+    const res = await request(app)
+      .post('/api/v1/teacher/reports/t-report-bad/complete')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('CONFLICT');
+  });
+});
+
+describe('Öğretmen dashboard: hafta tanımı hatalı satır işaretlenir (spec §3.1)', () => {
+  beforeAll(() => {
+    db.prepare(`UPDATE academic_years SET is_active = 0 WHERE id = 't-year'`).run();
+    db.prepare(`UPDATE academic_years SET is_active = 1 WHERE id = 't-year-bad'`).run();
+  });
+  afterAll(() => {
+    db.prepare(`UPDATE academic_years SET is_active = 0 WHERE id = 't-year-bad'`).run();
+    db.prepare(`UPDATE academic_years SET is_active = 1 WHERE id = 't-year'`).run();
+  });
+
+  it('bozuk hafta satırı week_range_invalid; gecikme hesabı yapılmaz', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/dashboard')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.week.id).toBe('t-week-bad');
+
+    const item = (res.body.items as Array<{ class_course_id: string; week_range_invalid: boolean; is_overdue: boolean }>).find(
+      (i) => i.class_course_id === 't-cc-bad',
+    );
+    expect(item).toBeDefined();
+    expect(item?.week_range_invalid).toBe(true);
+    expect(item?.is_overdue).toBe(false);
+  });
+});

@@ -310,11 +310,18 @@ export default function ReportEntryPage() {
         </div>
       </div>
 
-      {readOnly && (
-        <p className="rounded-md border border-att-late/40 bg-att-late/5 px-3 py-2 text-sm text-att-late">
-          Bu hafta henüz başlamadı — yalnızca önizleme. Hafta başladığında rapor
-          doldurulabilir.
+      {payload.week_range_invalid ? (
+        <p className="rounded-md border border-att-absent/40 bg-att-absent/5 px-3 py-2 text-sm text-att-absent">
+          Hafta tanımı hatalı — bu dersin günü hafta aralığının dışında. Yönetici
+          haftanın tarih aralığını düzeltmeden rapor doldurulamaz.
         </p>
+      ) : (
+        readOnly && (
+          <p className="rounded-md border border-att-late/40 bg-att-late/5 px-3 py-2 text-sm text-att-late">
+            Bu hafta henüz başlamadı — yalnızca önizleme. Hafta başladığında rapor
+            doldurulabilir.
+          </p>
+        )
       )}
 
       {isCompleted && (

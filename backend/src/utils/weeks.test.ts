@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateDueDate,
+  classDateForWeek,
   compareWeekdayLessonTime,
+  formatDateTR,
   formatWeekLabel,
   getPreviousWeek,
   relativeWeekday,
+  validateWeekRange,
+  weekLengthDays,
   type WeekRecord,
 } from './weeks.js';
 
@@ -39,6 +43,48 @@ describe('formatWeekLabel', () => {
     expect(formatWeekLabel('2025-12-29', '2026-01-04')).toBe(
       '29.12.2025 - 04.01.2026',
     );
+  });
+});
+
+describe('classDateForWeek / weekLengthDays / validateWeekRange', () => {
+  it('Pazartesi başlangıçlı normal haftada classDate ISO güne eşittir', () => {
+    expect(classDateForWeek('2026-09-21', 1)).toBe('2026-09-21');
+    expect(classDateForWeek('2026-09-21', 7)).toBe('2026-09-27');
+  });
+
+  it('Cumartesi başlangıçlı haftada Pazar ertesi gündür', () => {
+    expect(classDateForWeek('2026-09-26', 6)).toBe('2026-09-26'); // Cumartesi
+    expect(classDateForWeek('2026-09-26', 7)).toBe('2026-09-27'); // Pazar
+  });
+
+  it('6 günlük haftada Pazar dersi aralık dışına düşer (21..26 → 27)', () => {
+    expect(weekLengthDays('2026-09-21', '2026-09-26')).toBe(6);
+    expect(classDateForWeek('2026-09-21', 7)).toBe('2026-09-27');
+  });
+
+  it('weekLengthDays başlangıç ve bitişi dahil sayar', () => {
+    expect(weekLengthDays('2026-09-21', '2026-09-27')).toBe(7);
+    expect(weekLengthDays('2026-09-21', '2026-09-28')).toBe(8);
+  });
+
+  it('validateWeekRange tam 7 günü kabul eder', () => {
+    expect(validateWeekRange('2026-09-21', '2026-09-27')).toBeNull();
+  });
+
+  it('validateWeekRange 6 ve 8 günü reddeder', () => {
+    expect(validateWeekRange('2026-09-21', '2026-09-26')?.field).toBe('end_date');
+    expect(validateWeekRange('2026-09-21', '2026-09-26')?.message).toContain('6 gün');
+    expect(validateWeekRange('2026-09-21', '2026-09-28')?.message).toContain('8 gün');
+  });
+
+  it('validateWeekRange geçersiz tarih ve ters sırayı reddeder', () => {
+    expect(validateWeekRange('2026-13-01', '2026-13-07')?.field).toBe('start_date');
+    expect(validateWeekRange('2026-09-10', '2026-09-04')?.field).toBe('end_date');
+    expect(validateWeekRange('2026-02-31', '2026-03-06')?.field).toBe('start_date');
+  });
+
+  it('formatDateTR gg.aa.yyyy üretir', () => {
+    expect(formatDateTR('2026-09-27')).toBe('27.09.2026');
   });
 });
 

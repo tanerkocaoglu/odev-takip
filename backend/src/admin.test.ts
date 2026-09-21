@@ -231,6 +231,81 @@ describe('Hafta', () => {
     });
     expect(again.status).toBe(201);
   });
+
+  it('7 gün olmayan hafta 400 döner (6 gün — 21..26 Eylül senaryosu)', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/weeks').send({
+      academic_year_id: yearId,
+      week_no: 40,
+      start_date: '2026-09-21',
+      end_date: '2026-09-26',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.fields.end_date).toContain('7 gün');
+  });
+
+  it('8 günlük hafta da 400 döner', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/weeks').send({
+      academic_year_id: yearId,
+      week_no: 41,
+      start_date: '2026-09-21',
+      end_date: '2026-09-28',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.fields.end_date).toContain('8 gün');
+  });
+
+  it('bitiş başlangıçtan önceyse 400 döner', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/weeks').send({
+      academic_year_id: yearId,
+      week_no: 42,
+      start_date: '2026-09-10',
+      end_date: '2026-09-04',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.fields.end_date).toBeDefined();
+  });
+
+  it('geçersiz tarih 400 döner (2026-13-01)', async () => {
+    const res = await adminRequest('post', '/api/v1/admin/weeks').send({
+      academic_year_id: yearId,
+      week_no: 43,
+      start_date: '2026-13-01',
+      end_date: '2026-13-07',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.fields.start_date).toBeDefined();
+  });
+
+  it('PATCH ile hafta 6 güne indirilemez (400)', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/weeks');
+    const week = (list.body.items as Array<{ id: string; start_date: string }>)[0];
+
+    const res = await adminRequest('patch', `/api/v1/admin/weeks/${week.id}`).send({
+      end_date: '2026-09-06',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.fields.end_date).toContain('7 gün');
+
+    // Değişmedi — hâlâ 7 gün.
+    const after = await adminRequest('get', '/api/v1/admin/weeks');
+    const same = (after.body.items as Array<{ id: string; end_date: string }>).find(
+      (w) => w.id === week.id,
+    );
+    expect(same?.end_date).toBe('2026-09-07');
+  });
+
+  it('PATCH haftayı eğitim yılı dışına taşıyamaz (400)', async () => {
+    const list = await adminRequest('get', '/api/v1/admin/weeks');
+    const week = (list.body.items as Array<{ id: string }>)[0];
+
+    const res = await adminRequest('patch', `/api/v1/admin/weeks/${week.id}`).send({
+      start_date: '2027-07-01',
+      end_date: '2027-07-07',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain('eğitim yılı');
+  });
 });
 
 describe('Sınıf', () => {

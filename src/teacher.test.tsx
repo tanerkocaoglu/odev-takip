@@ -98,6 +98,7 @@ const DASHBOARD = {
       report_id: null,
       status: null,
       is_overdue: true,
+      week_range_invalid: false,
     },
     {
       class_course_id: 'cc2',
@@ -108,6 +109,7 @@ const DASHBOARD = {
       report_id: 'r2',
       status: 'draft',
       is_overdue: false,
+      week_range_invalid: false,
     },
   ],
   overdue_count: 1,
@@ -185,6 +187,39 @@ describe('TeacherDashboardPage', () => {
     expect(screen.getByText(/Bu hafta henüz başlamadı/)).toBeInTheDocument();
     expect(screen.getAllByText('Önizleme').length).toBeGreaterThan(0);
   });
+
+  it('hafta tanımı hatalı satırda "Hafta tanımı hatalı" rozeti; gecikme/statü gösterilmez', async () => {
+    const bad = {
+      week: DASHBOARD.week,
+      items: [
+        {
+          class_course_id: 'cc-bad',
+          class_name: 'BOZUK',
+          course_name: 'Pazar Dersi',
+          day_of_week: 7,
+          lesson_time: '09:00',
+          report_id: null,
+          status: null,
+          is_overdue: false,
+          week_range_invalid: true,
+        },
+      ],
+      overdue_count: 0,
+      week_not_started: false,
+    };
+    vi.stubGlobal('fetch', mockFetch(200, bad));
+    render(
+      <MemoryRouter>
+        <TeacherDashboardPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('BOZUK · Pazar Dersi')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Hafta tanımı hatalı')).toBeInTheDocument();
+    expect(screen.queryByText('Günü geçti')).not.toBeInTheDocument();
+    expect(screen.queryByText('Açılmadı')).not.toBeInTheDocument();
+  });
 });
 
 const REPORT = {
@@ -228,6 +263,7 @@ const REPORT = {
       teacher_note: null,
     },
   ],
+  week_range_invalid: false,
 };
 
 function renderEntryPage() {
@@ -284,6 +320,23 @@ describe('ReportEntryPage', () => {
       screen.queryByRole('button', { name: 'Raporu tamamla' }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Tümünü geldi yap')).not.toBeInTheDocument();
+  });
+
+  it('hafta tanımı hatalıysa uyarı gösterilir, yazma kapalı', async () => {
+    const rangeInvalid = { ...REPORT, read_only: true, week_range_invalid: true };
+    vi.stubGlobal('fetch', mockFetch(200, rangeInvalid));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText(/Hafta tanımı hatalı/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bu hafta henüz başlamadı/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('İşlenen konu')).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Raporu tamamla' }),
+    ).not.toBeInTheDocument();
   });
 
   it('teslim rozeti tıklanabilir değildir (yalnızca metin)', async () => {    const withSubmission = {

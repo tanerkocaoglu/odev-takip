@@ -30,12 +30,20 @@ import { parsePagination, paged } from '../utils/pagination.js';
 import { normalizeTurkish } from '../utils/text.js';
 import {
   calculateDueDate,
+  classDateForWeek,
   compareWeekdayLessonTime,
+  formatDateTR,
+  formatWeekLabel,
   getPreviousWeek,
   relativeDayOrderSql,
   type WeekRecord,
 } from '../utils/weeks.js';
-import { hasWeekStarted, isOverdue, localTodayISO } from '../utils/time.js';
+import {
+  hasWeekStarted,
+  isClassDayWithinWeek,
+  isOverdue,
+  localTodayISO,
+} from '../utils/time.js';
 import type { AuthUser } from '../types.js';
 
 const router = Router();
@@ -124,6 +132,25 @@ function assertWeekStarted(week: { start_date: string }): void {
   }
 }
 
+/**
+ * **Savunma katmanı (spec.md §3.1):** dersin gerçek takvim günü haftanın
+ * `[start_date, end_date]` aralığının dışındaysa yazmayı reddeder. Normal
+ * 7 günlük haftada bu koşul asla tetiklenmez; yalnızca hatalı tanımlanmış
+ * (7 günden farklı) mevcut veride devreye girer. Hata **409 CONFLICT**'tir:
+ * sorun istemci girdisinde değil, yöneticinin hafta tanımındadır.
+ */
+function assertClassDayInWeek(week: WeekRecord, dayOfWeek: number): void {
+  if (isClassDayWithinWeek(week, dayOfWeek)) return;
+  const classDate = formatDateTR(classDateForWeek(week.start_date, dayOfWeek));
+  const range = formatWeekLabel(week.start_date, week.end_date);
+  throw new AppError(
+    'CONFLICT',
+    409,
+    `Hafta tanımı hatalı: bu dersin günü (${classDate}) hafta aralığının ` +
+      `(${range}) dışında. Yönetici haftanın tarih aralığını düzeltmeli.`,
+  );
+}
+
 function buildReportPayload(reportId: string): unknown {
   const report = db
     .prepare(
@@ -208,6 +235,11 @@ function buildReportPayload(reportId: string): unknown {
     submission: prevSubmissions.get(e.student_id) ?? null,
   }));
 
+  const rangeInvalid = !isClassDayWithinWeek(
+    { start_date: report.week_start, end_date: report.week_end },
+    report.day_of_week,
+  );
+
   return {
     report: {
       id: report.id,
@@ -234,8 +266,10 @@ function buildReportPayload(reportId: string): unknown {
       lesson_time: report.lesson_time,
     },
     // Hafta henüz başlamadıysa yalnızca önizleme: tüm alanlar salt-okunur
-    // (spec.md §5.1). Frontend bu bayrağa göre input'ları kapatır.
-    read_only: !hasWeekStarted({ start_date: report.week_start }),
+    // (spec.md §5.1). Hafta tanımı hatalıysa (ders günü aralık dışı) da
+    // yazma engellenir + `week_range_invalid` ile işaretlenir (§3.1).
+    read_only: !hasWeekStarted({ start_date: report.week_start }) || rangeInvalid,
+    week_range_invalid: rangeInvalid,
     entries: entriesWithSubmission,
   };
 }
@@ -319,16 +353,22 @@ router.get('/dashboard', (req, res) => {
     week.start_date,
   );
   const items = rows
-    .map((row) => ({
-      class_course_id: row.class_course_id,
-      class_name: row.class_name,
-      course_name: row.course_name,
-      day_of_week: row.day_of_week,
-      lesson_time: row.lesson_time,
-      report_id: row.report_id,
-      status: row.report_status,
-      is_overdue: isOverdue(week, row.day_of_week),
-    }))
+    .map((row) => {
+      const rangeInvalid = !isClassDayWithinWeek(week, row.day_of_week);
+      return {
+        class_course_id: row.class_course_id,
+        class_name: row.class_name,
+        course_name: row.course_name,
+        day_of_week: row.day_of_week,
+        lesson_time: row.lesson_time,
+        report_id: row.report_id,
+        status: row.report_status,
+        // Hafta tanımı hatalıysa (ders günü aralık dışı) "gecikmiş" hesabı
+        // anlamsızdır; rozet bunun yerine `week_range_invalid` gösterir (§3.1).
+        is_overdue: rangeInvalid ? false : isOverdue(week, row.day_of_week),
+        week_range_invalid: rangeInvalid,
+      };
+    })
     .sort(
       (a, b) => Number(b.is_overdue) - Number(a.is_overdue) || byWeekDay(a, b),
     );
@@ -408,6 +448,8 @@ router.post('/reports', (req, res) => {
   }
   // Henüz başlamamış haftaya yazma yok (spec §5.1) — mevcut rapor dalı dahil.
   assertWeekStarted(week);
+  // Hafta tanımı hatalıysa (ders günü aralık dışı) yazma reddi (§3.1).
+  assertClassDayInWeek(week, cc.day_of_week);
 
   // Zaten varsa aynı rapor döner (idempotent — dashboard açılışta çalıştırır).
   const existing = db
@@ -515,6 +557,7 @@ interface OwnedReportRow {
   status: string;
   completed_at: string | null;
   teacher_id: string;
+  day_of_week: number;
 }
 
 /**
@@ -526,7 +569,7 @@ function loadOwnedReport(user: AuthUser, reportId: string): OwnedReportRow {
     .prepare(
       `SELECT r.id, r.class_course_id, cc.class_id, r.week_id, r.topic_covered,
               r.prev_homework_id, r.prev_homework_text, r.status, r.completed_at,
-              cc.teacher_id
+              cc.teacher_id, cc.day_of_week
        FROM reports r
        JOIN class_courses cc ON cc.id = r.class_course_id
        WHERE r.id = ?`,
@@ -581,11 +624,15 @@ router.put('/reports/:id', (req, res) => {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }
   // Henüz başlamamış haftaya yazma yok (spec §5.1) — admin dahil herkes.
-  assertWeekStarted(
-    db.prepare(`SELECT start_date FROM weeks WHERE id = ?`).get(report.week_id) as {
-      start_date: string;
-    },
-  );
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(report.week_id) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  assertWeekStarted(week);
+  // Hafta tanımı hatalıysa (ders günü aralık dışı) yazma reddi (§3.1).
+  assertClassDayInWeek(week, report.day_of_week);
   const input = putReportSchema.parse(req.body);
 
   const homework = db
@@ -738,11 +785,15 @@ router.post('/reports/:id/complete', (req, res) => {
     throw new AppError('FORBIDDEN', 403, 'Gönderilmiş rapor düzenlenemez.');
   }
   // Henüz başlamamış hafta tamamlanamaz (spec §5.1) — admin dahil herkes.
-  assertWeekStarted(
-    db.prepare(`SELECT start_date FROM weeks WHERE id = ?`).get(report.week_id) as {
-      start_date: string;
-    },
-  );
+  const week = db.prepare(`SELECT * FROM weeks WHERE id = ?`).get(report.week_id) as
+    | WeekRecord
+    | undefined;
+  if (!week) {
+    throw new AppError('NOT_FOUND', 404, 'Hafta bulunamadı.');
+  }
+  assertWeekStarted(week);
+  // Hafta tanımı hatalıysa (ders günü aralık dışı) tamamlanamaz (§3.1).
+  assertClassDayInWeek(week, report.day_of_week);
 
   // "Sınıfın ilk aktif haftası" istisnası (spec §5.1): bir sınıfın gördüğü ilk
   // haftada devredilen bir önceki ödev bağı yoktur; bu yüzden `present`/`late`
@@ -1064,6 +1115,7 @@ function buildEntryPreview(classCourseId: string, week: WeekRecord): unknown {
   }>;
 
   const prevSubmissions = loadPrevSubmissions(prevHomeworkId);
+  const rangeInvalid = !isClassDayWithinWeek(week, cc.day_of_week);
 
   return {
     report: {
@@ -1088,7 +1140,8 @@ function buildEntryPreview(classCourseId: string, week: WeekRecord): unknown {
       day_of_week: cc.day_of_week,
       lesson_time: cc.lesson_time,
     },
-    read_only: !hasWeekStarted(week),
+    read_only: !hasWeekStarted(week) || rangeInvalid,
+    week_range_invalid: rangeInvalid,
     entries: students.map((s) => ({
       student_id: s.student_id,
       student_name: s.student_name,

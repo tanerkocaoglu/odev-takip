@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { isOverdue, localTodayISO } from './time.js';
+import { isClassDayWithinWeek, isOverdue, localTodayISO } from './time.js';
 import type { WeekRecord } from './weeks.js';
 
 function week(startDate: string): WeekRecord {
@@ -13,8 +13,41 @@ function week(startDate: string): WeekRecord {
   };
 }
 
+/** Belirli aralıklı hafta (bozuk tanım senaryoları için). */
+function rangeWeek(startDate: string, endDate: string): WeekRecord {
+  return {
+    id: 'w1',
+    academic_year_id: 'y1',
+    week_no: 1,
+    start_date: startDate,
+    end_date: endDate,
+    label: 'Hafta 1',
+  };
+}
+
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('isClassDayWithinWeek', () => {
+  it('normal 7 günlük haftada tüm günler aralık içinde', () => {
+    const w = rangeWeek('2026-09-21', '2026-09-27');
+    for (let d = 1; d <= 7; d++) {
+      expect(isClassDayWithinWeek(w, d)).toBe(true);
+    }
+  });
+
+  it('6 günlük haftada Pazar dersi aralık dışında (21..26)', () => {
+    const w = rangeWeek('2026-09-21', '2026-09-26');
+    expect(isClassDayWithinWeek(w, 6)).toBe(true); // Cumartesi 26 → son gün
+    expect(isClassDayWithinWeek(w, 7)).toBe(false); // Pazar 27 → dışarıda
+  });
+
+  it('Cumartesi başlangıçlı 7 günlük haftada Pazar son gündür', () => {
+    const w = rangeWeek('2026-09-26', '2026-10-02');
+    expect(isClassDayWithinWeek(w, 7)).toBe(true); // Pazar 27
+    expect(isClassDayWithinWeek(w, 1)).toBe(true); // Pazartesi 28
+  });
 });
 
 describe('localTodayISO', () => {

@@ -5,6 +5,122 @@
 
 ---
 
+## Hafta aralığı bütünlüğü — tam 7 gün kuralı + savunma katmanı ✅
+
+### Sorun
+
+Admin panelinden **21–26 Eylül (6 gün)** bir hafta oluşturulmuş; bu haftaya
+bağlı Pazar dersi (`day_of_week=7`) `relativeWeekday` ile **27 Eylül**'e
+düşüyor — haftanın `[start_date, end_date]` aralığının dışında. Sistem bunu
+fark etmiyor, dersi normal gösteriyor ve rapor **doldurulabilir** kılıyordu.
+
+Kök nedenler:
+1. `POST /admin/weeks` ve `PATCH /admin/weeks/:id` süre kontrolü yapmıyordu
+   (yalnızca yıl-aralığı; PATCH'te yıl kontrolü de yoktu). `start_date`/
+   `end_date` yalnızca "boş değil" diye doğrulanıyordu.
+2. Rapor akışı yalnızca `hasWeekStarted`'e bakıyordu; dersin hesaplanan gününün
+   haftanın içinde olup olmadığını **hiç** kontrol etmiyordu.
+
+### Kararlar (kullanıcı onaylı)
+
+1. **Önleme:** `POST/PATCH /admin/weeks` aralık tam 7 gün değilse
+   **400 `VALIDATION_ERROR`**; ayrıca tarih geçerliliği, `start <= end`, yıl
+   aralığı (PATCH'te yeni) doğrulanır.
+2. **Savunma:** ders günü aralık dışıysa yazma uçları **409 `CONFLICT`**;
+   entry/dashboard `week_range_invalid` ile işaretler + `read_only`.
+3. **İşaretleme kapsamı:** rapor giriş ekranı + öğretmen dashboard'u.
+4. **Üretim teşhisi:** salt-okunur `npm run diagnose-weeks` (yazma yok).
+   Üretimdeki gerçek durum görülmeden düzeltme adımına geçilmeyecek.
+
+### Uygulama
+
+- **`utils/weeks.ts`:** `classDateForWeek(start, day_of_week)`,
+  `weekLengthDays(start, end)`, `formatDateTR`, `validateWeekRange(start, end)`
+  (takvim-geçerli tarih + sıra + tam 7 gün).
+- **`utils/time.ts`:** `isClassDayWithinWeek(week, day_of_week)`; `isOverdue`
+  yeni `classDateForWeek` üzerine indirgendi (davranış birebir).
+- **`routes/admin/weeks.ts`:** POST'ta aralık doğrulaması; PATCH'te birleşik
+  tarihlerde aralık doğrulaması + eksik olan yıl-aralığı kontrolü.
+- **`routes/teacher.ts`:** yeni `assertClassDayInWeek` (409) → POST/PUT/complete;
+  `buildReportPayload` + `buildEntryPreview` → `week_range_invalid` +
+  `read_only`; `GET /teacher/dashboard` satırında `week_range_invalid`
+  (bu durumda `is_overdue=false`).
+- **Frontend:** `types.ts` alanları; `ReportEntryPage` "Hafta tanımı hatalı"
+  banner'ı (yazma kapalı); `TeacherDashboardPage` kırmızı "Hafta tanımı hatalı"
+  rozeti ("Günü geçti" yerine).
+- **`services/weekDiagnostics.ts` + `scripts/diagnose-weeks.ts` +
+  `npm run diagnose-weeks`:** salt-okunur teşhis (bozuk haftalar + aralık dışı
+  dersler + raporda sayısı).
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **414/414** (36 dosya; +28: `weeks` +14, `time` +3,
+  `admin` hafta doğrulama +6, `teacher` savunma/dashboard +6,
+  `weekDiagnostics` yeni 2), frontend **135/135** (23 dosya; +3: dashboard
+  rozeti + entry banner'ı).
+- **Canlı kanıt (izole `DB_PATH` + gerçek Express sunucusu + gerçek HTTP):
+  14/14 PASS.** Önce: `week_range_invalid=true`, `read_only=true`,
+  `POST /teacher/reports` → **409** ("… 27.09.2026 … dışında"). 6 günlük
+  `POST /admin/weeks` → **400** (alan hatası). Admin `end_date` 26→27 PATCH →
+  **200** (etiket `21.09 - 27.09.2026`); Pazar dersi **27.09.2026** artık hafta
+  aralığının **içinde**; entry `week_range_invalid=false`, `read_only=false`,
+  `POST /teacher/reports` **başarılı**. Gerçek `app.db` değişmedi
+  (376 832 bayt, mtime `13.09.2026 22:25:51`); betik + temp DB silindi.
+- **`diagnose-weeks` kanıtı:** bozuk fixture'da **1 hatalı hafta** (6 gün,
+  aralık dışı Pazar dersi) + düzeltmeden sonra **0**. Gerçek yerel
+  `backend/db/app.db` (21 hafta) ve 4 yedek zip içeriği: **0 hatalı hafta**.
+
+### ⚠️ Üretim verisi durumu (düzeltme adımı BEKLİYOR)
+
+`21–26 Eylül` haftası bu makineden erişilemeyen **üretim** DB'sindedir; yerel
+`app.db` + tüm yedeklerde bozuk hafta **yok**. Üretimdeki gerçek durumu (kaç
+hatalı hafta, kaç aralık dışı ders, kaç bağlı rapor) görmek için Render Shell:
+
+```
+cd backend
+npm run diagnose-weeks
+```
+
+Sonuç görülmeden **hiçbir veri düzeltmesi yapılmadı** (kullanıcı talimatı).
+Düzeltme yolu: admin UI'den ilgili haftanın bitiş tarihini +1 gün çekmek
+(`PATCH /admin/weeks/:id`, yeni doğrulama 7 günü kabul eder). Mevcut
+`reports`/`enrollments`/`homeworks.due_date` kayıtları `week_id`/saklı değer
+üzerinden bağlı olduğundan kaskad gerekmez; yalnızca daha önce bozuk aralık
+yüzünden `null` kalmış `homeworks.due_date`'ler otomatik dolmaz.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/weeks.ts                     (+classDateForWeek, weekLengthDays,
+                                                formatDateTR, validateWeekRange)
+backend/src/utils/weeks.test.ts                (+14 test)
+backend/src/utils/time.ts                      (isClassDayWithinWeek; isOverdue refactor)
+backend/src/utils/time.test.ts                 (+3 test)
+backend/src/routes/admin/weeks.ts              (POST/PATCH aralık + yıl doğrulaması)
+backend/src/admin.test.ts                      (+6 hafta doğrulama testi)
+backend/src/routes/teacher.ts                  (assertClassDayInWeek 409,
+                                                week_range_invalid, dashboard)
+backend/src/teacher.test.ts                    (+6 test)
+backend/src/services/weekDiagnostics.ts        (yeni, salt-okunur)
+backend/src/services/weekDiagnostics.test.ts   (yeni, 2 test)
+backend/scripts/diagnose-weeks.ts              (yeni)
+backend/package.json                           (+diagnose-weeks)
+src/types.ts                                   (week_range_invalid alanları)
+src/pages/teacher/ReportEntryPage.tsx          (hatalı hafta banner'ı)
+src/pages/teacher/TeacherDashboardPage.tsx     (hatalı hafta rozeti)
+src/teacher.test.tsx                           (+3 test)
+spec.md                                         (§3.1 hafta kuralı + savunma, §5.1)
+CLAUDE.md                                       (komut + /scripts listesi)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Admin dashboard — henüz başlamamış hafta "eksik" sayılmaz ✅
 
 ### Sorun (gerçek kullanımda doğrulandı)

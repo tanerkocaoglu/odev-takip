@@ -3,7 +3,7 @@
  * UTC üzerinden gün çıkarımı yapılmaz. Zaman dilimi Europe/Istanbul.
  */
 
-import { relativeWeekday, type WeekRecord } from './weeks.js';
+import { classDateForWeek, type WeekRecord } from './weeks.js';
 
 /**
  * Yerel takvimde bugün (YYYY-MM-DD) — makine yerel saatine göre.
@@ -38,12 +38,26 @@ export function hasWeekStarted(week: { start_date: string }): boolean {
  * dersi yanlışlıkla ~6 gün ileri kayardı.
  */
 export function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
-  const [y, m, d] = week.start_date.split('-').map(Number);
+  const [y, m, d] = classDateForWeek(week.start_date, dayOfWeek).split('-').map(Number);
   const classDay = new Date(y, m - 1, d);
-  classDay.setDate(classDay.getDate() + (relativeWeekday(dayOfWeek, week.start_date) - 1));
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return classDay < today;
+}
+
+/**
+ * Bir dersin **gerçek takvim günü** haftanın tanımlı `[start_date, end_date]`
+ * aralığının içinde mi? (spec.md §3.1)
+ *
+ * Normal 7 günlük haftada daima true'dur. Hafta 7 günden kısa/uzun tanımlanmışsa
+ * (kötü veri) `day_of_week`'ten türeyen gün `end_date`'i aşabilir — bu durumda
+ * `false` döner ve rapor akışı bunu sessizce yok saymaz (savunma katmanı).
+ */
+export function isClassDayWithinWeek(
+  week: { start_date: string; end_date: string },
+  dayOfWeek: number,
+): boolean {
+  return classDateForWeek(week.start_date, dayOfWeek) <= week.end_date;
 }
 
 /**

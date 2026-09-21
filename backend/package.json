@@ -18,6 +18,7 @@
     "cleanup-submissions": "tsx scripts/cleanup-submissions.ts",
     "digest-backfill": "tsx scripts/backfill-digests.ts",
     "diagnose-digest": "tsx scripts/diagnose-digest.ts",
+    "diagnose-weeks": "tsx scripts/diagnose-weeks.ts",
     "fix-enrollment-dates": "tsx scripts/fix-enrollment-dates.ts",
     "r2-smoke": "tsx scripts/r2-smoke.ts"
   },

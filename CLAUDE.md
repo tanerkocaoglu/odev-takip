@@ -105,7 +105,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
                            password, phone, text, time, token, username, weeks
       /test              → helpers.ts + fixtures/ (örnek jpg/png/pdf/heic)
       *.test.ts          → API entegrasyon testleri (supertest; kaynağa bitişik)
-    /scripts             → audit-admin-routes.ts (envanter doğrulama), backup.ts, reset.ts, wipe.ts, cleanup-submissions.ts, backfill-digests.ts (tek seferlik digest telafisi), seed-admin.ts
+    /scripts             → audit-admin-routes.ts (envanter doğrulama), backup.ts, reset.ts, wipe.ts, cleanup-submissions.ts, backfill-digests.ts (tek seferlik digest telafisi), diagnose-weeks.ts (salt-okunur hafta teşhisi), seed-admin.ts
     /db                  → app.db (git'e girmez)
     /uploads             → yüklenen dosyalar (git'e girmez)
     /backups             → yedek .zip çıktıları (git'e girmez)
@@ -458,6 +458,7 @@ npm run db:wipe       # db sil + migrate, SEED YOK → boş şema (uploads temiz
 npm run db:backup     # yedek: VACUUM INTO kopyası + uploads → tek .zip (backend/backups/)
 npm run cleanup-submissions  # manuel teslim dosyası temizliği (varsayılan dry-run; --execute önce yedek alır)
 npm run digest-backfill -- --class <ad> [--week <no|YYYY-MM-DD>] [--execute]  # tek seferlik digest telafisi (dry-run; --execute önce yedek)
+npm run diagnose-weeks   # salt-okunur: 7 gün olmayan haftalar + aralık dışı dersler
 npm run r2-smoke      # R2 uçtan uca duman testi (STORAGE_DRIVER=r2 + gerçek R2_* env ister; izole DB kullanır)
 cd ..
 ```

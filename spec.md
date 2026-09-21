@@ -264,6 +264,25 @@ CREATE INDEX idx_weeks_dates ON weeks(academic_year_id, start_date);
 > Tatil haftası kayıt olarak **açılmaz**; böylece `week_no - 1` her zaman bir
 > önceki **ders yapılan** haftayı verir ve "verilmiş olan ödev" doğru çekilir.
 > Bu tabloda soft delete yoktur, bu yüzden `UNIQUE` tablo içinde yazılabilir.
+>
+> **Hafta aralığı tam 7 gün olmalıdır (zorunlu).** `end_date = start_date + 6
+> gün` (başlangıç ve bitiş dahil). Neden: ders günü `day_of_week` (1-7) ile
+> **hafta başlangıcına göre göreli** hesaplanır; 7 günden kısa/uzun bir haftada
+> bu tarih `[start_date, end_date]` aralığının dışına düşer (ör. 21–26 Eylül
+> haftasında Pazar dersi → 27 Eylül). Kural **uygulama katmanındadır** (SQLite
+> `CHECK`'i tarih aritmetiği + mevcut veri düzeltmesi gerektirirdi):
+> `POST /admin/weeks` ve `PATCH /admin/weeks/:id` tam 7 gün değilse
+> **400 `VALIDATION_ERROR`** döner. Ayrıca tarihler geçerli (`YYYY-AA-GG`),
+> `start <= end` ve hafta eğitim yılı aralığı içinde olmalıdır; `PATCH` de bu
+> yıl-aralığı kontrolüne tabidir.
+>
+> **Savunma katmanı (mevcut hatalı veri için):** bir dersin gerçek günü
+> haftanın aralığının dışındaysa rapor akışı bunu sessizce yok saymaz —
+> `POST/PUT /teacher/reports*` ve `complete` **409 `CONFLICT`** döner;
+> `GET /teacher/reports/entry` ve öğretmen dashboard'u
+> `week_range_invalid: true` ile işaretler ve yazma kapatılır (`read_only`).
+> Normal 7 günlük haftada bu koşul hiç tetiklenmez. Tek tarih kaynağı:
+> `classDateForWeek` / `isClassDayWithinWeek` (`utils/weeks.ts` / `utils/time.ts`).
 
 **`classes`**
 ```sql
@@ -583,6 +602,13 @@ yorumu öğretmene bırakılır; sistem çapa/etiket dayatmaz.
 > `week_not_started` taşır. Hafta başladığında (`bugün >= start_date`) aynı ekran
 > otomatik olarak normal (doldurulabilir) hâle gelir. Kural "bugün"e bağlı
 > olduğundan DB şemasında (CHECK/kısmi indeks) zorlanamaz; uygulama katmanındadır.
+>
+> **Hafta tanımı hatalıysa (ders günü aralık dışı) yazma reddi:** 7 gün olmayan
+> bir haftada `day_of_week`'ten türeyen gerçek gün `[start_date, end_date]`
+> dışına düşebilir (§3.1). Bu durumda `GET /teacher/reports/entry` ve öğretmen
+> dashboard'u satırı `week_range_invalid: true` ile işaretler ve `read_only`
+> yapar; `POST/PUT /teacher/reports*` ve `complete` **409 `CONFLICT`** döner.
+> Bu, "hafta başladı mı"dan (403) bağımsız ikinci bir savunma katmanıdır.
 >
 > **Admin dashboard "eksik" sayımı bu kurala uyar (yalnızca orası):** Admin
 > dashboard da aynı "boşlukta en erken haftaya düş" mantığıyla bir hafta seçer

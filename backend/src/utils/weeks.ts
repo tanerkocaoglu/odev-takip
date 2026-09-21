@@ -105,6 +105,77 @@ export function formatWeekLabel(startDate: string, endDate: string): string {
 }
 
 /**
+ * Bir dersin gerçek takvim tarihi: haftanın `start_date`'inden göreli güne
+ * (`relativeWeekday`) göre hesaplanır. ISO (YYYY-MM-DD) döner.
+ *
+ * Hafta tanımı **7 günden farklıysa** bu tarih `week.end_date`'i aşabilir
+ * (ör. 21–26 Eylül haftasında Pazar dersi → 27 Eylül). Bu yüzden çağıranlar
+ * sonucu `end_date` ile karşılaştırmalıdır (`isClassDayWithinWeek`).
+ */
+export function classDateForWeek(weekStartDate: string, dayOfWeek: number): string {
+  const date = parseLocalDate(weekStartDate);
+  date.setDate(date.getDate() + (relativeWeekday(dayOfWeek, weekStartDate) - 1));
+  return toLocalISODate(date);
+}
+
+/** ISO tarihi `gg.aa.yyyy` biçimine çevirir (mesaj/gösterim; saat dilimi bağımsız). */
+export function formatDateTR(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+export interface WeekRangeError {
+  field: 'start_date' | 'end_date';
+  message: string;
+}
+
+/** Aralığın gün sayısı (başlangıç ve bitiş dahil). 21–26 Eylül → 6. */
+export function weekLengthDays(startDate: string, endDate: string): number {
+  return (
+    Math.round(
+      (parseLocalDate(endDate).getTime() - parseLocalDate(startDate).getTime()) / 86_400_000,
+    ) + 1
+  );
+}
+
+/** `YYYY-MM-DD` biçimi + gerçek takvim tarihi mi? (2026-02-31 reddedilir.) */
+function isValidISODate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+}
+
+/**
+ * Hafta aralığı doğrulaması: geçerli tarih, `start <= end` ve **tam 7 gün**
+ * (başlangıç ve bitiş dahil → `end = start + 6`). Hatalıysa alan adı + Türkçe
+ * mesaj döner; geçerliyse `null`.
+ *
+ * Neden 7 gün: `day_of_week` (1-7) ile hesaplanan gerçek ders tarihi aksi
+ * hâlde haftanın `[start_date, end_date]` aralığının dışına düşebilir
+ * (spec.md §3.1). Kural uygulama katmanındadır (route guard'ı).
+ */
+export function validateWeekRange(startDate: string, endDate: string): WeekRangeError | null {
+  if (!isValidISODate(startDate)) {
+    return { field: 'start_date', message: 'Başlangıç tarihi geçerli değil (YYYY-AA-GG).' };
+  }
+  if (!isValidISODate(endDate)) {
+    return { field: 'end_date', message: 'Bitiş tarihi geçerli değil (YYYY-AA-GG).' };
+  }
+  if (endDate < startDate) {
+    return { field: 'end_date', message: 'Bitiş tarihi başlangıçtan önce olamaz.' };
+  }
+  const days = weekLengthDays(startDate, endDate);
+  if (days !== 7) {
+    return {
+      field: 'end_date',
+      message: `Hafta tam 7 gün olmalı; girilen aralık ${days} gün. Bitiş tarihi başlangıçtan 6 gün sonrası olmalı.`,
+    };
+  }
+  return null;
+}
+
+/**
  * Bir haftanın bir önceki ders yapılan haftasını döner.
  *
  * Tatil haftaları `weeks` tablosunda kayıt olarak açılmadığı için, aynı eğitim
