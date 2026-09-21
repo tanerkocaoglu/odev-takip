@@ -117,7 +117,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`ef56f3a` — hafta aralığı tam 7 gün + ders günü aralık dışı savunması.
 
 ---
 
