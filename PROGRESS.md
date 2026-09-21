@@ -89,7 +89,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`c82d7b4` — admin dashboard başlamamış hafta raporları "eksik" saymasın.
 
 ---
 
