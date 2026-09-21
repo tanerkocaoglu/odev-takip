@@ -247,12 +247,12 @@ const SNAPSHOT = {
   ],
 };
 
-function previewFetch(status: string, is_revoked = false) {
+function previewFetch(status: string, is_revoked = false, snapshot: unknown = SNAPSHOT) {
   const items = [makeDigest({ status, is_revoked })];
   return vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/admin/academic-years')) return ok({ items: [] });
-    if (url.includes('/preview')) return ok({ preview: SNAPSHOT });
+    if (url.includes('/preview')) return ok({ preview: snapshot });
     if (url.includes('/admin/digests')) return ok({ week_id: null, items });
     throw new Error(`beklenmeyen istek: ${url}`);
   });
@@ -288,5 +288,24 @@ describe('DigestSendPage — gönderim öncesi düzenleme', () => {
 
     await screen.findByText('Cebir');
     expect(screen.queryByRole('link', { name: 'Düzenle' })).not.toBeInTheDocument();
+  });
+
+  it('geri çekilmiş (is_revoked) sent digest önizlemesinde sent derste "Düzenle" görünür', async () => {
+    // Kaskad sonrası raporlar 'sent'; iptal edilen digest yeniden gönderilebilmesi
+    // için admin düzenleyebilmeli (spec §5.4). Ders durumu 'sent' olsa da görünür.
+    const sentSnapshot = {
+      ...SNAPSHOT,
+      courses: SNAPSHOT.courses.map((c, i) => (i === 0 ? { ...c, status: 'sent' } : c)),
+    };
+    vi.stubGlobal('fetch', previewFetch('sent', true, sentSnapshot));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('İptal edildi')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Önizle' }));
+
+    await screen.findByText('Cebir');
+    const links = await screen.findAllByRole('link', { name: 'Düzenle' });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toMatch(/^\/teacher\/reports\/cc1\/w1\?returnTo=/);
   });
 });

@@ -779,15 +779,26 @@ kendiliğinden bir sonraki ders yapılan haftaya kayar — ek bir kural gerekmez
    - `pending` → "4 dersten 3'ü girildi", gönder butonu aktif ama uyarılı;
      eksik ders sayısı satırda gösterilir.
 2. Sınıf filtresiyle çalışır (200 öğrenci tek listede gösterilmez).
-3. **Gönderim öncesi admin düzenleme:** gönderilmemiş (`pending`/`ready`, iptal
-   edilmemiş) digest önizlemesinde, `completed` durumdaki her ders kartında
-   **"Düzenle"** bağlantısı vardır. Admin mevcut `ReportEntryPage`'e gider
+3. **Admin düzenleme:** ders kartlarında **"Düzenle"** bağlantısı iki durumda
+   vardır:
+   - gönderilmemiş (`pending`/`ready`) digest → `completed` durumdaki dersler;
+     düzenleme sonrası **status `completed` kalır** (henüz `sent` olmaz).
+   - **geri çekilmiş** (`is_revoked = 1`) digest → `completed` **ve** `sent`
+     durumdaki dersler. İptal yalnızca `is_revoked` işaretler, `status` `sent`
+     kalır; düzenleme sonrası da `sent` kalır. Böylece admin geri çektiği bir
+     gönderimi düzeltip aynı satırdan **"Yeniden gönder"** ile tazeleyebilir.
+
+   Admin mevcut `ReportEntryPage`'e gider
    (`/teacher/reports/{classCourseId}/{weekId}?returnTo=/admin/digests`), raporu
-   düzenler; **status `completed` kalır** (henüz `sent` olmaz) ve her düzenleme
-   `audit_logs`'a `report.update` olarak yazılır (spec §2, `by_role`). Öğretmene
-   bildirim/gösterge göstermez — sessiz değişiklik. `missing` derslerde ve
-   `sent`/iptal digest'lerde "Düzenle" **görünmez**. Öğretmen ekranındaki dönüş
-   butonu admin için "Gönderim ekranına dön" olur; dönüşte liste tazelenir.
+   düzenler ve her düzenleme `audit_logs`'a `report.update` olarak yazılır
+   (spec §2, `by_role`). Öğretmene bildirim/gösterge göstermez — sessiz
+   değişiklik. Rapor sınıfın **ortak** satırıdır; düzenleme mevcut gönderilmiş
+   `snapshot`'ları değiştirmez (Bulgu #6 davranışı). Taze snapshot yalnızca
+   yeniden gönderimde üretilir ve **yalnızca o öğrencinin** satırına yazılır;
+   aynı raporu paylaşan diğer öğrencilerin gönderilmiş snapshot'ları bit-bit
+   aynı kalır. Düzenlenmemiş `sent` digest'lerde ve `missing` derslerde
+   "Düzenle" **görünmez**. Öğretmen ekranındaki dönüş butonu admin için
+   "Gönderim ekranına dön" olur; dönüşte liste tazelenir.
 4. Admin tek tek veya sınıf bazında toplu olarak "Gönder"e basar.
 5. Sistem `snapshot`'ı yazar, **yeni `token` üretir**, `status = 'sent'` yapar,
    `send_count` artırır ve `wa.me` linkini açar:

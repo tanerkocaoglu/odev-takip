@@ -5,6 +5,81 @@
 
 ---
 
+## Geri çekilmiş digest — "Düzenle" görünür + yeniden gönderim ✅
+
+### Sorun
+
+Admin bir öğrencinin gönderimini (digest) geri çektiğinde, o rapor **artık
+düzenlenemiyordu**: önizlemede "Düzenle" butonu görünmüyordu (gerçek
+kullanılabilirlik boşluğu).
+
+### Kök neden
+
+`DigestSendPage.tsx` `canEditPreview = status !== 'sent' && !is_revoked`
+koşulunda iki katman vardı:
+1. `revokeDigest` yalnızca `is_revoked = 1` işaretler, **`status` `sent` kalır**
+   (`services/digests.ts:795`) → `status !== 'sent'` false.
+2. Kart aksiyonu yalnız `course.status === 'completed'` için render ediliyordu;
+   gönderim kaskadı raporları `sent` yaptığı için revoked digest'te dersler
+   `sent` görünür ve yine `null` döner.
+
+Backend'de eksik yoktu: `PUT /teacher/reports/:id` admin için `sent` raporda
+zaten 200 (Bulgu #6, `teacher.ts:623`); yeniden gönderim de mevcut
+(`sendDigest` yeni token + snapshot + `is_revoked=0`).
+
+### Kararlar (kullanıcı onaylı)
+
+1. Düzenleme sonrası yeniden gönderim **mevcut "Yeniden gönder" butonuna
+   bırakılır** (otomatik gönderim yok).
+2. "Düzenle" **yalnızca geri çekilmiş + gönderilmemiş** digest'lerde görünür;
+   düzenlenmemiş `sent`'te mevcut "görünmez" davranışı korunur.
+3. Paylaşılan rapor düzenlenir; diğer öğrencilerin gönderilmiş snapshot'ları
+   **dokunulmaz** (mimari garanti; testle kilitlendi).
+
+### Uygulama
+
+- **`DigestSendPage.tsx`:** `canEditPreview =
+  previewItem !== null && (is_revoked || status !== 'sent')`; kart aksiyonu
+  `course.status === 'completed' || course.status === 'sent'`.
+- **`spec.md §5.4.3`:** admin düzenleme iki durumu (gönderilmemiş + geri
+  çekilmiş) anlatacak şekilde yeniden yazıldı; snapshot izolasyonu nota eklendi.
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **430/430** (38 dosya; yeni `revoked-digest-edit.test.ts`
+  4 test), frontend **138/138** (23 dosya; `admin-digests.test.tsx` +1:
+  revoked sent önizlemede sent derste "Düzenle" görünür; mevcut "revoked değil
+  sent'te görünmez" korunur).
+- **Canlı kanıt (izole `DB_PATH` + gerçek Express sunucusu + gerçek HTTP):
+  22/22 PASS.** Bugün 2026-09-21; A/B aynı sınıf+hafta (14–20 Eyl), ortak rapor:
+  - **Faz 1:** A ve B gönderildi → kaskad `reports.status = sent`.
+  - **Faz 2:** A revoke (200) → A ve B snapshot **değişmedi**; eski A token
+    `/r` → **410**.
+  - **Faz 3:** admin `PUT` (sent → **200**), paylaşılan rapor güncellendi
+    ("Düzeltilmiş konu"); A ve B snapshot **hâlâ değişmedi**.
+  - **Faz 4:** A yeniden gönderildi → `is_revoked=0`, `send_count=2`, yeni
+    token, snapshot düzeltilmiş konuyu içeriyor; **B snapshot bit-bit AYNI**,
+    `send_count=1`; eski A token hâlâ **410**, yeni A token **200**.
+  - Gerçek `backend/db/app.db` **değişmedi** (380 928 bayt, mtime
+    `21.09.2026 14:11:53`); geçici betik/temp DB silindi.
+
+### Etkilenen dosyalar
+
+```
+src/pages/admin/DigestSendPage.tsx          (canEditPreview + sent ders aksiyonu)
+src/admin-digests.test.tsx                  (+1 revoked "Düzenle" testi)
+backend/src/revoked-digest-edit.test.ts     (yeni; snapshot izolasyonu + 410/200)
+spec.md                                     (§5.4.3)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Admin "Tüm raporlar" — Öğretmen filtresi (dropdown) ✅
 
 ### Kapsam

@@ -157,11 +157,14 @@ export default function DigestSendPage() {
       </Badge>
     );
 
-  // Önizlenen digest gönderilmemişse (pending/ready, iptal değil) ders
-  // kartlarında "Düzenle" gösterilir. sent/iptal → hiç gösterilmez.
+  // Önizlenen digest gönderilmemişse (pending/ready) veya geri çekilmişse
+  // ders kartlarında "Düzenle" gösterilir. Geri çekilmiş digest'te `status`
+  // hâlâ 'sent' kalır (revoke yalnızca `is_revoked` işaretler); admin düzenleyip
+  // aynı satırdan "Yeniden gönder" ile taze snapshot üretebilir (spec §5.4).
+  // Düzenlenmemiş `sent` digest'te ise gösterilmez.
   const previewItem = items?.find((i) => i.id === previewId) ?? null;
   const canEditPreview =
-    previewItem !== null && previewItem.status !== 'sent' && !previewItem.is_revoked;
+    previewItem !== null && (previewItem.is_revoked || previewItem.status !== 'sent');
 
   return (
     <div className="space-y-4">
@@ -235,7 +238,7 @@ export default function DigestSendPage() {
             renderCourseAction={
               canEditPreview
                 ? (course) =>
-                    course.status === 'completed' ? (
+                    course.status === 'completed' || course.status === 'sent' ? (
                       <Link
                         to={`/teacher/reports/${course.class_course_id}/${preview.week.id}?returnTo=${encodeURIComponent(
                           '/admin/digests',
