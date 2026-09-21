@@ -74,7 +74,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`357461e` — admin "Tüm raporlar" araması öğretmen adını da kapsar.
 
 ---
 
