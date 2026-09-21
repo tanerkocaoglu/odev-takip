@@ -35,7 +35,8 @@ function report(id: string, status: string) {
 function makeFetch() {
   return vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes('/teacher/reports/filters')) return ok({ classes: [], weeks: [] });
+      if (url.includes('/teacher/reports/filters'))
+        return ok({ classes: [], weeks: [], teachers: [{ id: 't-1', full_name: 'Öğretmen 1' }] });
     if (url.includes('/teacher/reports')) {
       const query = new URL(url, 'http://x').searchParams;
       const p = Number(query.get('page') ?? '1');
@@ -117,10 +118,34 @@ describe('AdminReportsPage — sayfalama', () => {
     });
   });
 
+  it('öğretmen dropdown\'ı teacher_id olarak sorguya yansır', async () => {
+    const fetchMock = makeFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter>
+        <AdminReportsPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getAllByText('EURİST · Matematik').length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(screen.getByLabelText('Öğretmen'), {
+      target: { value: 't-1' },
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes('teacher_id=t-1')),
+      ).toBe(true);
+    });
+  });
+
   it('20 kaydı aşan listede sayfalama çubuğu çıkar ve Sonraki çalışır', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes('/teacher/reports/filters')) return ok({ classes: [], weeks: [] });
+    if (url.includes('/teacher/reports/filters'))
+      return ok({ classes: [], weeks: [], teachers: [{ id: 't-1', full_name: 'Öğretmen 1' }] });
       if (url.includes('/teacher/reports')) {
         const query = new URL(url, 'http://x').searchParams;
         const p = Number(query.get('page') ?? '1');

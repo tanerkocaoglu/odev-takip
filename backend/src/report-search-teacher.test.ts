@@ -161,6 +161,73 @@ describe('GET /teacher/reports — öğretmen rolü DEĞİŞMEZ (öğretmen adı
   });
 });
 
+describe('GET /teacher/reports — teacher_id filtresi (dropdown)', () => {
+  it('yalnızca seçilen öğretmenin raporlarını döner', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/reports?teacher_id=rst-teacher-2')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].class_name).toBe('PİSAGOR');
+    expect(res.body.items[0].course_name).toBe('Fizik');
+  });
+
+  it('durum/sınıf/hafta filtreleriyle AND birleşir', async () => {
+    const hit = await request(app)
+      .get(
+        '/api/v1/teacher/reports?teacher_id=rst-teacher-2&class_id=rst-class-b&week_id=rst-w2&status=completed',
+      )
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(hit.body.total).toBe(1);
+
+    // Yanlış sınıf → 0 (öğretmen doğru olsa bile).
+    const wrongClass = await request(app)
+      .get('/api/v1/teacher/reports?teacher_id=rst-teacher-2&class_id=rst-class-a')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(wrongClass.body.total).toBe(0);
+
+    // Yanlış durum → 0.
+    const wrongStatus = await request(app)
+      .get('/api/v1/teacher/reports?teacher_id=rst-teacher-2&status=draft')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(wrongStatus.body.total).toBe(0);
+  });
+});
+
+describe('GET /teacher/reports/filters — teachers seçenekleri', () => {
+  it('admin, raporlarda geçen öğretmenleri döner', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/reports/filters')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const teachers = res.body.teachers as Array<{ id: string; full_name: string }>;
+    expect(teachers.map((t) => t.id).sort()).toEqual(['rst-teacher-2', 'test-teacher']);
+    expect(teachers.map((t) => t.full_name)).toContain('Öğretmen 1');
+  });
+
+  it('öğretmen rolünde teachers boş döner (alan yalnızca admin için)', async () => {
+    const res = await request(app)
+      .get('/api/v1/teacher/reports/filters')
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.teachers).toEqual([]);
+  });
+});
+
+describe('GET /admin/reports/export — teacher_id filtresi', () => {
+  it('seçilen öğretmenin satırlarıyla daralır', async () => {
+    const hit = await request(app)
+      .get('/api/v1/admin/reports/export?teacher_id=rst-teacher-2')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(lines(hit.text)).toHaveLength(2);
+    expect(hit.text).toContain('Fizik');
+
+    const none = await request(app)
+      .get('/api/v1/admin/reports/export?teacher_id=yok')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(lines(none.text)).toHaveLength(1); // yalnızca başlık
+  });
+});
+
 describe('GET /admin/reports/export — q öğretmen adını da kapsar', () => {
   it('öğretmen adıyla CSV daralır; sınıf/ders araması korunur', async () => {
     const byTeacher = await request(app)

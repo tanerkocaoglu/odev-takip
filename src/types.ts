@@ -307,9 +307,16 @@ export interface ReportWeekFilterOption {
   start_date: string;
 }
 
+export interface ReportTeacherFilterOption {
+  id: string;
+  full_name: string;
+}
+
 export interface ReportFilterOptions {
   classes: ReportClassFilterOption[];
   weeks: ReportWeekFilterOption[];
+  /** Yalnızca admin doldurulur; öğretmen rolünde boş (admin "Tüm raporlar" dropdown'ı). */
+  teachers: ReportTeacherFilterOption[];
 }
 
 // ---------- Ödev ve teslim (Aşama 4) ----------

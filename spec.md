@@ -917,6 +917,15 @@ Haftada ~100 rapor var; 25×4'lük bir matris tek ekranda okunmaz. Bu yüzden
   > adını filtre listesinde görmez (spec §2 "öğretmen yalnızca kendi atadığı
   > `class_course`'u görür"). Seçenekler aktif eğitim yılına değil, raporda
   > fiilen geçen kayıtlara dayanır.
+  >
+  > **Öğretmen filtresi (yalnızca admin):** "Tüm raporlar" ekranında Durum/Sınıf/
+  > Hafta'nın yanında bir **Öğretmen** dropdown'ı vardır; seçim `teacher_id`
+  > parametresiyle `cc.teacher_id` üzerinden filtreler ve diğer filtrelerle
+  > **AND** birleşir. `q` aramasındaki öğretmen adı aramasıyla **birlikte**
+  > kullanılabilir (dropdown tam eşleşme, arama alt dize). Kapsam dışı: bu
+  > filtre öğretmenin kendi "Geçmiş raporlarım"ına eklenmez.
+  > `filters.teachers` seçenekleri raporlarda fiilen geçen öğretmenlerdir
+  > (distinct); öğretmen rolünde boş döner.
 
 ### 5.6 Admin — CSV ile toplu öğrenci içe aktarma
 
@@ -985,10 +994,10 @@ Admin'in "Tüm raporlar", "Öğrenciler" ve "Veliler" ekranlarındaki **mevcut
 filtre/arama sonucu**, ekranda görünen sütunlarla CSV olarak indirilebilir.
 Biçim yine UTF-8 BOM'lu CSV'dir (Türkçe karakterler Excel'de doğru açılır).
 
-- `GET /admin/reports/export` — `status`, `class_id`, `week_id`, `q`
-  (sınıf/ders/**öğretmen** adı arama — admin kapsamı) filtreleri
-  (`GET /teacher/reports` ile aynı WHERE mantığı), sayfalama uygulanmaz: tüm
-  eşleşen satırlar iner.
+- `GET /admin/reports/export` — `status`, `class_id`, `week_id`, `teacher_id`,
+  `q` (sınıf/ders/**öğretmen** adı arama — admin kapsamı) filtreleri
+  (`GET /teacher/reports` ile aynı WHERE mantığı: hepsi AND), sayfalama
+  uygulanmaz: tüm eşleşen satırlar iner.
 - `GET /admin/students/export` — `q` (ad/veli normalize arama) + `classId`.
 - `GET /admin/guardians/export` — `q`.
 - Yanıt `text/csv; charset=utf-8` + `Content-Disposition: attachment`.

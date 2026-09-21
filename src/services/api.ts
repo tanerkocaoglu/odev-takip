@@ -384,8 +384,13 @@ export const adminApi = {
   risk: () => apiFetch<RiskList>('/admin/dashboard/risk'),
   /** Filtreli CSV dışa aktarma — ekranda görünen sütunlar + aktif filtre (spec §5.7). */
   exports: {
-    reports: (params: { status?: string; class_id?: string; week_id?: string; q?: string } = {}) =>
-      downloadCsv(`/admin/reports/export${query(params)}`, 'raporlar.csv'),
+    reports: (params: {
+      status?: string;
+      class_id?: string;
+      week_id?: string;
+      teacher_id?: string;
+      q?: string;
+    } = {}) => downloadCsv(`/admin/reports/export${query(params)}`, 'raporlar.csv'),
     students: (params: { q?: string; classId?: string } = {}) =>
       downloadCsv(`/admin/students/export${query(params)}`, 'ogrenciler.csv'),
     guardians: (params: { q?: string } = {}) =>
@@ -418,6 +423,7 @@ export const teacherApi = {
     status?: 'draft' | 'completed' | 'sent';
     class_id?: string;
     week_id?: string;
+    teacher_id?: string;
     q?: string;
     page?: number;
     pageSize?: number;

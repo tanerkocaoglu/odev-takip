@@ -5,6 +5,74 @@
 
 ---
 
+## Admin "Tüm raporlar" — Öğretmen filtresi (dropdown) ✅
+
+### Kapsam
+
+`AdminReportsPage`'e mevcut Durum/Sınıf/Hafta dropdown'larının yanına bir
+**Öğretmen** dropdown'ı eklendi. Seçim `cc.teacher_id` üzerinden filtreler ve
+diğer filtrelerle **AND** birleşir. Arama kutusundaki öğretmen adı aramasıyla
+birlikte (AND) çalışır. Öğretmenin kendi "Geçmiş raporlarım" ekranına
+dokunulmadı.
+
+### Kararlar (kullanıcı onaylı)
+
+1. Dropdown (tam `teacher_id`) + arama (alt dize) **birlikte**, AND; çakışma yok.
+2. CSV export da `teacher_id` alır (ekran = CSV).
+3. `filters.teachers` seçenekleri, classes/weeks ile aynı mantık: raporlarda
+   **fiilen geçen** öğretmenler (distinct). Alan yalnızca admin için dolu;
+   öğretmen rolünde boş.
+4. Tabloya "Öğretmen" sütunu eklenmedi (kapsam dışı).
+
+### Uygulama
+
+- **`GET /teacher/reports`:** yeni opsiyonel `teacher_id` → `cc.teacher_id = ?`.
+- **`GET /teacher/reports/filters`:** `teachers` dizisi (yalnız admin dolu).
+- **`services/csvExport.ts` + `routes/admin/reports.ts`:** `teacherId` filtresi.
+- **`AdminReportsPage`:** Öğretmen `FilterSelect`; `teacherApi.history` ve
+  `adminApi.exports.reports` çağrılarına `teacher_id`.
+- **`types.ts`:** `ReportTeacherFilterOption` + `ReportFilterOptions.teachers`.
+- `spec.md §5.5` (öğretmen filtresi notu) + `§5.7` (export `teacher_id`).
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **426/426** (37 dosya; +5: `teacher_id` filtresi 2,
+  `filters.teachers` 2, export `teacher_id` 1), frontend **137/137** (23 dosya;
+  +1 dropdown sorgu testi). Mevcut `report-filters`/`csv-export` regresyonsuz.
+- **Canlı kanıt (izole DB + gerçek HTTP): 12/12 PASS.** Bugün 2026-09-21;
+  ÖKLİD/Cebir→Örnek Kişi 1 (W1 completed + W2 draft), ÖKLİD/Fizik→Örnek Kişi 2 (W1),
+  PİSAGOR/Cebir→Örnek Kişi 3 (W1):
+  - `teacher_id=pw-t1` → 2; `+status=completed` → 1; `+week_id=w2` → 1.
+  - **Dördü birlikte** (`teacher_id + class_id + week_id + status`) → 1;
+    `teacher_id + yanlış sınıf` → 0; `+status=sent` → 0 (AND çaprazı).
+  - `filters.teachers` → 3 öğretmen.
+  - CSV: `teacher_id=pw-t1` → başlık + 2; `+status=completed` → başlık + 1;
+    `+yanlış sınıf` → yalnız başlık.
+  - Gerçek `app.db` değişmedi (380 928 bayt, mtime `21.09.2026 14:11:53`);
+    geçici betik/temp DB silindi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts                 (teacher_id filtresi + filters.teachers)
+backend/src/services/csvExport.ts             (teacherId)
+backend/src/routes/admin/reports.ts           (teacher_id parse)
+backend/src/report-search-teacher.test.ts     (+5 test)
+src/types.ts                                  (ReportTeacherFilterOption + teachers)
+src/services/api.ts                           (history/exports teacher_id)
+src/pages/admin/AdminReportsPage.tsx          (Öğretmen FilterSelect + wiring)
+src/admin-reports.test.tsx                    (+1 test, mock'lara teachers)
+spec.md                                       (§5.5, §5.7)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Riskli öğrenci penceresi — yalnızca **bitmiş** haftalar ✅
 
 ### Sorun

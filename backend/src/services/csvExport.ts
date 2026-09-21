@@ -136,6 +136,7 @@ export function reportsExportCsv(params: {
   status?: string;
   classId?: string;
   weekId?: string;
+  teacherId?: string;
   q?: string;
 }): string {
   const where = ['cc.deleted_at IS NULL'];
@@ -151,6 +152,10 @@ export function reportsExportCsv(params: {
   if (params.weekId) {
     where.push('r.week_id = ?');
     values.push(params.weekId);
+  }
+  if (params.teacherId) {
+    where.push('cc.teacher_id = ?');
+    values.push(params.teacherId);
   }
   // Arama: sınıf / ders / öğretmen adı (normalize) — `/teacher/reports` admin
   // kapsamıyla birebir aynı. Rota yalnızca admin olduğundan öğretmen adı

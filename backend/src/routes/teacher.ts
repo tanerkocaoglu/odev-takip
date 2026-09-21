@@ -913,6 +913,7 @@ router.get('/reports', (req, res) => {
       : null;
   const classId = typeof req.query.class_id === 'string' ? req.query.class_id : null;
   const weekId = typeof req.query.week_id === 'string' ? req.query.week_id : null;
+  const teacherId = typeof req.query.teacher_id === 'string' ? req.query.teacher_id : null;
   // Arama: sınıf adı VEYA ders adı (normalize). Türkçe LIKE ASCII'de harf
   // duyarsız olmadığından sorgu sunucuda normalizeTurkish ile indirgenir.
   // **Öğretmen adı yalnızca admin** aramasında dahildir (karar): paylaşılan uç
@@ -933,6 +934,10 @@ router.get('/reports', (req, res) => {
   if (weekId) {
     extraWhere.push('r.week_id = ?');
     extraValues.push(weekId);
+  }
+  if (teacherId) {
+    extraWhere.push('cc.teacher_id = ?');
+    extraValues.push(teacherId);
   }
   if (q) {
     if (user.role === 'admin') {
@@ -1056,7 +1061,24 @@ router.get('/reports/filters', (req, res) => {
     start_date: string;
   }>;
 
-  res.json({ classes, weeks });
+  // Öğretmen seçenekleri yalnızca admin içindir (admin "Tüm raporlar"
+  // dropdown'ı). Kaynak, classes/weeks ile aynı mantık: raporlarda fiilen geçen
+  // öğretmenler (distinct). Öğretmen rolünde boş döner — ekranı kullanmaz.
+  const teachers =
+    user.role === 'admin'
+      ? (db
+          .prepare(
+            `SELECT DISTINCT t.id, t.full_name
+             FROM reports r
+             JOIN class_courses cc ON cc.id = r.class_course_id
+             JOIN users t ON t.id = cc.teacher_id
+             WHERE cc.deleted_at IS NULL
+             ORDER BY t.full_name_normalized`,
+          )
+          .all() as Array<{ id: string; full_name: string }>)
+      : [];
+
+  res.json({ classes, weeks, teachers });
 });
 
 /**

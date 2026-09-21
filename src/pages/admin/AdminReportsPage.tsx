@@ -1,8 +1,8 @@
 /**
  * Admin — Tüm raporlar (spec.md §5.5 "Tüm raporlar" görünümü).
- * Admin'in "tüm raporları görme" hakkının karşılığı: durum/sınıf/hafta
- * filtresi + arama ile raporlar listelenir, satıra tıklayınca salt-okunur
- * açılır. Kaynak: GET /teacher/reports (admin için tümü) + `:id`.
+ * Admin'in "tüm raporları görme" hakkının karşılığı: durum/sınıf/hafta/
+ * öğretmen filtresi + arama ile raporlar listelenir, satıra tıklayınca
+ * salt-okunur açılır. Kaynak: GET /teacher/reports (admin için tümü) + `:id`.
  *
  * Filtre seçenekleri öğretmenle aynı uçtan gelir (`/teacher/reports/filters`)
  * — tek kaynak; admin kapsamı uçta role göre belirlenir.
@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   ReportClassFilterOption,
+  ReportTeacherFilterOption,
   ReportWeekFilterOption,
   TeacherReportHistoryItem,
 } from '../../types';
@@ -41,8 +42,10 @@ type StatusFilter = '' | 'draft' | 'completed' | 'sent';
 export default function AdminReportsPage() {
   const [classes, setClasses] = useState<ReportClassFilterOption[]>([]);
   const [weeks, setWeeks] = useState<ReportWeekFilterOption[]>([]);
+  const [teachers, setTeachers] = useState<ReportTeacherFilterOption[]>([]);
   const [classId, setClassId] = useState('');
   const [weekId, setWeekId] = useState('');
+  const [teacherId, setTeacherId] = useState('');
   const [status, setStatus] = useState<StatusFilter>('');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
@@ -74,6 +77,7 @@ export default function AdminReportsPage() {
         status: status || undefined,
         class_id: classId || undefined,
         week_id: weekId || undefined,
+        teacher_id: teacherId || undefined,
         q: q || undefined,
         page,
         pageSize: PAGE_SIZE,
@@ -86,7 +90,7 @@ export default function AdminReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, classId, weekId, q, page]);
+  }, [status, classId, weekId, teacherId, q, page]);
 
   useEffect(() => {
     void load();
@@ -109,6 +113,7 @@ export default function AdminReportsPage() {
         status: status || undefined,
         class_id: classId || undefined,
         week_id: weekId || undefined,
+        teacher_id: teacherId || undefined,
         q: q || undefined,
       });
     } catch (err) {
@@ -125,6 +130,7 @@ export default function AdminReportsPage() {
       .then((res) => {
         setClasses(res.classes);
         setWeeks(res.weeks);
+        setTeachers(res.teachers ?? []);
       })
       .catch(() => {
         // Sessiz.
@@ -158,6 +164,14 @@ export default function AdminReportsPage() {
           {weeks.map((w) => (
             <option key={w.id} value={w.id}>
               {w.week_no}. hafta · {w.label}
+            </option>
+          ))}
+        </FilterSelect>
+        <FilterSelect label="Öğretmen" value={teacherId} onChange={applyFilter(setTeacherId)}>
+          <option value="">Tümü</option>
+          {teachers.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.full_name}
             </option>
           ))}
         </FilterSelect>
