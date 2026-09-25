@@ -5,6 +5,34 @@
 
 ---
 
+## PROGRESS.md — eksik commit kayıtları tamamlandı ✅
+
+`git log --oneline --all` ile eşleştirilerek **42 placeholder** gerçek kısa
+hash (7 karakter) + commit subject ile değiştirildi: 22 adet
+"Henüz commit edilmedi." ve 20 adet "Bu commit — …" bloğu. **Eşleşmeyen /
+belirsiz kayıt kalmadı.** Kod, şema ve migration değişmedi; yalnızca
+`PROGRESS.md` placeholder satırları.
+
+- Çok satırlı "Bu commit …" açıklamaları tek satır `hash — subject`'a indirildi.
+- Birden fazla commit'e yayılan iki kayıtta ana hash + kısa not yazıldı:
+  "Kamerayla çek" (`8ca8598` + deploy guard `5d27309`/`8bff737`) ve öğretmen
+  geçmiş filtreleri (`89357ee` + `98dcafe`).
+- Aynı commit'e düşen kayıtlar: `1d54764` (3 admin görsel kaydı), `988667c`
+  (marka + admin navigasyonu), `22917c3` (teslim gridi), `accbc7d`
+  (UTF-8 + lightbox/30 dosya).
+- Kod tabanı taraması: `### Commit` bölümlerindeki `git log` ile birebir
+  eşleşen hash'ler doğrulandı (`git diff PROGRESS.md` yalnızca placeholder →
+  hash satırlarını gösterir).
+
+### Etkilenen dosyalar
+
+```
+PROGRESS.md        (42 placeholder → hash)
+PROGRESS-OZET.md   (Açık işler #2 güncellendi)
+```
+
+---
+
 ## "Hafta henüz başlamadı" banner'ı — `localTodayISO` Europe/Istanbul'a hizalandı ✅
 
 ### Sorun (kullanıcı bildirdi)
@@ -1361,7 +1389,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`b2f459d` — fix: henuz baslamamis enrollment rapora ve digest'e sizmasin + digest telafisi (spec 5.1/5.4)
 
 ---
 
@@ -1433,7 +1461,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`3814142` — feat: sinifin ilk aktif haftasinda puan zorunlulugu kalksin (spec 5.1)
 
 ---
 
@@ -2012,7 +2040,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`29c069e` — feat: hafta etiketi formati gg.aa - gg.aa.yyyy tek uretim noktasinda
 
 ---
 
@@ -2255,7 +2283,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`66e4eb3` — feat: hafta arasi odev/puan baglantisi - degerlendirme haftasi notu + onceki teslim dosyasi onizlemesi
 
 ---
 
@@ -2329,7 +2357,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`c228281` — feat: ogrenci odev teslimi ekleme (append) - veri kaybi giderildi, toplam 30 siniri, ekleme sonrasi review sifirlama
 
 ---
 
@@ -2400,9 +2428,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — veli rapor detayı + public `/r/{token}` müşteri tasarımı: ortak
-`GuardianReportView` (hepsi açık dikey istif + sticky ders çipleri, ham 1–10
-puan göstergesi), `ReportSnapshot` yalnızca admin önizlemesinde.
+`51b39f5` — feat: veli rapor detayi + public /r/{token} musteri tasarimi (ortak GuardianReportView, ham 1-10 puan gostergesi)
 
 ---
 
@@ -2442,8 +2468,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — giriş ekranı marka yeniden tasarımı (`.brand-scope`/`.brand-panel`,
-mobil tam ekran marka + alt-orta form, masaüstü marka paneli + form).
+`129d072` — feat: giris ekrani marka yeniden tasarimi (hibrit hero + form, .brand-scope)
 
 ---
 
@@ -2504,8 +2529,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — veli ana ekranı yeniden tasarımı (rapor rafı/zaman çizelgesi, çocuk
-çipleri, hafta filtresi) + işlevsiz ders filtresinin kaldırılması (spec §6).
+`5d353fe` — feat: veli ana ekrani yeniden tasarim (rapor rafi/zaman cizelgesi + hafta filtresi); islevsiz ders filtresi kaldirildi (spec 6)
 
 ---
 
@@ -2595,9 +2619,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — öğrenci (müşteri yüzü) yeniden tasarımı: CustomerShell (blur navbar
-+ alt dock + hesap sheet), sekmeli/çipli ödev listesi, yükleme-baskın capture
-carousel (mobil) / çok sütunlu ızgara (masaüstü), carousel erişilebilirliği.
+`19d939f` — feat: ogrenci musteri yuzu yeniden tasarim - CustomerShell + capture carousel + cip filtreler
 
 > Veli ekranları + public `/r/{token}` ve `GuardianReportView` bu turda kapsam
 > dışı bırakıldı (karar onaylı, uygulama sonraki turda).
@@ -2738,7 +2760,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`cba255a` — refactor: routes/admin.ts konu bazli alt router'lara bolundu; is mantigi servislere tasindi
 
 
 ### Süreç özeti
@@ -2840,8 +2862,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — kök/backend bağımlılık ayrımı: kök yalnızca frontend, backend
-kendi kendine yeterli (render.yaml değişmedi).
+`6f65cf4` — chore: kok/backend bagimlilik ayriligi - kok yalnizca frontend, backend kendi kendine yeterli
 
 ---
 
@@ -2934,8 +2955,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — mekanik bakım: yardımcı fonksiyon birleştirme, ölü kod temizliği ve
-login rate limit'in `envPositiveInt` ile sertleştirilmesi.
+`f1204c8` — refactor: yrd fonksiyon birlestirme + olu kod temizligi + login rate limit envPositiveInt (mekanik bakim)
 
 ---
 
@@ -3010,8 +3030,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — Bulgu #9: magic-byte içerik doğrulaması + CSV metin kontrolü +
-dosya yanıtlarında `nosniff`.
+`3628a70` — feat: magic-byte icerik dogrulamasi + CSV metin kontrolu + nosniff (Bulgu #9)
 
 ---
 
@@ -3074,7 +3093,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — Bulgu #8: rol kontrolü (`requireStudent`) multer'dan önce.
+`0b0666a` — fix: rol kontrolu (requireStudent) multer'dan once; yanlis rol dosya yukleyemez (Bulgu #8)
 
 ---
 
@@ -3154,8 +3173,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — Bulgu #7: change-password/import/backup için kullanıcı bazlı rate
-limit + uç bazlı mesaj + env dokümantasyonu.
+`8fb7cd5` — feat: change-password/import/backup icin kullanici bazli rate limit (Bulgu #7)
 
 ---
 
@@ -3215,7 +3233,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — Bulgu #3: seed'de her kullanıcıya per-user hash (salt tekrarı yok).
+`f63f968` — fix: seed her kullanici icin ayri hash uretir (per-user salt; Bulgu #3)
 
 ---
 
@@ -3279,7 +3297,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — Bulgu #6: admin'in `sent` raporu düzenleme hakkı (spec §2).
+`7ab70f7` — fix: admin sent raporu duzenleyebilir (spec 2); ogretmen 403 kalir, snapshot degismez
 
 ---
 
@@ -3383,8 +3401,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — migration #9: `password_hash` / `whatsapp_phone` NOT NULL + boş
-string CHECK (Yüksek öncelikli teknik borç).
+`f5c1673` — feat: migration #9 - users.password_hash ve guardians.whatsapp_phone NOT NULL + bos string CHECK
 
 ---
 
@@ -3423,7 +3440,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — migration runner `foreignKeysOff` + `foreign_key_check` desteği.
+`aff5e29` — feat: migration runner'a foreignKeysOff + foreign_key_check destegi (12 adim rebuild icin)
 
 ---
 
@@ -3516,7 +3533,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — react-router-dom v7 + returnTo origin düzeltmesi (Grup 3).
+`7a5e559` — fix: react-router-dom v7 (open redirect advisory) + returnTo origin dogrulamasi
 
 ---
 
@@ -3552,7 +3569,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — kök lock bağımlılık güvenlik güncellemeleri (Grup 2: sharp/multer/qs).
+`64bc348` — chore: kok lock bagimlilik guvenlik guncellemeleri (sharp 0.35.4, multer 2.3.0, qs 6.16.0)
 
 ---
 
@@ -3595,7 +3612,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — backend bağımlılık güvenlik güncellemeleri (Grup 1: sharp/multer/adm-zip).
+`d3ae75d` — chore: backend bagimlilik guvenlik guncellemeleri (sharp 0.35.4, multer 2.3.0, adm-zip 0.6.1)
 
 ---
 
@@ -3675,7 +3692,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`dbbaf76` — feat: db:backup yedeginde ogrenci/ders/hafta hiyerarsisi + _depo (thumbnail/sahipsiz)
 
 ---
 
@@ -3731,7 +3748,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`23df2b7` — feat: ogrenci odev listesinde hafta + ders filtreleri
 
 ---
 
@@ -3788,7 +3805,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`22917c3` — feat: teslim gridi daraltilabilir + veli rapor detayinda grid
 
 ---
 
@@ -3849,7 +3866,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`22917c3` — feat: teslim gridi daraltilabilir + veli rapor detayinda grid
 
 ---
 
@@ -3925,7 +3942,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`8ca8598` — feat: ogrenci yukleme akisina "Kamerayla cek" giris noktasi (+ deploy guard düzeltmeleri: 5d27309, 8bff737)
 
 ---
 
@@ -4094,7 +4111,7 @@ spec.md  CLAUDE.md  PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`accbc7d` — feat: gorsel lightbox + thumbnail grid, 30 dosya limiti ve UTF-8 dosya adi
 
 ---
 
@@ -4212,7 +4229,7 @@ spec.md  CLAUDE.md  PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`accbc7d` — feat: gorsel lightbox + thumbnail grid, 30 dosya limiti ve UTF-8 dosya adi
 
 ---
 
@@ -4284,7 +4301,7 @@ spec.md  PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`9cb7b80` — feat: tamamlamada islenen konu/yapilacak odev zorunlu + devamsizlik varsayilani absent
 
 ---
 
@@ -4388,7 +4405,7 @@ spec.md  PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`89357ee` — feat: ogretmen gecmis raporlarina sinif/hafta/durum/arama filtresi (+ sonradan düzeltme: 98dcafe)
 
 ---
 
@@ -4444,7 +4461,7 @@ spec.md  CLAUDE.md  PROGRESS.md
 
 ### Commit
 
-Bu commit — "İlgi puanı" → "Ders içi performans puanı" metin değişikliği + PROGRESS.
+`95f0375` — refactor: Ilgi puani metinlerini Ders ici performans puani yap
 
 ---
 
@@ -4534,7 +4551,7 @@ spec.md  PROGRESS.md
 
 ### Commit
 
-Bu commit — gönderim öncesi admin düzenleme + PROGRESS.
+`80afd34` — feat: gonderim oncesi admin duzenleme (DigestSendPage -> ReportEntryPage, returnTo)
 
 ---
 
@@ -4632,7 +4649,7 @@ spec.md  CLAUDE.md  PROGRESS.md
 
 ### Commit
 
-Bu commit — ilk girişte zorunlu şifre değiştirme (migration #7) + PROGRESS.
+`aad694f` — feat: ilk giriste zorunlu sifre degistirme (migration #7, ogrenci/veli)
 
 ---
 
@@ -4690,7 +4707,7 @@ spec.md  CLAUDE.md  PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`ffea293` — feat: isim tabanli kullanici adi uretimi + CSV import sade (elle kullanici adi/telefon2 kaldirildi)
 
 ---
 
@@ -4740,7 +4757,7 @@ PROGRESS.md
 
 ### Commit
 
-Bu commit — arama/parola autofill düzeltmesi (+ PROGRESS).
+`505f81d` — fix: arama/parola alanlarinda otomatik doldurmayi engelle (autocomplete off/new-password)
 
 ---
 
@@ -4952,7 +4969,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`570eabc` — feat: veli rapor ekranlarina ayni gorsel dil (durum seridi, ikon, elevation, erisilebilir satir, public logo)
 
 ---
 
@@ -5123,7 +5140,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`988667c` — feat: admin sol menü kabuğu + marka logosu (Ödev Takip)
 
 ---
 
@@ -5183,7 +5200,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`988667c` — feat: admin sol menü kabuğu + marka logosu (Ödev Takip)
 
 ---
 
@@ -5262,7 +5279,7 @@ src/admin-badges.test.tsx               (rozet sözleşmeleri)
 
 ### Commit
 
-Henüz commit edilmedi.
+`1d54764` — feat: admin panelinde paylaşılan bileşenlerle görsel tutarlılık
 
 ---
 
@@ -5307,7 +5324,7 @@ src/pages/admin/AdminDashboardPage.tsx
 
 ### Commit
 
-Henüz commit edilmedi.
+`1d54764` — feat: admin panelinde paylaşılan bileşenlerle görsel tutarlılık
 
 ---
 
@@ -5370,7 +5387,7 @@ src/pages/admin/AdminDashboardPage.tsx
 
 ### Commit
 
-Henüz commit edilmedi.
+`1d54764` — feat: admin panelinde paylaşılan bileşenlerle görsel tutarlılık
 
 ---
 

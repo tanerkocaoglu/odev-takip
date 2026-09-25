@@ -73,6 +73,12 @@
 - Başlamamış hafta: öğretmen rapor girişinde salt-okunur önizleme (DB'ye
   yazmaz); yazma **admin dahil herkese** kapalı. Admin dashboard'unda "eksik"
   sayılmaz.
+**Operasyon**
+- Production DB'sini değiştiren her müdahaleden (reset, wipe, elle SQL
+  düzeltmesi, script tabanlı toplu güncelleme) **hemen önce** `npm run
+  db:backup` zorunlu. Backup alınmadan production'a yazma işlemi
+  yapılmaz — geri dönüş garantisi olmadan geri dönüşü olmayan işlem
+  yapılmaması içindir.
 
 **Raporlar ve digest**
 - `sent` rapor: öğretmen düzenleyemez (403), admin düzenleyebilir.
@@ -100,16 +106,16 @@ rıza sürümleme, otomatik saklama süresi ve okuma audit log'u **ertelendi**;
 
 ## Açık işler
 
-1. **Üretim hafta teşhisi bekliyor:** Render Shell'de `npm run diagnose-weeks`
-   çalıştırılıp 21–26 Eylül haftasının gerçek durumu görülecek. Sonuç
-   görülmeden veri düzeltmesi yapılmayacak. Düzeltme: admin UI'deki
-   **"Düzenle"** ile bitiş tarihini +1 gün çekmek; bozuk aralık yüzünden
-   `null` kalmış `homeworks.due_date`'ler otomatik dolmaz.
-2. **PROGRESS.md commit kayıtları (kısmen tamamlandı):** dört örnek işlendi —
-   ders sıralaması `2a7ca03`, başlamamış hafta önizlemesi `fb08c62`,
-   migration #11 `925bcc1`, Aşama 2a retrofit (`f7f239a`…`4717b09`). Eski
-   UI/Demo dönemi ~20 kayıtta hâlâ "Henüz commit edilmedi" var; gerektiğinde
-   `git log` ile tamamlanacak.
+1. ~~Üretim hafta teşhisi bekliyor~~ → **Çözüldü (2026-09-26):** `diagnose-weeks`
+   production'da 0 hatalı hafta gösterdi (9 hafta, tümü 7 gün). Test
+   ortamında tespit edilen hatalı hafta production'a yansımamıştı; kullanıcı
+   bu süreçte production DB'sini `db:reset` ile sıfırdan kurdu. Reset
+   sonrası gerçek veri teyit edildi: 21 öğrenci, 20 veli, 7 öğretmen mevcut.
+   R2 dosyaları etkilenmedi (`reset` R2'ye dokunmuyor kararı geçerli).
+2. ~~PROGRESS.md commit kayıtları~~ → **Çözüldü (2026-09-26):** tüm
+   "Henüz commit edilmedi" / "Bu commit" placeholder'ları (42 kayıt)
+   `git log --oneline --all` ile eşleştirilip gerçek kısa hash + subject ile
+   değiştirildi; eşleşmeyen/belirsiz kayıt kalmadı.
 3. **Aşama 6 kalanları:** veli trend grafiği, yıl sonu PDF özeti — önceliği
    belirlenmedi.
 
