@@ -6,15 +6,17 @@
 import { classDateForWeek, type WeekRecord } from './weeks.js';
 
 /**
- * Yerel takvimde bugün (YYYY-MM-DD) — makine yerel saatine göre.
- * `localDateISO`'dan farkı: sabit bir girdi yerine "şu an"ı ve Europe/Istanbul
- * yerine makine saat dilimini kullanır (mevcut davranış korunur).
+ * Ürünün takvim gününde bugün (YYYY-MM-DD) — **Europe/Istanbul** (CLAUDE.md:
+ * "Tarih/saat gösterimi Europe/Istanbul").
+ *
+ * Makine saat dilimine göre DEĞİL: üretimde sunucu UTC'dir; İstanbul'da
+ * 00:00–03:00 arası makine günü hâlâ bir önceki gündür ve "hafta başladı mı"
+ * yanlış hesaplanır (hafta başlangıç gününde banner yanlış görünür). Bu yüzden
+ * `localDateISO(new Date())` ile, `isLateSubmission` ile aynı saat dilimini
+ * kullanır.
  */
 export function localTodayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
+  return localDateISO(new Date());
 }
 
 /**
@@ -49,11 +51,7 @@ export function hasWeekEnded(week: { end_date: string }): boolean {
  * dersi yanlışlıkla ~6 gün ileri kayardı.
  */
 export function isOverdue(week: WeekRecord, dayOfWeek: number): boolean {
-  const [y, m, d] = classDateForWeek(week.start_date, dayOfWeek).split('-').map(Number);
-  const classDay = new Date(y, m - 1, d);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return classDay < today;
+  return classDateForWeek(week.start_date, dayOfWeek) < localTodayISO();
 }
 
 /**

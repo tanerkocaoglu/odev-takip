@@ -1,5 +1,11 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { hasWeekEnded, isClassDayWithinWeek, isOverdue, localTodayISO } from './time.js';
+import {
+  hasWeekEnded,
+  hasWeekStarted,
+  isClassDayWithinWeek,
+  isOverdue,
+  localTodayISO,
+} from './time.js';
 import type { WeekRecord } from './weeks.js';
 
 function week(startDate: string): WeekRecord {
@@ -75,17 +81,41 @@ describe('hasWeekEnded', () => {
   });
 });
 
-describe('localTodayISO', () => {
-  it('makine yerel gününü YYYY-MM-DD biçiminde döner', () => {
+describe('localTodayISO — Europe/Istanbul', () => {
+  it('UTC hâlâ bir önceki gündeyken Istanbul gününü döner (00:00–03:00 aralığı)', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(2026, 2, 9, 23, 30, 0));
-    expect(localTodayISO()).toBe('2026-03-09');
+    try {
+      // 25.09.2026 21:00 UTC = 26.09.2026 00:00 Europe/Istanbul
+      vi.setSystemTime(new Date('2026-09-25T21:00:00Z'));
+      expect(localTodayISO()).toBe('2026-09-26');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('ay ve gün tek haneliyse sıfırla doldurur', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(2026, 0, 5, 8, 0, 0));
-    expect(localTodayISO()).toBe('2026-01-05');
+    try {
+      // 04.01.2026 22:00 UTC = 05.01.2026 01:00 Europe/Istanbul
+      vi.setSystemTime(new Date('2026-01-04T22:00:00Z'));
+      expect(localTodayISO()).toBe('2026-01-05');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('hasWeekStarted — Europe/Istanbul sınırı', () => {
+  it('Istanbul günü start_date ise hafta başlamış sayılır (UTC geride olsa bile)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      // 25.09.2026 21:00 UTC = 26.09.2026 00:00 Istanbul; hafta 26.09'da başlar.
+      vi.setSystemTime(new Date('2026-09-25T21:00:00Z'));
+      expect(hasWeekStarted({ start_date: '2026-09-26' })).toBe(true);
+      expect(hasWeekStarted({ start_date: '2026-09-27' })).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

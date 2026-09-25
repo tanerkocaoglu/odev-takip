@@ -5,6 +5,76 @@
 
 ---
 
+## "Hafta henüz başlamadı" banner'ı — `localTodayISO` Europe/Istanbul'a hizalandı ✅
+
+### Sorun (kullanıcı bildirdi)
+
+Admin paneli, İstanbul'da **güne girilmiş olmasına rağmen** o haftanın
+başlangıç gününde hâlâ "26.09 - 02.10.2026 haftası henüz başlamadı
+(26.09.2026)." diyordu. Örn. 26.09.2026 00:30 (Istanbul) anında banner
+kapanmıyordu.
+
+### Kök neden
+
+`utils/time.ts` → `localTodayISO()` **makine yerel saatini** kullanıyordu
+(`getFullYear/getMonth/getDate`). Üretimde sunucu **UTC** çalıştığından,
+Istanbul 00:00–03:00 arasında makine günü hâlâ bir önceki gündür: gözlem
+anında makine/UTC günü `2026-09-25`, Istanbul günü `2026-09-26`. Bu yüzden
+`hasWeekStarted(week) = localTodayISO() >= start_date` → `'2026-09-25' >=
+'2026-09-26'` = false; `week_not_started` true kalıyordu.
+
+Etki yalnızca banner değildi; `localTodayISO` şu yüzeylerin hepsini beslediği
+için aynı pencerede hepsi bir gün gerideydi: `hasWeekStarted` / `hasWeekEnded`,
+`currentDigestWeek()` (`start_date <= bugün` hafta seçimi), öğretmen dashboard
+"bu hafta", admin risk penceresi (`end_date < bugün`), ve `isOverdue` (makine
+yerel `new Date()`).
+
+Bu, bilinçli bırakılmış bir ertelmeden kaynaklanıyordu (aşağıdaki "mekanik
+bakım" bölümü: "hizalama ayrı bir iyileştirme olarak bırakıldı").
+
+### Düzeltme
+
+- **`utils/time.ts` → `localTodayISO()`:** artık `localDateISO(new Date())`
+  — yani **Europe/Istanbul** (CLAUDE.md: "Tarih/saat gösterimi Europe/Istanbul";
+  `isLateSubmission` ile aynı saat dilimi). Makine saat diliminden bağımsız.
+- **`utils/time.ts` → `isOverdue()`:** makine yerel `Date` karşılaştırması
+  yerine `classDateForWeek(...) < localTodayISO()` (YYYY-MM-DD dizge
+  karşılaştırması) — aynı saat dilimi, aynı gün semantiği.
+- Şema/migration yok; kural "bugün"e bağlı olduğundan zaten uygulama
+  katmanındadır.
+
+### Doğrulamalar
+
+- **Statik:** backend `typecheck` ✅ (`lint` değişmedi — kök lint zaten temiz).
+- **Testler:** backend **450/450** (39 dosya; `utils/time.test.ts` +1 net:
+  `localTodayISO` makine-yerel 2 test Istanbul tabanlı UTC anlarına çevrildi,
+  +1 `hasWeekStarted` sınır testi).
+- **Canlı kanıt (izole `DB_PATH`+`UPLOADS_DIR` + gerçek Express + gerçek HTTP):
+  8/8 PASS.** Gözlem anı **2026-09-25 21:30 UTC = 2026-09-26 00:30 Istanbul**;
+  aktif yılda 19–25 Eyl (bitmiş) + 26.09'da başlayan hafta + 1 sınıf-ders ataması:
+  - Eski (UTC) mantık haftayı "başlamamış" sayardı (kanıt: `utcDay < istanbulDay`);
+    `localTodayISO()` artık `2026-09-26` döner.
+  - `GET /admin/dashboard` → `week.start_date=2026-09-26`, **`week_not_started=false`**,
+    `summary { total:1, completed:0 }` (başlamış hafta gibi).
+  - `GET /admin/dashboard/missing` → `total=1` (`not_started`) — hafta fiilen
+    "başladı" sayıldı, yanıltıcı boş liste yok.
+  - Gerçek `backend/db/app.db` **değişmedi** (442 368 bayt, mtime sabit);
+    geçici betik/temp DB+uploads silindi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/utils/time.ts        (localTodayISO → Europe/Istanbul; isOverdue hizalandı)
+backend/src/utils/time.test.ts   (Istanbul sınır testleri + hasWeekStarted)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Admin "Haftalar" — satır bazlı "Düzenle" (tarih) ✅
 
 ### Kapsam
@@ -2786,6 +2856,9 @@ davranış değişmedi** (yalnızca kod organizasyonu + savunma sağlamlaştırm
   birebir iki kopyaydı; admin/teacher artık import eder. Makine-yerel
   `localTodayISO` mantığı **aynen** taşındı (Europe/Istanbul'a çevrilmedi —
   davranış korunur; hizalama ayrı bir iyileştirme olarak bırakıldı).
+  > **Güncelleme:** Bu hizalama sonradan yapıldı — bkz. en üstteki
+  > "'Hafta henüz başlamadı' banner'ı" bölümü (UTC sunucuda 00:00–03:00
+  > penceresinde hafta başlangıcı bir gün gecikiyordu).
 - Yeni `services/submissionFiles.ts`: `groupSubmissionFiles` (saf) +
   `loadSubmissionFiles` (sorgu). teacher.ts `loadFilesBySubmission`,
   student.ts `loadSubmissionFiles` ve guardian.ts'teki inline sorgu+gruplama
