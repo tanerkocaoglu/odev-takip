@@ -903,7 +903,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`2a7ca03` — ders sıralaması hafta başına göre göreli + `isOverdue` düzeltmesi.
 
 ---
 
@@ -1029,7 +1029,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`fb08c62` — henüz başlamamış hafta: salt-okunur önizleme + yazma reddi (403).
 
 ---
 
@@ -1265,7 +1265,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`925bcc1` — `weekly_digests.class_id` (migration #11).
 
 ---
 
@@ -6166,7 +6166,10 @@ audit).
 
 ### Commit
 
-(Aşama 2a retrofit commit hash'i)
+Aşama 2a retrofit — 6 commit: `f7f239a` (adım 1: migration #5), `473a47e`
+(adım 2: OTP/SMS kaldırıldı + tek login), `19f3f1e` (adım 3: username üretimi +
+admin CRUD), `9630b10` (adım 4: seed async), `feff367` (adım 5: frontend),
+`4717b09` (belgeler).
 
 ### Güncel dosya yapısı
 

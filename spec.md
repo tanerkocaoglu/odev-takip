@@ -1395,7 +1395,7 @@ Bu yüzden §5.3'teki yeniden boyutlandırma opsiyonel değildir.
 | 3 | Toplu rapor giriş ekranı, `reports`+`report_entries`, önceki ödev çekme, otomatik kaydetme, klavye nav, supertest entegrasyon testi | Bir öğretmen 8 kişilik sınıfın haftalık raporunu klavyeden çıkmadan doldurabiliyor |
 | 4 | `homeworks`+son tarih, HEIC dönüşümü (heic-convert→sharp), multer+sharp, `GET /api/v1/files/:key` korumalı rota (flag yok), öğrenci yükleme + öğretmen teslim kontrol ekranı | Öğrenci HEIC/JPEG yüklüyor, küçültülerek kaydediliyor, dosyaya yetkisiz erişim 403 dönüyor |
 | 5 | `weekly_digests` pending oluşturma + ready tetikleme, admin gönderim ekranı (pending+ready), `/r/{token}` (is_revoked kontrolü), veli paneli, re-send (yeni token), revoke, audit log | Koordinatör toplu gönderim yapıyor, veli 4 dersi birlikte görüyor, iptal sonrası 410 dönüyor |
-| 6 | Veli trend grafiği, riskli öğrenci listesi, hatırlatma (wa.me, 2 gün önce + son gün, cron+`X-Cron-Secret`), saklama temizliği CLI, R2 implementasyonu, yıl sonu PDF, KVKK akışı | — |
+| 6 | ✅ riskli öğrenci listesi, R2 implementasyonu, KVKK akışı (aydınlatma + `consent_at`), atama devretme · 🔄 hatırlatma → yalnızca iç hatırlatma (wa.me/cron uygulanmadı), saklama → elle CLI (otomatik temizlik ertelendi) · ⏸ veli trend grafiği, yıl sonu PDF | — |
 
 ---
 

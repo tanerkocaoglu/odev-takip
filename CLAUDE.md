@@ -418,8 +418,9 @@ paneli masaüstü önceliklidir; kalan her şey mobil önceliklidir.**
 
 ## Çalışma kuralları
 
-1. **Aşama sırasını atlama.** Aşağıdaki sırayla ilerle. Bir aşama bitmeden
-   sonrakine geçme.
+1. **Aşamalar 0–5 tamamlandı; proje üretimde.** Yeni işler tek tek ilerler:
+   kapsam → kararların kullanıcı onayı → uygulama → doğrulama. Bir iş
+   bitmeden yenisine geçme. Güncel durum ve açık işler: `PROGRESS-OZET.md`.
 2. **Küçük adımlar.** Her adımda: kod → `npm run typecheck` → ilgili test →
    commit. Tek seferde 10 dosya değiştirip sonuna kadar gitme.
 3. **Kapsam genişletme yok.** `spec.md`'de olmayan bir özellik ekleme.
@@ -430,9 +431,12 @@ paneli masaüstü önceliklidir; kalan her şey mobil önceliklidir.**
 5. **Belirsizlik varsa sor.** Varsayım yapıp devam etme; özellikle yetki
    kuralları ve puanlama davranışında.
 6. Her aşama sonunda o aşamanın "bitti" kriterini kontrol et ve rapor et.
-7. **Her başarılı aşama sonunda `PROGRESS.md` güncellenir** — süreç özeti,
-   doğrulamalar, commit hash'i, çözülen sorunlar ve güncel dosya yapısı
-   işlenir. Bu güncelleme o aşamanın commit'ine dahil edilir.
+7. **Her tamamlanan iş sonunda `PROGRESS.md`'ye kısa bir kayıt eklenir**
+   (en üste): kapsam, kararlar (kullanıcı onaylı), doğrulama özeti (test
+   sayıları + canlı kanıt sonucu tek satır), etkilenen dosyalar, commit
+   başlığı. Tam dosya ağacı ve uzun doğrulama dökümleri **yazılmaz**.
+   Aynı commit'te `PROGRESS-OZET.md`'deki "Güncel durum" / "Açık işler" /
+   "Kalıcı kararlar" bölümleri de gerekiyorsa güncellenir.
 
 ---
 
@@ -652,17 +656,20 @@ görüyor.
 
 ---
 
-## Aşama 6 — İyileştirmeler
+## Aşama 6 — İyileştirmeler (durum: `PROGRESS-OZET.md`)
 
-- Veli panelinde hafta bazlı trend grafiği
-- Admin: riskli öğrenci listesi (üst üste düşük puan / teslim etmeme)
-- Ödev hatırlatma: son tarihten **2 gün önce** ve **son tarih günü** veliye/
-  öğrenciye `wa.me` linki gönderilir; sistem cron'u + `X-Cron-Secret` ile
-  korunan `POST /api/internal/reminders` endpoint'i tetikler
-- R2 storage implementasyonu ve üretime geçiş
-- Saklama temizliği: 1 yıllık teslim dosyalarının silinmesi
-- KVKK: aydınlatma metni, `consent_at` akışı
-- Yıl sonu PDF özeti
+- ✅ Admin: riskli öğrenci listesi (üst üste düşük puan / teslim etmeme)
+- ✅ R2 storage implementasyonu ve üretime geçiş
+- ✅ KVKK: aydınlatma metni (`/gizlilik`), `consent_at` akışı
+- ✅ Öğretmen atamalarını devretme / atama takası
+- 🔄 Ödev hatırlatma — **değiştirildi:** yalnızca öğretmen dashboard'unda iç
+  hatırlatma (gecikmiş taslak sayacı). `wa.me` + cron + `X-Cron-Secret`
+  hatırlatması **uygulanmadı**; gerekirse ayrıca konuşulur.
+- 🔄 Saklama temizliği — elle `cleanup-submissions` CLI'ı var; 1 yıllık
+  **otomatik** temizlik bilinçli olarak ertelendi (KVKK kararı).
+- ⏸ Veli panelinde hafta bazlı trend grafiği — veri hazır (`schools`,
+  `grade_level`), grafikler şimdilik kapsam dışı.
+- ⏸ Yıl sonu PDF özeti — başlanmadı.
 
 ---
 
