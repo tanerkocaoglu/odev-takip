@@ -71,7 +71,8 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`6856ae3` — "Hafta henüz başlamadı" banner'ı: `localTodayISO` Europe/Istanbul'a
+hizalandı.
 
 ---
 
