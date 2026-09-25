@@ -5,6 +5,75 @@
 
 ---
 
+## Admin "Haftalar" — satır bazlı "Düzenle" (tarih) ✅
+
+### Kapsam
+
+Admin paneli "Haftalar" ekranındaki her satıra "Sil"in yanına **"Düzenle"**
+aksiyonu eklendi. Tıklanınca "Yeni hafta" modalıyla aynı görsel dilde (başlangıç/
+bitiş tarih seçici + canlı etiket önizlemesi), mevcut tarihlerle **önceden
+doldurulmuş** küçük bir form açılır. `week_no` düzenlenemez (yalnızca tarih;
+backend semantiği). Kaydet → `PATCH /admin/weeks/:id`; backend'in döndürdüğü
+doğrulama hataları (7 gün değil, tarihler ters, yıl aralığı dışı) forma
+yansıtılır. Başarıda modal kapanır ve tablo tazelenir (yeni tarih/etiket görünür).
+
+**Bu tur saf frontend işidir: şema/migration yok, backend değişmedi.**
+`PATCH /admin/weeks/:id` ve doğrulamaları (`validateWeekRange` + yıl-aralığı)
+zaten mevcuttu (§3.1).
+
+### Kararlar
+
+1. Düzenleme **yalnızca tarih** (`start_date` / `end_date`); `week_no` sabit —
+   backend `weekPatchSchema` ile birebir.
+2. Etiket önizlemesi, sunucunun `formatWeekLabel` çıktısının **birebir**
+   karşılığıdır (tarih/gün hesabı değil, yalnızca gösterim); kayıtlı etiket her
+   zaman sunucudan gelir.
+3. Alan bazlı hata (`fields.end_date` vb.) alanın altında; alan hatası yoksa
+   genel mesaj `FormError` ile gösterilir (aynı mesajı iki kez basmamak için).
+4. Buton yerleşimi: satırda "Düzenle" (nötr) → "Sil" (danger); mevcut küçük
+   satır-içi buton deseni kullanıldı, yeni boyut/renk icat edilmedi.
+
+### Uygulama
+
+- **`WeeksPage.tsx`:** `editWeek`/`editStart`/`editEnd`/`editSubmitting`/
+  `editError`/`editFieldErrors` durumları; `openEdit()` mevcut tarihlerle doldurur;
+  `handleEdit()` `adminApi.weeks.patch(id, {start_date,end_date})` çağırır,
+  `ApiClientError.fields`'ı forma taşır; satırda "Düzenle" butonu; ikinci `Modal`.
+- `adminApi.weeks.patch` **zaten vardı** (kullanıldı, değiştirilmedi); `types.ts`
+  değişmedi.
+
+### Doğrulamalar
+
+- **Statik:** kök + backend `typecheck` ✅, kök `lint` ✅.
+- **Testler:** frontend **143/143** (24 dosya; yeni `admin-weeks.test.tsx` +3:
+  dolu modal/prefill + önizleme, 6 gün reddi (hata forma yansır, modal açık
+  kalır, PATCH gövdesi doğru), başarılı 7 gün (modal kapanır, yeni etiket
+  görünür)); backend **449/449** (değişmedi, regresyonsuz).
+- **Canlı kanıt (izole `DB_PATH`+`UPLOADS_DIR` + gerçek Express + gerçek HTTP):
+  11/11 PASS.** Bugün 2026-09-25; 7 günlük hafta 21→27 Eyl oluşturuldu:
+  - 6 gün (21→26) PATCH → **400 `VALIDATION_ERROR`**, `fields.end_date` Türkçe
+    ("… tam 7 gün olmalı; girilen aralık 6 gün …"); **hafta değişmedi** (21→27).
+  - Ters tarih (25→22) → **400** ("Bitiş tarihi başlangıçtan önce olamaz.");
+    yıl aralığı dışı (01→07 Ağu) → **400** ("… eğitim yılı dışına taşamaz.").
+  - Doğru 7 gün (22→28) → **200**, `label = "22.09 - 28.09.2026"`; `GET` listesi
+    yeni tarih/etiketi döndürdü.
+  - Gerçek `backend/db/app.db` **değişmedi** (442 368 bayt, mtime sabit);
+    geçici betik/temp DB+uploads silindi.
+
+### Etkilenen dosyalar
+
+```
+src/pages/admin/WeeksPage.tsx   (Düzenle aksiyonu + düzenleme modalı + etiket önizlemesi)
+src/admin-weeks.test.tsx        (yeni; 3 test)
+PROGRESS.md
+```
+
+### Commit
+
+Henüz commit edilmedi.
+
+---
+
 ## Öğretmen ödev ekleri (PDF) — migration #13 ✅
 
 ### Kapsam

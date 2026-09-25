@@ -13,6 +13,26 @@ import {
   inputClass,
 } from '../../components/admin/ui';
 
+/**
+ * Etiket önizlemesi: sunucunun `formatWeekLabel` çıktısının birebir karşılığı
+ * (`gg.aa - gg.aa.yyyy`; hafta yıl değiştiriyorsa yıl iki tarafta yazılır).
+ * Yalnızca girilen tarihlerin gösterimidir; tarih/gün hesabı yapmaz — kayıtlı
+ * etiket her zaman sunucudan gelir.
+ */
+function previewWeekLabel(start: string, end: string): string | null {
+  const s = start.slice(0, 10).split('-').map(Number);
+  const e = end.slice(0, 10).split('-').map(Number);
+  if (s.length !== 3 || e.length !== 3 || [...s, ...e].some((n) => Number.isNaN(n))) {
+    return null;
+  }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const startPart = `${pad(s[2])}.${pad(s[1])}`;
+  const endPart = `${pad(e[2])}.${pad(e[1])}`;
+  return s[0] !== e[0]
+    ? `${startPart}.${s[0]} - ${endPart}.${e[0]}`
+    : `${startPart} - ${endPart}.${e[0]}`;
+}
+
 export default function WeeksPage() {
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [yearId, setYearId] = useState('');
@@ -26,6 +46,13 @@ export default function WeeksPage() {
   const [endDate, setEndDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [editWeek, setEditWeek] = useState<Week | null>(null);
+  const [editStart, setEditStart] = useState('');
+  const [editEnd, setEditEnd] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     adminApi.academicYears
@@ -89,6 +116,41 @@ export default function WeeksPage() {
     }
   }
 
+  function openEdit(week: Week) {
+    setEditWeek(week);
+    setEditStart(week.start_date);
+    setEditEnd(week.end_date);
+    setEditError(null);
+    setEditFieldErrors({});
+  }
+
+  async function handleEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editWeek) return;
+    setEditSubmitting(true);
+    setEditError(null);
+    setEditFieldErrors({});
+    try {
+      await adminApi.weeks.patch(editWeek.id, {
+        start_date: editStart,
+        end_date: editEnd,
+      });
+      setEditWeek(null);
+      await load();
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setEditError(err.message);
+        setEditFieldErrors(err.fields ?? {});
+      } else {
+        setEditError('Bir hata oluştu.');
+      }
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
+  const editPreview = previewWeekLabel(editStart, editEnd);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -136,7 +198,16 @@ export default function WeeksPage() {
                   <td className="tabular px-3 py-2 text-muted">{week.end_date}</td>
                   <td className="px-3 py-2 text-muted">{week.label}</td>
                   <td className="px-3 py-2 text-right">
-                    <DangerButton onClick={() => handleDelete(week)}>Sil</DangerButton>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(week)}
+                        className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-bg"
+                      >
+                        Düzenle
+                      </button>
+                      <DangerButton onClick={() => handleDelete(week)}>Sil</DangerButton>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -188,6 +259,61 @@ export default function WeeksPage() {
             <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
             <PrimaryButton type="submit" disabled={submitting}>
               {submitting ? 'Kaydediliyor…' : 'Kaydet'}
+            </PrimaryButton>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={editWeek !== null}
+        title={editWeek ? `Hafta ${editWeek.week_no} düzenle` : 'Haftayı düzenle'}
+        onClose={() => setEditWeek(null)}
+      >
+        <form onSubmit={handleEdit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Başlangıç" htmlFor="edit-week-start" error={editFieldErrors.start_date}>
+              <input
+                id="edit-week-start"
+                type="date"
+                value={editStart}
+                onChange={(e) => {
+                  setEditStart(e.target.value);
+                  setEditError(null);
+                  setEditFieldErrors({});
+                }}
+                required
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Bitiş" htmlFor="edit-week-end" error={editFieldErrors.end_date}>
+              <input
+                id="edit-week-end"
+                type="date"
+                value={editEnd}
+                onChange={(e) => {
+                  setEditEnd(e.target.value);
+                  setEditError(null);
+                  setEditFieldErrors({});
+                }}
+                required
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <p className="text-sm text-muted">
+            {editPreview ? (
+              <>
+                Etiket: <span className="font-medium text-text">{editPreview}</span>
+              </>
+            ) : (
+              'Etiket, girilen tarihlerden otomatik oluşturulur.'
+            )}
+          </p>
+          <FormError message={Object.keys(editFieldErrors).length === 0 ? editError : null} />
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={() => setEditWeek(null)}>İptal</SecondaryButton>
+            <PrimaryButton type="submit" disabled={editSubmitting}>
+              {editSubmitting ? 'Kaydediliyor…' : 'Kaydet'}
             </PrimaryButton>
           </div>
         </form>
