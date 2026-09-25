@@ -70,7 +70,7 @@ PROGRESS.md
 
 ### Commit
 
-Henüz commit edilmedi.
+`6c33bd2` — admin "Haftalar" satır bazlı "Düzenle" (tarih).
 
 ---
 
