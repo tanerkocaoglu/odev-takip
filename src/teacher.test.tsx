@@ -263,6 +263,7 @@ const REPORT = {
       teacher_note: null,
     },
   ],
+  locked_for_teacher: false,
   week_range_invalid: false,
 };
 
@@ -391,6 +392,78 @@ describe('ReportEntryPage', () => {
     expect(
       screen.queryByRole('button', { name: 'Raporu tamamla' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('gönderilmiş (sent) rapor öğretmene kilitli: alanlar kapalı, banner var, PUT hiç gitmez', async () => {
+    const locked = {
+      ...REPORT,
+      report: { ...REPORT.report, status: 'sent' },
+      locked_for_teacher: true,
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => locked,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    // Yeni "gönderildi" banner'ı görünür; "tamamlandı" banner'ı ile çakışmaz.
+    expect(screen.getByText(/artık düzenlenemez/)).toBeInTheDocument();
+    expect(screen.queryByText(/Admin olarak düzenleyebilirsiniz/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bu rapor tamamlandı/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Raporu tamamla' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Tümünü geldi yap')).not.toBeInTheDocument();
+
+    // Tüm alanlar baştan kapalı.
+    expect(screen.getByLabelText('İşlenen konu')).toBeDisabled();
+    expect(screen.getByLabelText('Yapılacak ödev')).toBeDisabled();
+    expect(screen.getByLabelText('Teslim tarihi')).toBeDisabled();
+    expect(screen.getByLabelText('Verilmiş olan ödev')).toBeDisabled();
+    expect(screen.getByLabelText('Devamsızlık')).toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
+
+    // Yazmaya zorla: kilitliyken otomatik kaydetme (debounce PUT) tetiklenmemeli.
+    fireEvent.change(screen.getByLabelText('İşlenen konu'), {
+      target: { value: 'Kaydedilmemeli' },
+    });
+    await new Promise((r) => setTimeout(r, 2300));
+
+    const putCalls = fetchMock.mock.calls.filter(
+      ([, init]) => (init as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(putCalls).toHaveLength(0);
+    expect(screen.queryByText('Kaydedilemedi')).not.toBeInTheDocument();
+  });
+
+  it('sent rapor admin için düzenlenebilir kalır (kilit yok, admin banner)', async () => {
+    const adminView = {
+      ...REPORT,
+      report: { ...REPORT.report, status: 'sent' },
+      locked_for_teacher: false,
+    };
+    vi.stubGlobal('fetch', mockFetch(200, adminView));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Öğrenci A').length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByText(/Admin olarak düzenleyebilirsiniz/)).toBeInTheDocument();
+    expect(screen.queryByText(/artık düzenlenemez/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bu rapor tamamlandı/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Raporu tamamla' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('İşlenen konu')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
   });
 
   it('teslim rozeti tıklanabilir değildir (yalnızca metin)', async () => {    const withSubmission = {

@@ -56,6 +56,14 @@ PUT çağırıyor, backend 403 dönüyor, yerel state değişmiş kalıyordu →
   2.3 sn beklendiğinde fetch çağrıları arasında **hiç `PUT` yok** (bileşen testi).
 - **Banner çakışması:** kilitli sent'te "Bu rapor tamamlandı" **yoktur** (test).
 
+### Bilinen sınır (ertelendi)
+
+- Kilitli (`locked_for_teacher`) veya salt-okunur (`read_only`) raporda
+  `isLastWeek` banner'ı ("Yılın son haftası — teslim tarihini siz belirleyin")
+  hâlâ görünebilir. Yazma zaten kapalı olduğundan bu kozmetik bir tutarsızlıktır
+  (eyleme davet eden ama uygulanamayan bir uyarı). **Acil değil**, ayrı küçük bir
+  iş olarak ertelendi.
+
 ### Etkilenen dosyalar
 
 ```

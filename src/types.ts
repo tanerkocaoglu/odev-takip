@@ -269,6 +269,11 @@ export interface TeacherReportPayload {
   report: TeacherReportHeader;
   /** Hafta henüz başlamadıysa true — ekran salt-okunur önizleme (spec §5.1). */
   read_only: boolean;
+  /**
+   * Rapor gönderilmiş (`sent`) ve görüntüleyen öğretmen — öğretmen için
+   * salt-okunur kilit; admin için false kalır (admin düzenleyebilir, spec §2).
+   */
+  locked_for_teacher: boolean;
   /** Hafta tanımı hatalı: dersin günü hafta aralığının dışında (spec §3.1). */
   week_range_invalid: boolean;
   entries: ReportEntry[];

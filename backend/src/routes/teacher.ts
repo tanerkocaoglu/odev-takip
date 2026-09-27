@@ -190,7 +190,7 @@ async function removeStoredFiles(
   }
 }
 
-function buildReportPayload(reportId: string): unknown {
+function buildReportPayload(reportId: string, viewerRole: AuthUser['role']): unknown {
   const report = db
     .prepare(
       `SELECT r.id, r.class_course_id, r.week_id, r.topic_covered, r.status,
@@ -323,6 +323,10 @@ function buildReportPayload(reportId: string): unknown {
     // (spec.md §5.1). Hafta tanımı hatalıysa (ders günü aralık dışı) da
     // yazma engellenir + `week_range_invalid` ile işaretlenir (§3.1).
     read_only: !hasWeekStarted({ start_date: report.week_start }) || rangeInvalid,
+    // Gönderilmiş rapor öğretmene kapalı (spec §2); admin düzenleyebilir. Hafta
+    // salt-okunurluğundan AYRI bayrak: ikisi birleşince arayüz kilitlenir ama
+    // "neden" farklı bir banner ile anlatılır.
+    locked_for_teacher: report.status === 'sent' && viewerRole !== 'admin',
     week_range_invalid: rangeInvalid,
     entries: entriesWithSubmission,
   };
@@ -510,7 +514,7 @@ router.post('/reports', (req, res) => {
     .prepare(`SELECT id FROM reports WHERE class_course_id = ? AND week_id = ?`)
     .get(cc.id, week.id) as { id: string } | undefined;
   if (existing) {
-    res.json(buildReportPayload(existing.id));
+    res.json(buildReportPayload(existing.id, user.role));
     return;
   }
 
@@ -595,7 +599,7 @@ router.post('/reports', (req, res) => {
     throw err;
   }
 
-  res.status(201).json(buildReportPayload(reportId));
+  res.status(201).json(buildReportPayload(reportId, user.role));
 });
 
 // ---------- Autosave (PUT) + Tamamla (POST complete) ----------
@@ -821,7 +825,7 @@ router.put('/reports/:id', (req, res) => {
     });
   }
 
-  res.json(buildReportPayload(id));
+  res.json(buildReportPayload(id, user.role));
 });
 
 /**
@@ -941,7 +945,7 @@ router.post('/reports/:id/complete', (req, res) => {
     maybeReadyDigests(classRow.class_id, report.week_id);
   }
 
-  res.json(buildReportPayload(id));
+  res.json(buildReportPayload(id, user.role));
 });
 
 // ---------- Ödev ekleri (öğretmen PDF — migration #13) ----------
@@ -1334,6 +1338,8 @@ function buildEntryPreview(classCourseId: string, week: WeekRecord): unknown {
       lesson_time: cc.lesson_time,
     },
     read_only: !hasWeekStarted(week) || rangeInvalid,
+    // Yeni/oluşmamış önizleme her zaman `draft`'tır; sent kilidi söz konusu değil.
+    locked_for_teacher: false,
     week_range_invalid: rangeInvalid,
     entries: students.map((s) => ({
       student_id: s.student_id,
@@ -1408,7 +1414,7 @@ router.get('/reports/entry', (req, res) => {
     .prepare(`SELECT id FROM reports WHERE class_course_id = ? AND week_id = ?`)
     .get(cc.id, week.id) as { id: string } | undefined;
   if (existing) {
-    res.json(buildReportPayload(existing.id));
+    res.json(buildReportPayload(existing.id, user.role));
     return;
   }
   res.json(buildEntryPreview(cc.id, week));
@@ -1426,7 +1432,7 @@ router.get('/reports/:id', (req, res) => {
     throw new AppError('FORBIDDEN', 403, 'Bu rapora erişim yetkiniz yok.');
   }
   loadOwnedReport(user, req.params.id);
-  res.json(buildReportPayload(req.params.id));
+  res.json(buildReportPayload(req.params.id, user.role));
 });
 
 // ---------- Teslim kontrol (Aşama 4) ----------

@@ -257,7 +257,8 @@ export default function ReportHistoryPage() {
                         <span>{item.student_count} öğrenci</span>
                       </div>
                       <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-accent">
-                        Aç <ChevronRight size={16} aria-hidden="true" />
+                        {item.status === 'sent' ? 'Görüntüle' : 'Aç'}{' '}
+                        <ChevronRight size={16} aria-hidden="true" />
                       </span>
                     </Link>
                   </li>
@@ -301,7 +302,7 @@ export default function ReportHistoryPage() {
                             to={`/teacher/reports/${item.class_course_id}/${item.week_id}`}
                             className="text-sm font-medium text-accent hover:underline"
                           >
-                            Aç
+                            {item.status === 'sent' ? 'Görüntüle' : 'Aç'}
                           </Link>
                         </td>
                       </tr>

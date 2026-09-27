@@ -106,8 +106,12 @@ export default function ReportEntryPage() {
             ? view
             : await teacherApi.openReport(classCourseId, weekId);
         if (cancelled) return;
+        // İki ayrı kilit kaynağı birleşir: hafta salt-okunur önizlemesi
+        // (`read_only`) + gönderilmiş rapor (öğretmen için `locked_for_teacher`).
+        // Admin `locked_for_teacher=false` alır → sent raporda düzenleyebilir.
+        const locked = data.read_only || data.locked_for_teacher;
         setPayload(data);
-        setReadOnly(data.read_only);
+        setReadOnly(locked);
         reportIdRef.current = data.report.id;
         originalDueRef.current = data.report.homework?.due_date ?? '';
         setTopic(data.report.topic_covered ?? '');
@@ -117,7 +121,8 @@ export default function ReportEntryPage() {
         setHomeworkAttachments(data.report.homework_attachments ?? []);
         setEntries(data.entries);
         // Otomatik kaydetme yalnızca gerçekten yazılabilir bir raporda çalışır.
-        readyRef.current = !data.read_only && data.report.id !== null;
+        // Kilitli raporda PUT hiç üretilmez (yalnızca `disabled` görünümü değil).
+        readyRef.current = !locked && data.report.id !== null;
       })
       .catch((err) => {
         if (!cancelled) {
@@ -316,7 +321,9 @@ export default function ReportEntryPage() {
 
   const { report } = payload;
   const isLastWeek = report.homework === null && dueDate === '';
-  const isCompleted = report.status !== 'draft';
+  // "Tamamlandı" banner'ı yalnızca `completed` (öğretmen düzenleyebilir) için;
+  // `sent` kendi banner'ını alır (spec §2) — ikisi asla üst üste görünmez.
+  const isCompleted = report.status === 'completed';
 
   const saveIndicator = readOnly
     ? null
@@ -349,7 +356,7 @@ export default function ReportEntryPage() {
             {returnLabel}
           </button>
           {saveIndicator}
-          {!isCompleted && !readOnly && (
+          {report.status === 'draft' && !readOnly && (
             <PrimaryButton onClick={handleComplete} disabled={completing}>
               {completing ? 'Tamamlanıyor…' : 'Raporu tamamla'}
             </PrimaryButton>
@@ -362,14 +369,23 @@ export default function ReportEntryPage() {
           Hafta tanımı hatalı — bu dersin günü hafta aralığının dışında. Yönetici
           haftanın tarih aralığını düzeltmeden rapor doldurulamaz.
         </p>
-      ) : (
-        readOnly && (
-          <p className="rounded-md border border-att-late/40 bg-att-late/5 px-3 py-2 text-sm text-att-late">
-            Bu hafta henüz başlamadı — yalnızca önizleme. Hafta başladığında rapor
-            doldurulabilir.
-          </p>
-        )
-      )}
+      ) : payload.locked_for_teacher ? (
+        <p className="rounded-md border border-status-sent/30 bg-status-sent/5 px-3 py-2 text-sm text-status-sent">
+          Bu rapor gönderildi; artık düzenlenemez. Düzeltme gerekiyorsa
+          yöneticinize başvurun.
+        </p>
+      ) : readOnly ? (
+        <p className="rounded-md border border-att-late/40 bg-att-late/5 px-3 py-2 text-sm text-att-late">
+          Bu hafta henüz başlamadı — yalnızca önizleme. Hafta başladığında rapor
+          doldurulabilir.
+        </p>
+      ) : report.status === 'sent' ? (
+        <p className="rounded-md border border-status-sent/30 bg-status-sent/5 px-3 py-2 text-sm text-status-sent">
+          Bu rapor gönderildi. Admin olarak düzenleyebilirsiniz; değişiklikler
+          kayıt altına alınır. Veliye iletilen kopya değişmez — gerekiyorsa
+          yeniden gönderin.
+        </p>
+      ) : null}
 
       {isCompleted && (
         <p className="rounded-md border border-status-completed/30 bg-status-completed/5 px-3 py-2 text-sm text-status-completed">

@@ -686,6 +686,37 @@ describe('POST /api/v1/teacher/reports/:id/complete', () => {
     expect(complete.status).toBe(403);
   });
 
+  it('sent rapor: entry/:id — öğretmen locked_for_teacher=true, admin false (spec §2)', async () => {
+    db.prepare(`UPDATE reports SET status = 'sent' WHERE id = ?`).run(reportId);
+
+    // Öğretmen: kilit bayrağı true → arayüz tüm alanları kapatır ve PUT üretmez.
+    const entryTeacher = await request(app)
+      .get(`/api/v1/teacher/reports/entry?class_course_id=t-cc-6&week_id=${WEEK2.id}`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(entryTeacher.status).toBe(200);
+    expect(entryTeacher.body.report.status).toBe('sent');
+    expect(entryTeacher.body.locked_for_teacher).toBe(true);
+
+    const byIdTeacher = await request(app)
+      .get(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${teacherToken}`);
+    expect(byIdTeacher.status).toBe(200);
+    expect(byIdTeacher.body.locked_for_teacher).toBe(true);
+
+    // Admin: aynı rapor düzenlenebilir kalır → kilit false.
+    const entryAdmin = await request(app)
+      .get(`/api/v1/teacher/reports/entry?class_course_id=t-cc-6&week_id=${WEEK2.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(entryAdmin.status).toBe(200);
+    expect(entryAdmin.body.locked_for_teacher).toBe(false);
+
+    const byIdAdmin = await request(app)
+      .get(`/api/v1/teacher/reports/${reportId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(byIdAdmin.status).toBe(200);
+    expect(byIdAdmin.body.locked_for_teacher).toBe(false);
+  });
+
   it('admin gönderilmiş (sent) raporu düzenleyebilir; snapshot değişmez (spec §2)', async () => {
     // Rapor sent durumda (önceki test bıraktı); idempotent olsun diye tekrar set.
     db.prepare(`UPDATE reports SET status = 'sent' WHERE id = ?`).run(reportId);
@@ -983,6 +1014,8 @@ describe('Gelecek hafta (henüz başlamamış) — salt-okunur önizleme + yazma
       .set('Authorization', `Bearer ${teacherToken}`);
     expect(res.status).toBe(200);
     expect(res.body.read_only).toBe(true);
+    // Önizleme her zaman `draft` → sent kilidi yok (kilit kaynağı yalnız hafta).
+    expect(res.body.locked_for_teacher).toBe(false);
     expect(res.body.report.id).toBeNull();
     expect(res.body.report.status).toBe('draft');
     expect(res.body.report.week.start_date).toBe(WEEK3.start);

@@ -125,6 +125,28 @@ describe('ReportHistoryPage — filtreler', () => {
     });
   });
 
+  it('sent satırda etiket "Görüntüle", completed satırda "Aç"', async () => {
+    const sent = { ...report('s'), status: 'sent' };
+    const completed = report('c');
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/teacher/reports/filters')) return ok(FILTERS);
+      return ok({ items: [sent, completed], total: 2, page: 1, pageSize: 20 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter>
+        <ReportHistoryPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Görüntüle')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Aç')).toBeInTheDocument();
+  });
+
   it('sonuç yoksa filtre mesajı gösterilir', async () => {
     const fetchMock = makeFetch();
     vi.stubGlobal('fetch', fetchMock);
