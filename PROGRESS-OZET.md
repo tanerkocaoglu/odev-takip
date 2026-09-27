@@ -128,6 +128,11 @@ rıza sürümleme, otomatik saklama süresi ve okuma audit log'u **ertelendi**;
    değiştirildi; eşleşmeyen/belirsiz kayıt kalmadı.
 3. **Aşama 6 kalanları:** veli trend grafiği, yıl sonu PDF özeti — önceliği
    belirlenmedi.
+4. **PASKAL sınıfı — üretim temizliği bekliyor:** yerel `app.db`'den köküyle
+   silindi (hard-delete; bkz. PROGRESS.md "PASKAL sınıfı yerel hard-delete").
+   Üretim (Render) için aynı akış (salt-okunur envanter → `cleanup-submissions
+   --execute` → satır silme script'i) henüz çalıştırılmadı. Ayrıca `seed.ts`
+   PASKAL'ı hâlâ üretir → `db:seed`/`db:reset` onu geri getirir (kod izi; ayrı iş).
 
 ## Bilinen ve belgelenmiş sınırlar
 

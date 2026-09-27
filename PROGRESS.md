@@ -5,6 +5,70 @@
 
 ---
 
+## PASKAL sınıfı yerel hard-delete (veri temizliği) ✅
+
+### Kapsam
+
+Video demo için açılmış `PASKAL` sınıfı yerel `backend/db/app.db`'den (yalnızca
+yerel; üretim/Render sonraya bırakıldı) köküyle silindi: sınıf + 2 ders ataması,
+4 öğrenci + 4 veli, 2 rapor + 6 satır + 2 ödev, 3 digest, 2 teslim + 10 dosya.
+Öğretmenler (Öğretmen 5, Öğretmen 6 — başka sınıflarda da ders veriyor)
+ve `audit_logs` **korundu**. Şema/migration/kod değişmedi.
+
+### Kararlar (kullanıcı onaylı)
+
+1. Soft-delete yetersiz (satır/`deleted_at` izi kalır, admin akışı aktif
+   enrollment+rapor nedeniyle zaten 409 verir) → **hard-delete**; `audit_logs`
+   korunur, yedekler kalır.
+2. Sayılan 3 öğrenci dışında DB'de 4. biri (**Örnek Öğrenci**, veli Örnek Veli) vardı; **o da silindi** (kullanıcı onayı).
+3. Dosyalar mevcut araçla (`cleanup-submissions --class PASKAL --execute`),
+   satırlar tek transaction'lık `node:sqlite` script'i ile; hedef **class id**
+   (isimle çözülür) ile, silme öncesi sayımlar yeniden doğrulanır.
+
+### Uygulama
+
+- `npm run db:backup` + `npm run cleanup-submissions -- --class PASKAL --execute`
+  → 10 dosya + 10 thumbnail diskten, 10 `submission_files` satırı; 2 teslime
+  `files_purged_at`.
+- Geçici `paskal-delete.mjs` (node:sqlite): `DRY` → `VALIDATE` (sil + ROLLBACK
+  ile FK sırası testi) → `MODE=EXECUTE`. FK sırası: `report_entries` →
+  `homework_attachments` → `submissions` → `homeworks` → `reports` →
+  `weekly_digests` → `enrollments` → `students` → `guardians` → `users` →
+  `class_courses` → `classes`.
+  - İlk denemede `submissions` adımı atlanmıştı → **FOREIGN KEY hatası +
+    ROLLBACK** (hiçbir satır silinmedi); düzeltilip yeniden çalıştırıldı.
+
+### Doğrulamalar
+
+- Silinen satırlar: `report_entries 6, homework_attachments 0, submissions 2,
+  homeworks 2, reports 2, weekly_digests 3, enrollments 4, students 4,
+  guardians 4, users 8, class_courses 2, classes 1`.
+- `PRAGMA foreign_key_check` → **boş**; PASKAL'a dair kalan satır → **0**.
+- Kod/şema değişmedi (typecheck/lint/test kapsam dışı — yalnızca veri).
+
+### Bilinen sınırlar
+
+- `seed.ts` PASKAL'ı hâlâ üretir → yerelde `db:seed`/`db:reset` geri getirir
+  (kod izi; ayrı iş). `backend/db/app.db` git'e girmez.
+- `audit_logs` (22 satır) korundu → `entity_id` öksüz (FK yok, zararsız).
+- `backend/backups/` içindeki yedekler eski PASKAL verisini içerir.
+- R2'de PASKAL nesnesi yoktu (hepsi `local`).
+
+### Etkilenen dosyalar
+
+```
+backend/db/app.db   (veri; git'e girmez)
+backend/uploads/    (10 dosya + 10 thumb; git'e girmez)
+backend/backups/    (yeni yedek(ler); git'e girmez)
+PROGRESS.md
+```
+
+### Commit
+
+Önerilen: "docs: PASKAL sınıfı yerel hard-delete kaydı (veri temizliği)."
+
+---
+
 ## Sent rapor öğretmen için salt-okunur: kilit bayrağı + arayüz ✅
 
 ### Sorun (keşif)
