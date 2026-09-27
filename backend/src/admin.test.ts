@@ -649,7 +649,7 @@ describe('Veli', () => {
     });
     expect(missingWhatsapp.status).toBe(400);
 
-    const search = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const search = await adminRequest('get', '/api/v1/admin/guardians?q=ornek+kisi+1');
     expect(search.body.total).toBe(1);
     expect((search.body.items as Array<{ full_name: string }>)[0].full_name).toBe(
       'Örnek Kişi 1',
@@ -657,7 +657,7 @@ describe('Veli', () => {
   });
 
   it('PATCH whatsapp_phone null yapılamaz; phone_secondary tek başına güncellenebilir', async () => {
-    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ornek+kisi+1');
     const guardian = (list.body.items as Array<{ id: string }>)[0];
 
     const cleared = await adminRequest('patch', `/api/v1/admin/guardians/${guardian.id}`).send({
@@ -674,7 +674,7 @@ describe('Veli', () => {
   });
 
   it('şifre sıfırlama sonrası eski token 401, yeni şifreyle giriş OK', async () => {
-    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ornek+kisi+1');
     const guardian = (list.body.items as Array<{ id: string; username: string }>)[0];
 
     const oldLogin = await request(app)
@@ -724,7 +724,7 @@ describe('Veli', () => {
     );
     expect(delGuardian.status).toBe(409);
 
-    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ali+veli');
+    const list = await adminRequest('get', '/api/v1/admin/guardians?q=ornek+kisi+1');
     const guardian = (list.body.items as Array<{ id: string }>)[0];
 
     const del = await adminRequest('delete', `/api/v1/admin/guardians/${guardian.id}`);
@@ -978,16 +978,16 @@ describe('Okullar + öğrenci okul / sınıf seviyesi (migration #6)', () => {
 
   it('okul oluşturur; Türkçe harf duyarsız arama; aynı ad 409', async () => {
     const created = await adminRequest('post', '/api/v1/admin/schools').send({
-      name: 'Örnek Okul 7',
+      name: 'Örnek Lise 7',
     });
     expect(created.status).toBe(201);
-    expect(created.body.name_normalized).toBe('istanbul lisesi');
+    expect(created.body.name_normalized).toBe('ornek lise 7');
 
-    const search = await adminRequest('get', '/api/v1/admin/schools?q=ISTANBUL');
+    const search = await adminRequest('get', '/api/v1/admin/schools?q=L%C4%B0SE');
     expect(search.body.items.length).toBe(1);
 
     const clash = await adminRequest('post', '/api/v1/admin/schools').send({
-      name: 'Örnek Okul 7',
+      name: 'Örnek Lise 7',
     });
     expect(clash.status).toBe(409);
   });

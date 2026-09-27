@@ -19,7 +19,7 @@ describe('normalizeTurkish', () => {
   });
 
   it('ASCII girişi değiştirmez', () => {
-    expect(normalizeTurkish('Ornek Kisi 8 123')).toBe('ahmet yilmaz 123');
+    expect(normalizeTurkish('Ornek Kisi 8 123')).toBe('ornek kisi 8 123');
   });
 
   it('boş giriş boş döner', () => {

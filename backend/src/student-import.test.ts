@@ -59,7 +59,7 @@ beforeAll(async () => {
   }
   db.prepare(
     `INSERT INTO schools (id, name, name_normalized, deleted_at)
-     VALUES ('sch-ataturk', 'Örnek Okul 1', 'ataturk ortaokulu', NULL)`,
+     VALUES ('sch-ataturk', 'Örnek Okul 1', 'ornek okul 1', NULL)`,
   ).run();
 
   const now = new Date().toISOString();
@@ -122,7 +122,7 @@ describe('Önizleme (dry_run)', () => {
 
   it('okul adı normalize eşleşir, yeni okul açmaz', async () => {
     const res = await importReq(
-      csv('Deniz,ÖKLİD,Veli,+90 555 222 33 44,ATATÜRK ORTAOKULU,7'),
+      csv('Deniz,ÖKLİD,Veli,+90 555 222 33 44,ÖRNEK OKUL 1,7'),
       true,
     );
     expect(res.body.summary.new_schools).toBe(0);
