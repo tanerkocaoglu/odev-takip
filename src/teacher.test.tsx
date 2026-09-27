@@ -589,6 +589,26 @@ describe('ReportEntryPage', () => {
     });
   });
 
+  it('kilitli sent + son hafta: yalnızca "gönderildi" banner\'ı, teslim tarihi çağrısı bastırılır', async () => {
+    const lockedLastWeek = {
+      ...REPORT,
+      report: { ...REPORT.report, status: 'sent', homework: null },
+      locked_for_teacher: true,
+    };
+    vi.stubGlobal('fetch', mockFetch(200, lockedLastWeek));
+    renderEntryPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/artık düzenlenemez/)).toBeInTheDocument();
+    });
+    // isLastWeek metni bastırıldı; "tamamlandı" banner'ı da çakışmıyor.
+    expect(
+      screen.queryByText(/Yılın son haftası — teslim tarihini siz belirleyin/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bu rapor tamamlandı/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Teslim tarihi')).toBeDisabled();
+  });
+
   it('varsayılan dönüş "Geri dön" (öğretmen)', async () => {
     vi.stubGlobal('fetch', mockFetch(200, REPORT));
     renderEntryPage();

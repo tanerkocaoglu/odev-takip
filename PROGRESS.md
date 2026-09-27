@@ -56,13 +56,14 @@ PUT çağırıyor, backend 403 dönüyor, yerel state değişmiş kalıyordu →
   2.3 sn beklendiğinde fetch çağrıları arasında **hiç `PUT` yok** (bileşen testi).
 - **Banner çakışması:** kilitli sent'te "Bu rapor tamamlandı" **yoktur** (test).
 
-### Bilinen sınır (ertelendi)
+### isLastWeek banner'ı kilitliyken bastırıldı (tamamlandı)
 
-- Kilitli (`locked_for_teacher`) veya salt-okunur (`read_only`) raporda
-  `isLastWeek` banner'ı ("Yılın son haftası — teslim tarihini siz belirleyin")
-  hâlâ görünebilir. Yazma zaten kapalı olduğundan bu kozmetik bir tutarsızlıktır
-  (eyleme davet eden ama uygulanamayan bir uyarı). **Acil değil**, ayrı küçük bir
-  iş olarak ertelendi.
+- `isLastWeek` banner'ı ("Yılın son haftası — teslim tarihini siz belirleyin")
+  yalnızca **yazılabilir** raporda gösterilir: `readOnly`
+  (`locked_for_teacher` **veya** hafta `read_only`/aralık-hatalı) iken bastırılır.
+  Banner önceliği artık: `week_range_invalid > locked_for_teacher > read_only >
+  isLastWeek > completed`. Admin normal (başlamış hafta) davranışı **değişmedi**.
+  Test: `kilitli sent + son hafta: yalnızca "gönderildi" banner'ı…` (frontend 149/149).
 
 ### Etkilenen dosyalar
 

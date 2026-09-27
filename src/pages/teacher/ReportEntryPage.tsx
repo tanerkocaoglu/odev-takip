@@ -393,7 +393,10 @@ export default function ReportEntryPage() {
         </p>
       )}
 
-      {isLastWeek && (
+      {/* "Teslim tarihini siz belirleyin" yalnızca yazılabilir raporda anlamlı:
+          kilitli (locked_for_teacher) ya da hafta salt-okunur/aralık-hatalıyken
+          (`readOnly`) bastırılır (banner önceliğinde isLastWeek en altta). */}
+      {isLastWeek && !readOnly && (
         <p className="rounded-md border border-amber/40 bg-amber/5 px-3 py-2 text-sm text-amber">
           Yılın son haftası — teslim tarihini siz belirleyin.
         </p>
