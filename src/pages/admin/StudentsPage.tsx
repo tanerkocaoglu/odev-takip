@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { ClassItem, Guardian, School, Student, StudentImportResponse, Week } from '../../types';
 import { GRADE_LEVELS, GRADE_LEVEL_LABELS } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
+import { defaultSelectableWeekId, isWeekPast } from '../../utils/weeks';
 import { useList } from '../../hooks/useList';
 import Modal from '../../components/admin/Modal';
 import Pagination from '../../components/admin/Pagination';
@@ -33,6 +34,7 @@ export default function StudentsPage() {
   const [password, setPassword] = useState('');
   const [guardianId, setGuardianId] = useState('');
   const [classId, setClassId] = useState('');
+  const [createWeekId, setCreateWeekId] = useState('');
   const [schoolId, setSchoolId] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [guardianQuery, setGuardianQuery] = useState('');
@@ -74,6 +76,7 @@ export default function StudentsPage() {
   // ---------- CSV ile toplu ekleme ----------
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importWeekId, setImportWeekId] = useState('');
   const [importPassword, setImportPassword] = useState('');
   const [importResult, setImportResult] = useState<StudentImportResponse | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -129,6 +132,7 @@ export default function StudentsPage() {
     setGuardianId('');
     setGuardianQuery('');
     setGuardianResults([]);
+    setCreateWeekId(defaultSelectableWeekId(weeks));
     setSchoolId('');
     setGradeLevel('');
     setNewSchoolOpen(false);
@@ -150,6 +154,7 @@ export default function StudentsPage() {
         password,
         school_id: schoolId || null,
         grade_level: gradeLevel || null,
+        week_id: createWeekId || undefined,
       });
       setFormOpen(false);
       await reload();
@@ -257,6 +262,7 @@ export default function StudentsPage() {
   // ---------- CSV ile toplu ekleme ----------
   function openImport() {
     setImportFile(null);
+    setImportWeekId(defaultSelectableWeekId(weeks));
     setImportPassword('');
     setImportResult(null);
     setImportError(null);
@@ -280,7 +286,7 @@ export default function StudentsPage() {
     setImportResult(null);
     setImportSuccess(null);
     try {
-      setImportResult(await adminApi.students.importPreview(importFile));
+      setImportResult(await adminApi.students.importPreview(importFile, importWeekId || undefined));
     } catch (err) {
       setImportError(err instanceof ApiClientError ? err.message : 'Dosya doğrulanamadı.');
     } finally {
@@ -293,7 +299,11 @@ export default function StudentsPage() {
     setImportSubmitting(true);
     setImportError(null);
     try {
-      const res = await adminApi.students.importCommit(importFile, importPassword);
+      const res = await adminApi.students.importCommit(
+        importFile,
+        importPassword,
+        importWeekId || undefined,
+      );
       setImportResult(res);
       if (res.committed) {
         setImportSuccess(
@@ -320,6 +330,17 @@ export default function StudentsPage() {
     } finally {
       setExporting(false);
     }
+  }
+
+  /** Hafta seçici seçenekleri — bitmiş haftalar seçilemez (spec §3.1/§5.6). */
+  function renderWeekOptions() {
+    if (weeks.length === 0) return <option value="">Hafta tanımlı değil</option>;
+    return weeks.map((w) => (
+      <option key={w.id} value={w.id} disabled={isWeekPast(w)}>
+        {w.label}
+        {isWeekPast(w) ? ' (geçmiş)' : ''}
+      </option>
+    ));
   }
 
   async function handleDelete(student: Student) {
@@ -492,6 +513,20 @@ export default function StudentsPage() {
               ))}
             </select>
           </Field>
+          <Field label="Başlangıç haftası" htmlFor="st-week">
+            <select
+              id="st-week"
+              value={createWeekId}
+              onChange={(e) => setCreateWeekId(e.target.value)}
+              className={inputClass}
+            >
+              {renderWeekOptions()}
+            </select>
+          </Field>
+          <p className="text-xs text-muted">
+            Öğrenci seçilen haftadan itibaren sınıf listelerinde ve raporlarda görünür.
+            Geçmiş haftalar seçilemez.
+          </p>
           <Field label="Okul" htmlFor="st-school">
             <div className="flex gap-2">
               <select
@@ -782,6 +817,19 @@ export default function StudentsPage() {
               className="text-sm text-text"
             />
           </div>
+          <Field label="Başlangıç haftası (tüm grup için)" htmlFor="imp-week">
+            <select
+              id="imp-week"
+              value={importWeekId}
+              onChange={(e) => setImportWeekId(e.target.value)}
+              className={inputClass}
+            >
+              {renderWeekOptions()}
+            </select>
+          </Field>
+          <p className="text-xs text-muted">
+            Dosyadaki tüm öğrenciler bu haftadan itibaren aktif olur. Geçmiş haftalar seçilemez.
+          </p>
           <Field
             label="Yeni öğrenci/veliler için ortak başlangıç şifresi"
             htmlFor="imp-pass"

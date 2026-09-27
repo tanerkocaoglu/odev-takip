@@ -2,7 +2,7 @@
 
 > `PROGRESS.md`'nin kısa hâli. Ayrıntılı kayıtlar (doğrulama dökümleri, dosya
 > listeleri) `PROGRESS.md`'dedir; bu dosya planlama ve karar verme içindir.
-> Son güncelleme: 2026-09-26.
+> Son güncelleme: 2026-09-27.
 
 ---
 
@@ -12,11 +12,14 @@
 - Aşama 6'nın büyük kısmı tamamlandı (aşağıda).
 - Denetim turu kapandı: tüm bulgular (#3, #6, #7, #8, #9, NOT NULL borcu,
   `routes/admin.ts` bölünmesi) ve bağımlılık grupları 1–4 kapatıldı.
-- Son işler: admin "Haftalar" ekranında satır bazlı tarih **"Düzenle"**
+- Son işler: **sent rapor öğretmen için salt-okunur** (yeni `locked_for_teacher`
+  bayrağı + birleşik arayüz kilidi + "gönderildi" banner'ı; admin serbest kalır);
+  admin "Haftalar" ekranında satır bazlı tarih **"Düzenle"**
   (`PATCH /admin/weeks/:id`); "bugün" artık **Europe/Istanbul** (`localTodayISO`
-  UTC kayması giderildi — hafta başlangıcında "henüz başlamadı" banner'ı
-  düzeldi).
-- Son doğrulama (2026-09-26): backend **450/450**, frontend **143/143** yeşil;
+  UTC kayması giderildi); yeni öğrenci + CSV toplu eklemede **başlangıç
+  haftası** seçimi (enrollment `start_date` artık bugün değil, seçilen/aktif
+  haftanın başlangıcı; geçmiş hafta seçilemez).
+- Son doğrulama (2026-09-27): backend **460/460**, frontend **148/148** yeşil;
   `typecheck` + `lint` temiz. Şema sürümü: **migration #13**.
 
 ## Aşama durumu
@@ -68,6 +71,10 @@
 - Göreli gün sırası her haftanın gerçek `start_date`'inden türetilir
   (Cumartesi koda sabit yazılmaz). Tarihler ISO 8601 saklanır.
 - "Bugün" `Europe/Istanbul`'a göre hesaplanır (`localTodayISO`).
+- **Enrollment başlangıcı:** yeni öğrenci (tekil + CSV) admin'in seçtiği haftanın
+  `start_date`'inden başlar; seçim yoksa aktif haftanın başlangıcı. Geçmiş
+  (bitmiş) hafta **seçilemez** (backend 400). CSV'de tüm batch tek haftadan.
+  Şema değişmez — kural uygulama katmanında (`services/enrollmentStart.ts`).
 - Hafta etiketi backend'de tarihten türetilir (`gg.aa - gg.aa.yyyy`); tarih
   değişince yeniden üretilir. Admin yalnızca tarihi düzenler, `week_no` sabit.
 - Başlamamış hafta: öğretmen rapor girişinde salt-okunur önizleme (DB'ye
@@ -81,7 +88,10 @@
   yapılmaması içindir.
 
 **Raporlar ve digest**
-- `sent` rapor: öğretmen düzenleyemez (403), admin düzenleyebilir.
+- `sent` rapor: öğretmen düzenleyemez (403), admin düzenleyebilir. Arayüz
+  bunu `locked_for_teacher` bayrağıyla uygular (hafta `read_only`'den ayrı):
+  öğretmende tüm alanlar baştan kapalı + "gönderildi" banner'ı, autosave hiç
+  tetiklenmez; admin `locked_for_teacher=false` alır, düzenlemeye devam eder.
 - Geri çekilmiş + gönderilmemiş digest'te "Düzenle" görünür; yeniden gönderim
   elle ("Yeniden gönder"). Diğer öğrencilerin snapshot'larına dokunulmaz.
 - Veride konum/sınıf gibi bilgiler satırda saklanır, okuma sırasında yeniden

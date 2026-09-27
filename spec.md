@@ -362,6 +362,14 @@ CREATE INDEX idx_enrollments_class ON enrollments(class_id, end_date);
 > Sınıf değişikliği hafta ortasında yapılmaz; hafta sınırında yapılır.
 > Eski kayıt kapatılır, yenisi açılır. **Geçmiş raporlar silinmez ve
 > öğrencinin o tarihteki sınıfına bağlı kalır.**
+>
+> **Başlangıç haftası (tekil + CSV):** Yeni bir öğrencinin `start_date`'i
+> "bugün" değil, admin'in seçtiği **haftanın `start_date`'idir**; hafta
+> seçilmezse aktif haftanın başlangıcı (bugünü kapsayan, yoksa en erken
+> gelecek hafta) kullanılır. Böylece hafta ortasında yapılan kayıt, öğrenciyi
+> içinde bulunduğumuz haftanın raporuna doğru şekilde sokar. **Bitmiş
+> (`end_date < bugün`) bir hafta seçilemez** — admin yine de seçerse uç
+> `400 VALIDATION_ERROR` döner. Geçmişe dönük enrollment oluşturulmaz.
 
 ### 3.2 Rapor tabloları
 
@@ -1011,6 +1019,15 @@ girilir ve o işlemde oluşturulan **tüm** yeni öğrenci + velilere uygulanır
 şifre sütunu yoktur. Hash bir kez hesaplanır (spec §2.1 otomatik `username` +
 admin'in girdiği başlangıç şifresi kuralının toplu hali).
 
+**Başlangıç haftası:** Import ekranının üstünde, **tüm batch için geçerli tek**
+bir hafta seçici vardır (CSV'ye yeni sütun eklenmez — dönem ortasında gelen grup
+zaten aynı haftadan başlar). Dosyadaki her öğrencinin `enrollments.start_date`'i
+seçilen haftanın `start_date`'idir; seçilmezse aktif haftanın başlangıcı
+(§3.1). **Bitmiş hafta önizlemede de (`dry_run`) reddedilir**: uç
+`400 VALIDATION_ERROR` döner, hiçbir kayıt yazılmaz. Bulunamayan veya başka
+eğitim yılına ait bir hafta da reddedilir; hafta hiç seçilmezse aktif haftanın
+başlangıcı uygulanır.
+
 **Uçlar:**
 - `POST /admin/students/import?dry_run=true` — dosyayı doğrular, **hiçbir şey
   yazmaz**; özet + hata/uyarı listesi döner.
@@ -1106,7 +1123,9 @@ görünen belge tarayıcı tarafında PNG'ye çevrilip indirilir.
   öğretmene toplu devir, tek transaction + audit; devir tamamlanınca öğretmen
   silinebilir (409 → 204)
 - Öğrenci ve veli yönetimi, sınıf atama (enrollment) — 200 kayıt olduğu için
-  arama (`full_name_normalized`) ve sayfalama zorunlu; öğrenci listesinde
+  arama (`full_name_normalized`) ve sayfalama zorunlu; yeni öğrenci formunda ve
+  **"CSV ile toplu ekle"** ekranında **"Başlangıç haftası"** seçici (varsayılan
+  aktif hafta, bitmiş haftalar seçilemez — §3.1/§5.6); öğrenci listesinde
   **"CSV ile toplu ekle"** (şablon + önizleme + hepsi-ya-da-hiçbiri) ve
   **"CSV indir"**; veli listesinde **"CSV indir"** (§5.6/§5.7)
 - Raporlar / öğrenciler / veliler listelerinde filtreli **"CSV indir"**

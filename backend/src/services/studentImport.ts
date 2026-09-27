@@ -371,14 +371,16 @@ export function prepareImport(text: string): {
 
 /**
  * Planı tek transaction'da yazar (hepsi ya da hiçbiri). Ortak şifrenin hash'i
- * dışarıda bir kez hesaplanıp verilir. Hata olursa `ROLLBACK` + fırlatır.
+ * dışarıda bir kez hesaplanıp verilir. `startDate`, admin'in seçtiği haftadan
+ * çözülen enrollment başlangıcıdır; tüm batch aynı tarihten başlar (spec §5.6).
+ * Hata olursa `ROLLBACK` + fırlatır.
  */
 export function commitImport(
   plan: ImportPlan,
   passwordHash: string,
+  startDate: string,
 ): { created_students: number; created_guardians: number; created_schools: number } {
   const now = new Date().toISOString();
-  const today = now.slice(0, 10);
 
   db.exec('BEGIN');
   try {
@@ -446,7 +448,7 @@ export function commitImport(
       db.prepare(
         `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
          VALUES (?, ?, ?, ?, NULL)`,
-      ).run(enrollmentId, studentId, student.classId, today);
+      ).run(enrollmentId, studentId, student.classId, startDate);
     }
 
     db.exec('COMMIT');

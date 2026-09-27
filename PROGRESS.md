@@ -5,6 +5,155 @@
 
 ---
 
+## Sent rapor öğretmen için salt-okunur: kilit bayrağı + arayüz ✅
+
+### Sorun (keşif)
+
+Backend kuralı (spec §2: `sent` → öğretmen 403) sağlam ve testliydi; guard sırası
+da doğruydu (sent kontrolü `assertWeekStarted`/`assertClassDayInWeek`'ten önce).
+Ancak `read_only` bayrağı yalnızca hafta durumunu
+(`!hasWeekStarted || rangeInvalid`) taşıdığı için öğretmen gönderilmiş bir raporu
+açtığında tüm alanlar **açık** görünüyordu. Öğretmen yazıyor, debounce autosave
+PUT çağırıyor, backend 403 dönüyor, yerel state değişmiş kalıyordu →
+"Kaydedilemedi" (sessiz veri kaybı riski).
+
+### Kararlar (kullanıcı onaylı)
+
+1. **İki ayrı bayrak:** mevcut `read_only` (hafta/aralık) aynen kalır; yeni
+   `locked_for_teacher` (`status === 'sent' && role !== 'admin'`) eklenir.
+   Frontend ikisini OR'lar, banner'lar ayrışır.
+2. `ReportHistoryPage` sent satırında link **kalır**, etiket **"Görüntüle"**.
+3. Sent'te tek banner: öğretmen → "gönderildi, artık düzenlenemez"; admin →
+   bilgi banner'ı. "Tamamlandı" banner'ı yalnızca `completed` için.
+
+### Uygulama
+
+- **`routes/teacher.ts`:** `buildReportPayload(reportId, viewerRole)` →
+  `locked_for_teacher`; 6 çağrı `user.role` geçirir. `buildEntryPreview`
+  `locked_for_teacher: false`. Şema/migration yok.
+- **Frontend:** `types.ts` alanı; `ReportEntryPage` birleşik kilit
+  (`read_only || locked_for_teacher`) → autosave kapanır + tüm alanlar disabled;
+  banner önceliği `week_range_invalid > locked_for_teacher > read_only > admin
+  sent`; "Raporu tamamla" artık yalnızca `status === 'draft'`; `isCompleted`
+  yalnız `completed`. `ReportHistoryPage` "Görüntüle"/"Aç".
+
+### Doğrulamalar
+
+- **Statik:** backend + kök `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **460/460** (40 dosya; +1: sent entry/:id
+  `locked_for_teacher` öğretmen `true` / admin `false`), frontend **148/148**
+  (24 dosya; +3: kilitli sent, admin sent, "Görüntüle" etiketi).
+- **Canlı kanıt (izole `DB_PATH`+`UPLOADS_DIR` + gerçek Express + gerçek HTTP):
+  7/7 PASS.** Bugün 2026-09-27; başlamış hafta (21–27 Eyl), sent rapor:
+  - A öğretmen entry `locked_for_teacher=true`; B öğretmen PUT **403**.
+  - C admin entry `locked_for_teacher=false`; D admin PUT **200** (`sent` kalır,
+    içerik değişir).
+  - E admin düzenlemesi sonrası öğretmen hâlâ **kilitli** (`true`, `sent`);
+    F öğretmen PUT yine **403**; G içerik kalıcı.
+  - Gerçek `backend/db/app.db` **değişmedi** (323 584 bayt, mtime
+    `27.09.2026 14:00:25`); temp DB/uploads silindi.
+- **"Autosave hiç tetiklenmez":** kilitli sent raporda bir alana `change` gönderilip
+  2.3 sn beklendiğinde fetch çağrıları arasında **hiç `PUT` yok** (bileşen testi).
+- **Banner çakışması:** kilitli sent'te "Bu rapor tamamlandı" **yoktur** (test).
+
+### Etkilenen dosyalar
+
+```
+backend/src/routes/teacher.ts               (locked_for_teacher + rol argümanı)
+backend/src/teacher.test.ts                 (+1 test)
+src/types.ts                                (locked_for_teacher)
+src/pages/teacher/ReportEntryPage.tsx       (birleşik kilit + banner + tamamla=draft)
+src/pages/teacher/ReportHistoryPage.tsx     ("Görüntüle")
+src/teacher.test.tsx                        (+2 test)
+src/teacher-history.test.tsx                (+1 test)
+PROGRESS.md   PROGRESS-OZET.md
+```
+
+### Commit
+
+Önerilen: "sent rapor öğretmen için salt-okunur: `locked_for_teacher` bayrağı +
+arayüz kilidi/banner (spec §2)."
+
+---
+
+## Öğrenci başlangıç haftası — tekil + CSV (bugün → seçilen hafta) ✅
+
+### Sorun
+
+`POST /admin/students` ve CSV toplu içe aktarma, `enrollments.start_date`'i her
+zaman **bugün**e yazıyordu. Hafta ortasında eklenen öğrenci (bugün, hafta
+başlangıcından sonra) §5.1'deki `start_date <= hafta başı` kuralını sağlamadığı
+için **içinde bulunulan haftanın raporuna/digest'ine girmiyordu**; admin'in
+"hangi haftadan itibaren aktif olsun" diye seçebileceği bir alan yoktu.
+
+### Kararlar (kullanıcı onaylı)
+
+1. Hafta seçici **tüm tanımlı haftalar**; bitmiş haftalar pasif.
+2. Minimal ek: mevcut forma bir `<select>` + CSV modalının üstüne bir `<select>`;
+   mevcut `defaultWeekId` deseni paylaşılan util'e taşındı.
+3. Geçmiş (bitmiş) hafta seçilemez: UI'da devre dışı, backend'de 400
+   `VALIDATION_ERROR`. Varsayılan = aktif haftanın **gerçek başlangıcı** (bugün değil).
+4. CSV'ye yeni sütun yok; tüm batch için tek hafta (dönem ortasında gelen grup
+   zaten aynı haftadan başlar).
+
+### Uygulama
+
+- **`services/enrollmentStart.ts` (yeni):** `resolveEnrollmentStartDate(weekId,
+  expectedYearId)` — seçilen haftayı yükler, aynı eğitim yılı kontrolü, bitmiş
+  hafta reddi; seçim yoksa aktif haftanın başlangıcı (`currentDigestWeek`), o da
+  yoksa bugün.
+- **`routes/admin/students.ts`:** `studentSchema.week_id` (opsiyonel);
+  `start_date` artık resolver'dan (`today` kaldırıldı).
+- **`services/studentImport.ts`:** `commitImport(plan, hash, startDate)`;
+  `routes/admin/studentImport.ts`: body'den `week_id`, önizlemede (`dry_run`) de
+  doğrulanır; audit diff'ine `start_date`/`week_id` eklendi.
+- **Frontend:** `src/utils/weeks.ts` (yeni; `defaultWeekId` taşındı +
+  `isWeekPast`/`defaultSelectableWeekId`); `StudentsPage` yeni öğrenci formu ve
+  CSV modalına "Başlangıç haftası" seçici; `api.ts` imzaları.
+- `HomeworkSummaryPage` yerel `defaultWeekId` kaldırıldı, util'den alıyor.
+- **Şema/migration yok** (kural uygulama katmanında). spec §3.1/§5.6/§6.
+
+### Doğrulamalar
+
+- **Statik:** kök + backend `typecheck` ✅, kök `lint` ✅.
+- **Testler:** backend **459/459** (40 dosya; yeni `enrollment-start.test.ts`
+  +8), frontend **145/145** (24 dosya; `csv.test.tsx` +2).
+- **Canlı kanıt (izole `DB_PATH`+`UPLOADS_DIR` + gerçek Express + gerçek HTTP):
+  20/20 PASS.** Bugün 2026-09-27; aktif hafta 26.09–02.10 (Cumartesi başlangıç):
+  - Tekil varsayılan → `start=2026-09-26` (bugün 27.09 **DEĞİL**); gelecek hafta
+    seçilince `start=2026-10-03`; bitmiş hafta → **400**, kayıt yok.
+  - CSV grup (aktif hafta) → iki öğrenci de `start=2026-09-26`; bitmiş hafta →
+    **400**, hiç yazılmadı.
+  - Aktif hafta raporu (`POST /teacher/reports`) `entries`: varsayılan + CSV
+    öğrencileri **var**, gelecek hafta öğrencisi **yok**; gelecek hafta raporu
+    **403**; gelecek öğrenci gelecek haftada rapor sorgusuyla **aktif**.
+  - Gerçek `backend/db/app.db` **değişmedi** (323 584 bayt, mtime
+    `27.09.2026 14:00:25`); geçici betik/temp DB silindi.
+
+### Etkilenen dosyalar
+
+```
+backend/src/services/enrollmentStart.ts        (yeni)
+backend/src/routes/admin/students.ts           (studentSchema.week_id + resolver)
+backend/src/routes/admin/studentImport.ts      (week_id + startDate + audit)
+backend/src/services/studentImport.ts          (commitImport startDate)
+backend/src/enrollment-start.test.ts           (yeni; 8 test)
+src/utils/weeks.ts                             (yeni; defaultWeekId + isWeekPast)
+src/pages/admin/StudentsPage.tsx               (create + CSV hafta seçici)
+src/pages/admin/HomeworkSummaryPage.tsx        (defaultWeekId util'den)
+src/services/api.ts                            (week_id imzaları)
+src/csv.test.tsx                               (+2 test)
+spec.md                                        (§3.1, §5.6, §6)
+PROGRESS.md
+```
+
+### Commit
+
+Önerilen: "öğrenci başlangıç haftası: enrollment `start_date` bugün değil
+seçilen haftanın başlangıcı (tekil + CSV)."
+
+---
+
 ## PROGRESS.md — eksik commit kayıtları tamamlandı ✅
 
 `git log --oneline --all` ile eşleştirilerek **42 placeholder** gerçek kısa

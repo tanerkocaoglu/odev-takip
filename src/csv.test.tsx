@@ -39,6 +39,36 @@ const STUDENTS = {
   pageSize: 20,
 };
 
+const WEEKS = [
+  {
+    id: 'w-past',
+    academic_year_id: 'y',
+    week_no: 1,
+    start_date: '2000-01-01',
+    end_date: '2000-01-07',
+    label: '01.01 - 07.01.2000',
+  },
+  {
+    id: 'w-future',
+    academic_year_id: 'y',
+    week_no: 2,
+    start_date: '2099-01-01',
+    end_date: '2099-01-07',
+    label: '01.01 - 07.01.2099',
+  },
+];
+
+const GUARDIAN = {
+  id: 'g1',
+  user_id: 'u1',
+  full_name: 'Örnek Kişi 5',
+  username: 'veli1',
+  whatsapp_phone: '+905001112233',
+  phone_secondary: null,
+  consent_at: null,
+  child_count: 1,
+};
+
 const EMPTY_SUMMARY = {
   new_students: 0,
   new_guardians: 0,
@@ -55,9 +85,10 @@ function studentsFetch() {
     const method = (init?.method ?? 'GET').toUpperCase();
     if (url.includes('/admin/academic-years')) return json({ items: [{ id: 'y', name: '2026-2027', is_active: 1 }] });
     if (url.includes('/admin/classes')) return json({ items: [{ id: 'c1', name: 'ÖKLİD', academic_year_id: 'y' }] });
-    if (url.includes('/admin/weeks')) return json({ items: [] });
+    if (url.includes('/admin/weeks')) return json({ items: WEEKS });
     if (url.includes('/admin/schools')) return json({ items: [] });
-    if (url.includes('/admin/guardians')) return json({ items: [], total: 0, page: 1, pageSize: 10 });
+    if (url.includes('/admin/guardians'))
+      return json({ items: [GUARDIAN], total: 1, page: 1, pageSize: 10 });
     if (url.includes('/admin/students/import')) return json(previewResponse);
     if (url.includes('/admin/students/export')) {
       return Promise.resolve({
@@ -175,12 +206,80 @@ describe('StudentsPage — CSV ile toplu ekle', () => {
     fireEvent.click(commitBtn);
 
     expect(await screen.findByText('2 öğrenci oluşturuldu.')).toBeInTheDocument();
+    const previewCall = fetchMock.mock.calls.find(
+      ([u, i]) => String(u).includes('dry_run=true') && i?.method === 'POST',
+    );
+    expect((previewCall![1]!.body as FormData).get('week_id')).toBe('w-future');
+
     const commitCall = fetchMock.mock.calls.find(
       ([u, i]) => String(u).includes('dry_run=false') && i?.method === 'POST',
     );
     expect(commitCall).toBeDefined();
     const body = commitCall![1]!.body as FormData;
     expect(body.get('password')).toBe('ortak123');
+    expect(body.get('week_id')).toBe('w-future');
+  });
+
+  it('başlangıç haftası seçici varsayılan aktif haftadır; geçmiş hafta devre dışı', async () => {
+    vi.stubGlobal('fetch', studentsFetch());
+
+    render(
+      <MemoryRouter>
+        <StudentsPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'CSV ile toplu ekle' })).toBeEnabled(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'CSV ile toplu ekle' }));
+    const select = screen.getByLabelText('Başlangıç haftası (tüm grup için)') as HTMLSelectElement;
+    expect(select.value).toBe('w-future');
+    const pastOption = screen.getByRole('option', {
+      name: /01\.01 - 07\.01\.2000/,
+    }) as HTMLOptionElement;
+    expect(pastOption.disabled).toBe(true);
+  });
+});
+
+describe('StudentsPage — yeni öğrenci başlangıç haftası', () => {
+  it('varsayılan aktif haftadır ve oluşturmada week_id gönderilir', async () => {
+    const fetchMock = studentsFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <MemoryRouter>
+        <StudentsPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Yeni öğrenci' })).toBeEnabled(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yeni öğrenci' }));
+    const weekSelect = screen.getByLabelText('Başlangıç haftası') as HTMLSelectElement;
+    expect(weekSelect.value).toBe('w-future');
+
+    fireEvent.change(screen.getByLabelText('Ad soyad'), {
+      target: { value: 'Yeni Öğrenci' },
+    });
+    fireEvent.change(screen.getByLabelText('Veli (arayın ve seçin)'), {
+      target: { value: 'Ayşe' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Örnek Kişi 5/ }));
+    fireEvent.change(screen.getByLabelText(/Başlangıç şifresi/), {
+      target: { value: 'sifre123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Öğrenci oluştur' }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(
+        ([u, i]) => String(u).endsWith('/admin/students') && i?.method === 'POST',
+      );
+      expect(createCall).toBeDefined();
+      const body = JSON.parse(createCall![1]!.body as string) as { week_id?: string };
+      expect(body.week_id).toBe('w-future');
+    });
   });
 });
 

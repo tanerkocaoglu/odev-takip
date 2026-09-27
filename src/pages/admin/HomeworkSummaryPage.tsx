@@ -12,6 +12,7 @@ import { toBlob } from 'html-to-image';
 import { ClipboardList, Download } from 'lucide-react';
 import type { ClassItem, HomeworkSummary, Week } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
+import { defaultWeekId } from '../../utils/weeks';
 import HomeworkSummarySheet from '../../components/admin/HomeworkSummarySheet';
 import {
   EmptyState,
@@ -21,17 +22,6 @@ import {
   PageTitle,
   PrimaryButton,
 } from '../../components/admin/ui';
-
-/** Yıl başlamadıysa en erken haftaya, aksi hâlde "şu anki" haftaya düşer. */
-function defaultWeekId(weeks: Week[]): string {
-  if (weeks.length === 0) return '';
-  const today = new Date();
-  const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-    today.getDate(),
-  ).padStart(2, '0')}`;
-  const current = [...weeks].reverse().find((w) => w.start_date <= todayISO);
-  return (current ?? weeks[0]).id;
-}
 
 /** Dosya adı için Türkçe karakterleri ASCII'ye indirger. */
 function fileSlug(name: string): string {

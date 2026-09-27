@@ -5,10 +5,12 @@
 
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { db } from '../../db/index.js';
 import { AppError } from '../../errors.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { hashPassword } from '../../utils/hash.js';
 import { writeAuditLog } from '../../services/audit.js';
+import { resolveEnrollmentStartDate } from '../../services/enrollmentStart.js';
 import { rateLimit } from '../../middleware/rateLimit.js';
 import { csvUploadSingle } from '../../middleware/upload.js';
 import {
@@ -54,6 +56,17 @@ router.post(
       throw new AppError('VALIDATION_ERROR', 400, 'CSV dosyası seçilmedi.');
     }
 
+    // Tüm batch aynı haftadan başlar (spec §5.6). Geçmiş/başka yıla ait hafta
+    // önizlemede de reddedilir; hiç seçilmezse aktif haftanın başlangıcı.
+    const weekId =
+      typeof req.body?.week_id === 'string' && req.body.week_id.trim()
+        ? req.body.week_id.trim()
+        : undefined;
+    const activeYear = db
+      .prepare(`SELECT id FROM academic_years WHERE is_active = 1 LIMIT 1`)
+      .get() as { id: string } | undefined;
+    const startDate = resolveEnrollmentStartDate(weekId, activeYear?.id);
+
     const { preview, plan } = prepareImportFromBuffer(file.buffer);
     const base = {
       dry_run: dryRun,
@@ -90,14 +103,14 @@ router.post(
     }
 
     const passwordHash = await hashPassword(password);
-    const created = commitImport(plan, passwordHash);
+    const created = commitImport(plan, passwordHash, startDate);
 
     writeAuditLog({
       actorId: req.user!.id,
       action: 'student.import',
       entityType: 'student_import',
       entityId: randomUUID(),
-      diff: { ...preview.summary, created },
+      diff: { ...preview.summary, start_date: startDate, week_id: weekId ?? null, created },
     });
 
     res.status(201).json({ ...base, committed: true, created });

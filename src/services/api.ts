@@ -309,6 +309,8 @@ export const adminApi = {
       password: string;
       school_id?: string | null;
       grade_level?: string | null;
+      /** Öğrencinin aktif olacağı ilk hafta (spec §3.1/§5.6). */
+      week_id?: string;
     }) =>
       apiFetch<Student>('/admin/students', {
         method: 'POST',
@@ -343,19 +345,21 @@ export const adminApi = {
     downloadImportTemplate: () =>
       downloadCsv('/admin/students/import/template', 'ogrenci-ice-aktarma-sablonu.csv'),
     /** CSV'yi doğrular, hiçbir şey yazmaz; özet + hata/uyarı döner. */
-    importPreview: (file: File) => {
+    importPreview: (file: File, weekId?: string) => {
       const form = new FormData();
       form.append('file', file);
+      if (weekId) form.append('week_id', weekId);
       return apiFetch<StudentImportResponse>('/admin/students/import?dry_run=true', {
         method: 'POST',
         body: form,
       });
     },
     /** CSV'yi yeniden doğrulayıp tek transaction'da kaydeder (hepsi ya da hiçbiri). */
-    importCommit: (file: File, password: string) => {
+    importCommit: (file: File, password: string, weekId?: string) => {
       const form = new FormData();
       form.append('file', file);
       form.append('password', password);
+      if (weekId) form.append('week_id', weekId);
       return apiFetch<StudentImportResponse>('/admin/students/import?dry_run=false', {
         method: 'POST',
         body: form,

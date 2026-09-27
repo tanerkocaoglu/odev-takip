@@ -18,6 +18,7 @@ import { parsePagination, paged } from '../../utils/pagination.js';
 import { getPreviousWeek, type WeekRecord } from '../../utils/weeks.js';
 import { prevDay } from '../../utils/time.js';
 import { studentsExportCsv } from '../../services/csvExport.js';
+import { resolveEnrollmentStartDate } from '../../services/enrollmentStart.js';
 import { resetPasswordSchema, sendCsv } from './shared.js';
 
 const router = Router();
@@ -31,6 +32,9 @@ const studentSchema = z.object({
   password: z.string().min(6, 'Şifre en az 6 karakter olmalı.'),
   school_id: z.string().trim().min(1).nullable().optional(),
   grade_level: gradeLevelSchema.nullable().optional(),
+  // Öğrencinin hangi haftadan itibaren aktif olacağı (spec §3.1/§5.6).
+  // Verilmezse aktif haftanın başlangıcı kullanılır.
+  week_id: z.string().trim().min(1).optional(),
 });
 
 router.get('/students', (req, res) => {
@@ -108,11 +112,15 @@ router.post(
     }
 
     const cls = db
-      .prepare(`SELECT id FROM classes WHERE id = ? AND deleted_at IS NULL`)
-      .get(input.class_id);
+      .prepare(`SELECT id, academic_year_id FROM classes WHERE id = ? AND deleted_at IS NULL`)
+      .get(input.class_id) as { id: string; academic_year_id: string } | undefined;
     if (!cls) {
       throw new AppError('NOT_FOUND', 404, 'Sınıf bulunamadı.');
     }
+
+    // Enrollment başlangıcı bugün değil, admin'in seçtiği haftanın başlangıcı;
+    // seçim yoksa aktif haftanın başlangıcı (spec §3.1/§5.6).
+    const startDate = resolveEnrollmentStartDate(input.week_id, cls.academic_year_id);
 
     if (input.school_id !== undefined && input.school_id !== null) {
       const school = db
@@ -129,7 +137,6 @@ router.post(
     const username = nextUsername(input.full_name);
     const passwordHash = await hashPassword(input.password);
     const now = new Date().toISOString();
-    const today = now.slice(0, 10);
 
     db.exec('BEGIN');
     try {
@@ -154,7 +161,7 @@ router.post(
       db.prepare(
         `INSERT INTO enrollments (id, student_id, class_id, start_date, end_date)
          VALUES (?, ?, ?, ?, NULL)`,
-      ).run(enrollmentId, studentId, input.class_id, today);
+      ).run(enrollmentId, studentId, input.class_id, startDate);
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');
