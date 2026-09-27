@@ -149,7 +149,7 @@ PROGRESS.md
 
 ### Commit
 
-Önerilen: "öğrenci başlangıç haftası: enrollment `start_date` bugün değil
+`2bbfb84` — "öğrenci başlangıç haftası: enrollment `start_date` bugün değil
 seçilen haftanın başlangıcı (tekil + CSV)."
 
 ---
