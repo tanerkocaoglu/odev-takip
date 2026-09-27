@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Frontend — install
+        run: npm ci
+
+      - name: Frontend — typecheck
+        run: npm run typecheck
+
+      - name: Frontend — lint
+        run: npm run lint
+
+      - name: Frontend — test
+        run: npm test
+
+      - name: Backend — install
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend — typecheck
+        working-directory: backend
+        run: npm run typecheck
+
+      - name: Backend — test
+        working-directory: backend
+        run: npm test
+
+      - name: Build
+        run: npm run build
