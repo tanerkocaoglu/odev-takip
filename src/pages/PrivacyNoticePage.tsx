@@ -47,7 +47,7 @@ export default function PrivacyNoticePage() {
           Gizlilik ve Aydınlatma Metni
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          Bu metin, Ödev Takip tarafından işletilen ödev takip
+          Bu metin, [Kurum adı] tarafından işletilen ödev takip
           sisteminde kişisel verilerinizin 6698 sayılı Kişisel Verilerin
           Korunması Kanunu ("KVKK") kapsamında nasıl işlendiğini
           açıklamaktadır.
@@ -104,14 +104,13 @@ export default function PrivacyNoticePage() {
         <section className="mt-6">
           <h2 className="text-base font-semibold text-text">Sorumlu ve iletişim</h2>
           <p className="mt-2 text-sm leading-relaxed text-text">
-            Veri sorumlusu: Ödev Takip [tüzel kişilik unvanı
-            farklıysa buraya yazılmalı]
+            Veri sorumlusu: [Kurum adı]
             <br />
-            E-posta: [E-posta adresi]
+            E-posta: [E-posta]
             <br />
-            Telefon: [Telefon numarası]
+            Telefon: [Telefon]
             <br />
-            Adres: [Açık adres]
+            Adres: [Adres]
           </p>
         </section>
 
