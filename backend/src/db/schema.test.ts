@@ -90,23 +90,23 @@ describe('seed', () => {
   it('seed kayıtları beklenen hacimde üretir', { timeout: 60_000 }, async () => {
     await seedDatabase('test-admin-password', 'test-user-password');
 
-    // 1 admin + 4 öğretmen + 12 öğrenci + 12 veli = 29
-    expect(count('users')).toBe(29);
-    expect(count('students')).toBe(12);
-    expect(count('guardians')).toBe(12);
-    expect(count('classes')).toBe(3);
-    expect(count('courses')).toBe(4);
-    // 3 sınıf × 4 ders
-    expect(count('class_courses')).toBe(12);
-    // Her öğrenci kendi sınıfında tek aktif kayıt → 12
-    expect(count('enrollments')).toBe(12);
+    // 1 admin + 6 öğretmen + 15 öğrenci + 15 veli = 37
+    expect(count('users')).toBe(37);
+    expect(count('students')).toBe(15);
+    expect(count('guardians')).toBe(15);
+    expect(count('classes')).toBe(4);
+    expect(count('courses')).toBe(6);
+    // A/B/C: 3 sınıf × 4 ders + PASKAL: 2 ders = 14
+    expect(count('class_courses')).toBe(14);
+    // Her öğrenci kendi sınıfında tek aktif kayıt → 15
+    expect(count('enrollments')).toBe(15);
     expect(count('weeks')).toBe(21);
-    // Hafta 17, 18, 19 × 12 class_course = 36 tamamlanmış rapor
+    // Hafta 17, 18, 19 × 12 class_course (A/B/C) = 36 tamamlanmış rapor
     expect(count('reports')).toBe(36);
     // 36 rapor × sınıf başına 4 öğrenci = 144 satır
     expect(count('report_entries')).toBe(144);
     expect(count('homeworks')).toBe(36);
-    // 4 okul; 12 öğrencinin tamamı okul + sınıf seviyesi atanmış
+    // 4 okul; A/B/C öğrencileri okul + sınıf seviyesi atanmış (PASKAL: null)
     expect(count('schools')).toBe(4);
     // Seed teslim üretmez (öğrenci yükleyecek); hafta 19 için 4 sent digest.
     expect(count('submissions')).toBe(0);
@@ -178,14 +178,15 @@ describe('seed', () => {
     ]);
   });
 
-  it('seed: tüm öğrencilere okul + sınıf seviyesi atanır, teslim yok, digest görüntüleme karışık', () => {
-    // 1) Okul + sınıf seviyesi: 12 öğrencinin tamamına döngüsel atanır.
+  it('seed: A/B/C öğrencilerine okul + sınıf seviyesi atanır, PASKAL okulsuz, teslim yok, digest görüntüleme karışık', () => {
+    // 1) Okul + sınıf seviyesi: A/B/C öğrencilerinin (12) tamamına döngüsel atanır.
     const assigned = db
       .prepare(
         `SELECT COUNT(*) AS c FROM students
          WHERE school_id IS NOT NULL AND grade_level IS NOT NULL`,
       )
       .get() as { c: number };
+    // PASKAL öğrencileri (3) okulsuz ama sınıf seviyesi var.
     const unassigned = db
       .prepare(
         `SELECT COUNT(*) AS c FROM students
@@ -229,12 +230,15 @@ describe('seed', () => {
     expect(digests.not_viewed).toBe(2);
   });
 
-  it('gerçek dershane yapısı: 4 öğretmen tek dersini 3 sınıfta verir; ders günü sabittir', () => {
-    // Her öğretmen yalnızca bir derse bağlıdır ve o dersi 3 sınıfta verir.
+  it('gerçek dershane yapısı: temel 4 öğretmen tek dersini 3 sınıfta verir; ders günü sabittir', () => {
+    // A/B/C (PASKAL hariç) class_course'ları: her temel öğretmen yalnızca bir
+    // derse bağlıdır ve o dersi 3 sınıfta verir.
     const byTeacher = db
       .prepare(
         `SELECT cc.teacher_id, cc.course_id, cc.day_of_week, COUNT(*) AS c
          FROM class_courses cc
+         JOIN classes c ON c.id = cc.class_id
+         WHERE c.name <> 'PASKAL'
          GROUP BY cc.teacher_id, cc.course_id, cc.day_of_week
          ORDER BY cc.teacher_id`,
       )
@@ -252,12 +256,18 @@ describe('seed', () => {
     expect(byTeacher[2].course_id).toBe('seed-course-turkce');
     expect(byTeacher[3].course_id).toBe('seed-course-ingilizce');
 
-    // Her sınıfta 4 ders.
+    // A/B/C sınıflarında 4 ders; PASKAL'da 2 ders (Pazar günü).
     const perClass = db
-      .prepare(`SELECT class_id, COUNT(*) AS c FROM class_courses GROUP BY class_id`)
-      .all() as Array<{ class_id: string; c: number }>;
-    expect(perClass).toHaveLength(3);
-    expect(perClass.every((r) => r.c === 4)).toBe(true);
+      .prepare(
+        `SELECT c.name AS class_name, COUNT(*) AS c
+         FROM class_courses cc JOIN classes c ON c.id = cc.class_id
+         GROUP BY cc.class_id ORDER BY c.name`,
+      )
+      .all() as Array<{ class_name: string; c: number }>;
+    expect(perClass).toHaveLength(4);
+    for (const r of perClass) {
+      expect(r.c).toBe(r.class_name === 'PASKAL' ? 2 : 4);
+    }
   });
 
   it('seed haftaları bugünü kapsar — week 20 bu haftadır ve week 21 sonrakidir', () => {
@@ -337,7 +347,7 @@ describe('seed', () => {
          ORDER BY g.id`,
       )
       .all() as { guardian_id: string; child_count: number }[];
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(15);
     expect(rows.every((r) => r.child_count === 1)).toBe(true);
   });
 
@@ -350,8 +360,24 @@ describe('seed', () => {
          GROUP BY student_id`,
       )
       .all() as { student_id: string; total: number; active_count: number }[];
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(15);
     expect(rows.every((r) => r.total === 1 && r.active_count === 1)).toBe(true);
+  });
+
+  it('PASKAL enrollment start_date = bu haftanın (week 20) başlangıcıdır', () => {
+    const rows = db
+      .prepare(
+        `SELECT e.start_date, w.start_date AS week_start
+         FROM enrollments e
+         JOIN classes c ON c.id = e.class_id
+         JOIN weeks w ON w.week_no = 20
+         WHERE c.name = 'PASKAL'`,
+      )
+      .all() as Array<{ start_date: string; week_start: string }>;
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r.start_date).toBe(r.week_start);
+    }
   });
 
   it('öğrenci 3 tüm haftalarda aynı sınıfta (sınıf 1) görünür', () => {

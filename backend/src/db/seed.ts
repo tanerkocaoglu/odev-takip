@@ -8,12 +8,17 @@
  * - Öğrenci/veli kullanıcıları `SEED_USER_PASSWORD` env değeriyle şifrelenir.
  *
  * Demo yapısı (dershane yöneticisi tanıtımı için):
- * - 3 sınıf: A Şubesi, B Şubesi, C Şubesi
- * - 4 ders: Matematik, Fizik, Türkçe, İngilizce
- * - 4 öğretmen (her biri tek derse sabit)
- * - Sınıf başına 4 öğrenci = 12 öğrenci + 12 veli
+ * - 4 sınıf: A Şubesi, B Şubesi, C Şubesi, PASKAL
+ * - 6 ders: Matematik, Fizik, Türkçe, İngilizce, Geometri, Sonlu Matematik
+ * - 6 öğretmen (her biri tek derse sabit)
+ * - A/B/C: sınıf başına 4 öğrenci = 12 + PASKAL 3 öğrenci = 15 öğrenci/veli
  * - 3 tamamlanmış geçmiş hafta (17, 18, 19) + bu hafta (20) doldurulacak
- * - week 20 = içinde bulunulan gerçek hafta
+ * - week 20 = içinde bulunulan gerçek hafta (Cumartesi başlangıçlı)
+ *
+ * PASKAL (video senaryosu): yeni açılan sınıf; dersleri Pazar günü (13:00
+ * Geometri, 15:00 Sonlu Matematik). Enrollment `start_date`'i **bu haftanın
+ * Cumartesi başlangıcı** olduğundan öğretmen "bu hafta" ekranında görünür.
+ * Geçmiş haftalarda PASKAL raporu YOK — bu hafta öğretmen dolduracak.
  */
 
 import { db } from './index.js';
@@ -75,11 +80,24 @@ const TEACHER_NAMES = [
   'Öğretmen 2',
   'Öğretmen 3',
   'Öğretmen 4',
+  // PASKAL derslerinin öğretmenleri
+  'Öğretmen 5',
+  'Öğretmen 6',
 ];
 
-const CLASS_NAMES = ['A Şubesi', 'B Şubesi', 'C Şubesi'];
+const CLASS_NAMES = ['A Şubesi', 'B Şubesi', 'C Şubesi', 'PASKAL'];
 
 const COURSE_NAMES = ['Matematik', 'Fizik', 'Türkçe', 'İngilizce'];
+
+/** PASKAL'a özel dersler ve atandıkları öğretmenler (Pazar günü). */
+const PASKAL_COURSES: Array<{ course: string; teacher: string; lessonTime: string }> = [
+  { course: 'Geometri', teacher: 'Öğretmen 5', lessonTime: '13:00' },
+  { course: 'Sonlu Matematik', teacher: 'Öğretmen 6', lessonTime: '15:00' },
+];
+
+/** PASKAL öğrenci + veli isimleri (video senaryosu). */
+const PASKAL_STUDENT_NAMES = ['Cem Canlı', 'Barış Bakır', 'Ali Ak'];
+const PASKAL_GUARDIAN_NAMES = ['Cemil Canlı', 'Baki Bakır', 'Ahmet Ak'];
 
 const SCHOOL_NAMES = [
   'Örnek Okul 1',
@@ -94,7 +112,9 @@ const SEED_GRADE_LEVELS = ['6', '7', '8', '9', '10', '11', '12'];
 const PAST_WEEK_NOS = [17, 18, 19];
 
 const STUDENTS_PER_CLASS = 4;
-const CLASS_COUNT = CLASS_NAMES.length;
+/** PASKAL hariç klasik sınıflar (A/B/C) — geçmiş raporlar bu sınıflar için üretilir. */
+const BASE_CLASS_NAMES = ['A Şubesi', 'B Şubesi', 'C Şubesi'];
+const BASE_CLASS_COUNT = BASE_CLASS_NAMES.length;
 
 // ---------- Öğrenci isimleri (gerçekçi) ----------
 
@@ -125,12 +145,17 @@ function toIsoLocal(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-/** İçinde bulunulan haftanın Pazartesi günü (yerel). */
-function mondayOfCurrentWeek(): Date {
+/**
+ * İçinde bulunulan haftanın **Cumartesi** günü (yerel). Üretimde haftalar
+ * Cumartesi başlar (seed'i gerçek senaryoya hizalar) — bu yüzden PASKAL gibi
+ * Pazar dersli sınıflar hafta başından itibaren aktiftir.
+ */
+function saturdayOfCurrentWeek(): Date {
   const now = new Date();
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
-  return monday;
+  const saturday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // JS: 0=Pazar .. 6=Cumartesi → Cumartesi'ye kaç gün geri gidileceği.
+  saturday.setDate(saturday.getDate() - ((now.getDay() + 1) % 7));
+  return saturday;
 }
 
 /**
@@ -138,7 +163,7 @@ function mondayOfCurrentWeek(): Date {
  */
 function buildWeeks(): WeekRecord[] {
   const weeks: WeekRecord[] = [];
-  const yearStart = mondayOfCurrentWeek();
+  const yearStart = saturdayOfCurrentWeek();
   yearStart.setDate(yearStart.getDate() - 19 * 7);
   const start = new Date(yearStart);
   for (let i = 1; i <= 21; i++) {
@@ -226,7 +251,7 @@ export async function seedDatabase(
     created_at: createdAt,
   });
 
-  // --- Öğretmenler (4) — her biri tek derse sabitlenir ---
+  // --- Öğretmenler (6) — her biri tek derse sabitlenir ---
   const teacherIds: string[] = [];
   for (const [i, name] of TEACHER_NAMES.entries()) {
     const id = `seed-user-teacher-${pad(i + 1)}`;
@@ -246,7 +271,7 @@ export async function seedDatabase(
     });
   }
 
-  // --- Dersler (4) ---
+  // --- Dersler (4 temel + 2 PASKAL dersi = 6) ---
   const courseIds: string[] = [];
   COURSE_NAMES.forEach((name) => {
     const id = `seed-course-${normalizeTurkish(name)}`;
@@ -258,8 +283,19 @@ export async function seedDatabase(
       deleted_at: null,
     });
   });
+  const paskalCourseIds: string[] = [];
+  PASKAL_COURSES.forEach(({ course }) => {
+    const id = `seed-course-${normalizeTurkish(course)}`;
+    paskalCourseIds.push(id);
+    insert('courses', {
+      id,
+      name: course,
+      name_normalized: normalizeTurkish(course),
+      deleted_at: null,
+    });
+  });
 
-  // --- Sınıflar (3) ---
+  // --- Sınıflar (4: A/B/C + PASKAL) ---
   const classIds: string[] = [];
   CLASS_NAMES.forEach((name, i) => {
     const id = `seed-class-${pad(i + 1)}`;
@@ -272,6 +308,7 @@ export async function seedDatabase(
       deleted_at: null,
     });
   });
+  const paskalClassId = classIds[3];
 
   // --- Okullar (4) --- sınıflardan önce eklenmeli (öğrenci FK'sı schools'a bakıyor)
   SCHOOL_NAMES.forEach((name, i) => {
@@ -283,8 +320,8 @@ export async function seedDatabase(
     });
   });
 
-  // --- Veliler + Öğrenciler (12'şer) ---
-  for (let s = 1; s <= CLASS_COUNT * STUDENTS_PER_CLASS; s++) {
+  // --- Veliler + Öğrenciler (A/B/C: 12) ---
+  for (let s = 1; s <= BASE_CLASS_COUNT * STUDENTS_PER_CLASS; s++) {
     const studentUserId = `seed-user-student-${pad(s)}`;
     const guardianUserId = `seed-user-guardian-${pad(s)}`;
 
@@ -354,7 +391,7 @@ export async function seedDatabase(
   }
 
   // --- Enrollments: her öğrenci kendi sınıfına ---
-  for (let s = 1; s <= CLASS_COUNT * STUDENTS_PER_CLASS; s++) {
+  for (let s = 1; s <= BASE_CLASS_COUNT * STUDENTS_PER_CLASS; s++) {
     insert('enrollments', {
       id: `seed-enrollment-${pad(s)}`,
       student_id: `seed-student-${pad(s)}`,
@@ -364,10 +401,89 @@ export async function seedDatabase(
     });
   }
 
-  // --- class_courses (3 sınıf × 4 ders = 12) ---
+  // --- PASKAL: öğrenciler + veliler (video senaryosu) ---
+  // Sınıf bu hafta açıldı; enrollment `start_date` = **bu haftanın Cumartesi
+  // başlangıcı** (week 20). Böylece öğretmen "bu hafta" ekranında görür —
+  // üretimdeki "Pazar girilen enrollment" sorununun doğru karşılığı.
+  const currentWeekStart = weeks[19].start_date; // week 20 = bu hafta
+  const paskalBase = BASE_CLASS_COUNT * STUDENTS_PER_CLASS; // 12
+  for (let i = 0; i < PASKAL_STUDENT_NAMES.length; i++) {
+    const s = paskalBase + i + 1;
+    const studentUserId = `seed-user-student-${pad(s)}`;
+    const guardianUserId = `seed-user-guardian-${pad(s)}`;
+    const studentName = PASKAL_STUDENT_NAMES[i]!;
+    const guardianName = PASKAL_GUARDIAN_NAMES[i]!;
+
+    const studentUsername = nextUsername(studentName);
+    const studentHash = await hashPassword(userPassword);
+    insert('users', {
+      id: studentUserId,
+      full_name: studentName,
+      full_name_normalized: normalizeTurkish(studentName),
+      username: studentUsername,
+      email: null,
+      password_hash: studentHash,
+      role: 'student',
+      is_active: 1,
+      token_version: 1,
+      deleted_at: null,
+      created_at: createdAt,
+    });
+    fillUsername(studentUserId, studentUsername);
+    fillPasswordHash(studentUserId, studentHash);
+
+    const guardianUsername = nextUsername(guardianName);
+    const guardianHash = await hashPassword(userPassword);
+    insert('users', {
+      id: guardianUserId,
+      full_name: guardianName,
+      full_name_normalized: normalizeTurkish(guardianName),
+      username: guardianUsername,
+      email: null,
+      password_hash: guardianHash,
+      role: 'guardian',
+      is_active: 1,
+      token_version: 1,
+      deleted_at: null,
+      created_at: createdAt,
+    });
+    fillUsername(guardianUserId, guardianUsername);
+    fillPasswordHash(guardianUserId, guardianHash);
+
+    const studentRecId = `seed-student-${pad(s)}`;
+    const guardianRecId = `seed-guardian-${pad(s)}`;
+
+    insert('guardians', {
+      id: guardianRecId,
+      user_id: guardianUserId,
+      whatsapp_phone: phone(s),
+      phone_secondary: null,
+      consent_at: createdAt,
+      deleted_at: null,
+    });
+
+    insert('students', {
+      id: studentRecId,
+      user_id: studentUserId,
+      guardian_id: guardianRecId,
+      school_id: null,
+      grade_level: '9',
+      deleted_at: null,
+    });
+
+    insert('enrollments', {
+      id: `seed-enrollment-${pad(s)}`,
+      student_id: studentRecId,
+      class_id: paskalClassId,
+      start_date: currentWeekStart,
+      end_date: null,
+    });
+  }
+
+  // --- class_courses (A/B/C: 3 sınıf × 4 ders = 12) ---
   // Her öğretmen tek derse sabit; ders günü: Mat=Pazartesi, Fiz=Salı, Türk=Çarşamba, İng=Perşembe
   const classCourses: ClassCourse[] = [];
-  for (let c = 0; c < classIds.length; c++) {
+  for (let c = 0; c < BASE_CLASS_COUNT; c++) {
     COURSE_NAMES.forEach((_, courseIdx) => {
       const cc: ClassCourse = {
         id: `seed-class-course-${pad(c + 1)}-${courseIdx + 1}`,
@@ -390,6 +506,23 @@ export async function seedDatabase(
       });
     });
   }
+
+  // --- PASKAL class_courses (2 ders, Pazar günü 13:00 / 15:00) ---
+  // `classCourses` listesine EKLENMEZ: geçmiş haftalarda PASKAL raporu
+  // üretilmemeli (sınıf bu hafta açıldı). Yalnızca bu hafta öğretmen doldurur.
+  PASKAL_COURSES.forEach(({ course, teacher, lessonTime }, idx) => {
+    const courseId = `seed-course-${normalizeTurkish(course)}`;
+    const teacherIdx = TEACHER_NAMES.indexOf(teacher);
+    insert('class_courses', {
+      id: `seed-class-course-paskal-${idx + 1}`,
+      class_id: paskalClassId,
+      course_id: courseId,
+      teacher_id: teacherIds[teacherIdx],
+      day_of_week: 7, // Pazar
+      lesson_time: lessonTime,
+      deleted_at: null,
+    });
+  });
 
   // --- Geçmiş tamamlanmış raporlar (hafta 17, 18, 19) ---
   for (const weekNo of PAST_WEEK_NOS) {
