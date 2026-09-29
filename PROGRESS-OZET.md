@@ -105,6 +105,8 @@
 
 **Dosyalar**
 - Öğrenci: teslim başına 30 dosya, dosya başına 10 MB.
+- Öğrenci teslimi dosya başına ayrı istekle birikimli yüklenir (spec §5.3 birikimli havuz ile
+  uyumlu); teslim atomik değildir, kısmi teslim kalabilir.
 - Öğretmen ödev eki: ödev başına 5 PDF, 10 MB; süresiz saklanır,
   `cleanup-submissions` kapsamı dışında, yedeğe dahil.
 - R2: imzalı URL 5 dk + 302. Eski yerel dosyalar R2'ye taşınmadı.
