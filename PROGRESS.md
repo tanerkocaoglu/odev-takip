@@ -5,6 +5,24 @@
 
 ---
 
+## Yeniden tasarım — Parti 4: veli ekranları, /r/{token}, gizlilik ✅
+
+Ön işler: (A) mobil rapor kartında sayı kutuları kaldırıldı — 1–10 radiogroup (10 dahil:
+tıklama, `End`, `0` tuşu) tek girdi (`ec08ab4`); (B) rapor girişi açılış otomatik kaydı
+teşhisi yapıldı (kod değiştirilmedi; bulgular yanıt raporunda).
+**4a** (`1d15927`): `ReportCover`, `CourseOverview` (haftanın dersleri tek bakış, ham puanlar),
+`CourseReportCard`, `ScoreScale`, `SubmissionHistory` — `Badge` ile ikon+metin; yan çizgi/gradyan yok;
+tarih Europe/Istanbul (`formatDateIst`); yazdırma kuralları; `AttendanceChip` silindi.
+**4b** (`848eb4e`): veli ana ekranı (öğrenci çipleri, hafta filtresi, sınıf+gönderim tarihi),
+rapor detayı (geri bağlantısı, ErrorState, toast). İşlev değişmedi.
+**4c**: `PublicShell`; `/r/{token}` durumları (410, bozuk bağlantı, hata+yeniden dene); gizlilik
+sayfası yalnızca sunum (içerik aynen; `[Kurum adı]` vb. yer tutucular hâlâ dolu değil).
+Güncellenen test: `token-report.test.tsx` — geçerli biçimli token (kısa değerler artık "bağlantı geçersiz").
+Admin `AdminReportView` ve `DigestSend` önizlemesi görsel olarak doğrulandı (bozulmadı).
+**Doğrulama:** frontend 190/190, typecheck/lint/build temiz. Backend'e dokunulmadı.
+
+---
+
 ## Yeniden tasarım — Parti 3: öğretmen ekranları ✅
 
 **3a** (`f132911`): dashboard, teslim kontrol, geçmiş raporlar — ui bileşenleri,

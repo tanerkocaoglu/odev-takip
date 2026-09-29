@@ -5,9 +5,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TokenReportPage from './pages/TokenReportPage';
+
+/** Gerçek token biçimi: 43 karakterlik base64url (kısa değerler "bağlantı geçersiz" sayılır). */
+const TOKEN = 'kR3x9Lw2QpVb7NfHs1TzYcMd4EjAuGo8XiWq5BnUyZ0';
 
 function renderTokenPage(token: string) {
   return render(
@@ -79,7 +82,7 @@ afterEach(() => {
 describe('TokenReportPage', () => {
   it('geçerli snapshot içeriğini gösterir (dersler + puanlar + eksik ders)', async () => {
     vi.stubGlobal('fetch', mockFetch(200, { snapshot: SNAPSHOT, sent_at: null }));
-    const { container } = renderTokenPage('tok');
+    const { container } = renderTokenPage(TOKEN);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Örnek Kişi 6' })).toBeInTheDocument();
@@ -123,7 +126,7 @@ describe('TokenReportPage', () => {
       ),
     };
     vi.stubGlobal('fetch', mockFetch(200, { snapshot: leaked, sent_at: null }));
-    renderTokenPage('tok');
+    renderTokenPage(TOKEN);
 
     await waitFor(() => {
       expect(screen.getByText('ÖKLİD')).toBeInTheDocument();
@@ -140,7 +143,7 @@ describe('TokenReportPage', () => {
         error: { code: 'GONE', message: 'Bu rapor artık geçerli değil.' },
       }),
     );
-    renderTokenPage('dead');
+    renderTokenPage(TOKEN);
 
     await waitFor(() => {
       expect(screen.getByText('Bu rapor artık geçerli değil.')).toBeInTheDocument();
@@ -149,7 +152,7 @@ describe('TokenReportPage', () => {
 
   it('hata durumunda mesaj gösterilir', async () => {
     vi.stubGlobal('fetch', mockFetch(500, { error: { code: 'INTERNAL', message: 'Bir hata oluştu.' } }));
-    renderTokenPage('x');
+    renderTokenPage(TOKEN);
 
     await waitFor(() => {
       expect(screen.getByText('Bir hata oluştu.')).toBeInTheDocument();
@@ -161,9 +164,38 @@ describe('TokenReportPage', () => {
       'fetch',
       mockFetch(410, { error: { code: 'GONE', message: 'Bu rapor artık geçerli değil.' } }),
     );
-    renderTokenPage('dead');
+    renderTokenPage(TOKEN);
 
     const link = await screen.findByRole('link', { name: 'Gizlilik ve Aydınlatma Metni' });
     expect(link).toHaveAttribute('href', '/gizlilik');
+  });
+
+  it('biçimi bozuk (eksik kopyalanmış) bağlantı: istek atılmadan "Bağlantı geçersiz" gösterilir', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    renderTokenPage('abc');
+    expect(await screen.findByRole('heading', { name: 'Bağlantı geçersiz' })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Gizlilik ve Aydınlatma Metni' })).toBeInTheDocument();
+  });
+
+  it('410: iptal edildiğini ve ne yapılacağını söyler; veli paneline giriş bağlantısı verir', async () => {
+    vi.stubGlobal('fetch', mockFetch(410, { error: { code: 'GONE', message: 'Bu rapor artık geçerli değil.' } }));
+    renderTokenPage(TOKEN);
+    expect(await screen.findByRole('heading', { name: 'Bu rapor artık geçerli değil.' })).toBeInTheDocument();
+    expect(screen.getByText(/iptal edilmiş ya da yeni bir bağlantıyla değiştirilmiş/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Veli paneline giriş yap' })).toHaveAttribute('href', '/login');
+  });
+
+  it('hata durumunda "Yeniden dene" isteği tekrarlar', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: { code: 'INTERNAL', message: 'Bir hata oluştu.' } }) })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ snapshot: SNAPSHOT, sent_at: '2026-01-12T10:00:00.000Z' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    renderTokenPage(TOKEN);
+    fireEvent.click(await screen.findByRole('button', { name: 'Yeniden dene' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Örnek Kişi 6' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

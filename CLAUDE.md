@@ -70,7 +70,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
                            index.ts giriş noktası — bkz. "Tasarım sistemi"
       /admin             → AdminLayout, HomeworkSummarySheet; Modal.tsx, Pagination.tsx,
                            ui.tsx = ui/'a yönlenen GEÇİŞ katmanı (Parti 7'de silinir)
-      /layout            → AppLayout
+      /layout            → AppLayout, TeacherShell, CustomerShell, PublicShell
       BrandLogo.tsx   ImageLightbox.tsx   ProtectedRoute.tsx
       ReportSnapshot.tsx   SubmissionFileGrid.tsx
     /context             → AuthContext.tsx
@@ -367,6 +367,25 @@ Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entr
 - Durum banner'ları `InlineNotice`: başlamamış hafta (info), sent kilitli (success),
   admin düzenlemesi (success), completed düzenleme bilgisi (info), son hafta (warning),
   hafta tanımı hatalı (danger).
+
+### Veli ekranları ve `/r/{token}` (Parti 4)
+
+- **Tek sütun, comfortable, telefon önce.** Girişsiz sayfalar `PublicShell` içinde
+  (`/r/{token}`, `/gizlilik`): sade 56px üst şerit (yalnızca marka), altta aydınlatma
+  metni bağlantısı (her durumda görünür). Gradyan/renkli başlık, `brand-*` sınıfları YOK.
+- **Rapor gövdesi** (`GuardianReportView`, public ve girişli veli ortak): `ReportCover`
+  (düz kart) → `CourseOverview` ("Haftanın dersleri": her ders tek satır — devamsızlık
+  `Badge` + HAM puanlar "Ödev 8 · Perf. 9"; ortalama/yüzde ÜRETİLMEZ; satır ders
+  kartına kaydırır) → `CourseReportCard` (tam açık, ders başına) → girişli veride
+  `SubmissionHistory`. Durum her yerde `Badge` (ikon + metin); kartlarda renkli yan çizgi yok.
+- **`/r/{token}` durumları:** yükleniyor (iskelet) · normal · **410** ("Bu rapor artık
+  geçerli değil." + ne yapılacağı + "Veli paneline giriş yap") · **bozuk bağlantı**
+  (`^[A-Za-z0-9_-]{16,}$` değil → istek atılmadan "Bağlantı geçersiz") · hata (`ErrorState`
+  + Yeniden dene). Sunucu iptal edilmiş VE bilinmeyen token için aynı 410'u döner
+  (varlık sızmaz); ekran ikisini ayırt etmez. Testlerde geçerli biçimli 43 karakterlik token kullan.
+- **Aydınlatma metni içeriği değiştirilmez** (yalnızca sunum). Yazdırma: `nav` ve üst şerit gizlenir,
+  ders kartları sayfa ortasında bölünmez (`break-inside-avoid`).
+- `ReportSnapshot` (admin gönderim önizlemesi) veri biçimi sabittir; görünümü Parti 6'da gözden geçirilir.
 
 ### Yükleniyor / hata / boş
 
