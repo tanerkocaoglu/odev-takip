@@ -13,18 +13,49 @@ import { formatDate } from '../../utils/date';
 import { teacherApi, ApiClientError } from '../../services/api';
 import {
   AttendanceBadge,
+  Card,
+  DataTable,
   EmptyState,
-  FormError,
+  ErrorState,
   LoadingState,
-  PageTitle,
+  PageHeader,
   StatusBadge,
-} from '../../components/admin/ui';
+  buttonClass,
+  type Column,
+} from '../../components/ui';
+
+type Entry = TeacherReportPayload['entries'][number];
+
+const COLUMNS: Column<Entry>[] = [
+  {
+    key: 'student',
+    header: 'Öğrenci',
+    card: 'title',
+    cell: (e) => <span className="font-medium">{e.student_name}</span>,
+  },
+  { key: 'att', header: 'Devamsızlık', cell: (e) => <AttendanceBadge attendance={e.attendance} /> },
+  {
+    key: 'hw',
+    header: 'Ödev puanı',
+    className: 'tabular',
+    cell: (e) => e.homework_score ?? '—',
+  },
+  {
+    key: 'perf',
+    header: 'Ders içi performans puanı',
+    className: 'tabular',
+    cell: (e) => e.interest_score ?? '—',
+  },
+  { key: 'note', header: 'Not', cell: (e) => e.teacher_note || '—' },
+];
 
 export default function AdminReportViewPage() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<TeacherReportPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -38,7 +69,11 @@ export default function AdminReportViewPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+          setError(
+            err instanceof ApiClientError
+              ? err.message
+              : 'Rapor yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+          );
         }
       })
       .finally(() => {
@@ -47,30 +82,28 @@ export default function AdminReportViewPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   if (loading) return <LoadingState />;
-  if (error) return <FormError message={error} />;
+  if (error) return <ErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />;
   if (!data) return <EmptyState message="Rapor bulunamadı." />;
 
   const { report, entries } = data;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <PageTitle icon={FileText}>
-          {report.class_name} · {report.course_name}
-        </PageTitle>
-        <Link
-          to="/admin/reports"
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-        >
-          Geri
-        </Link>
-      </div>
+      <PageHeader
+        icon={FileText}
+        title={`${report.class_name} · ${report.course_name}`}
+        actions={
+          <Link to="/admin/reports" className={buttonClass('secondary', 'md')}>
+            Geri
+          </Link>
+        }
+      />
 
-      <div className="rounded-md border border-border bg-surface p-5">
-        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+      <Card padding="lg">
+        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
           <div className="flex gap-2">
             <dt className="font-medium text-muted">Hafta:</dt>
             <dd className="tabular text-text">
@@ -88,7 +121,7 @@ export default function AdminReportViewPage() {
               {report.lesson_time ? ` · ${report.lesson_time}` : ''}
             </dd>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <dt className="font-medium text-muted">Durum:</dt>
             <dd>
               <StatusBadge status={report.status} />
@@ -119,40 +152,14 @@ export default function AdminReportViewPage() {
             </div>
           )}
         </dl>
-      </div>
+      </Card>
 
-      <div className="overflow-hidden rounded-md border border-border bg-surface">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-bg text-left text-[13px] font-medium text-muted">
-              <th className="px-3 py-2">Öğrenci</th>
-              <th className="px-3 py-2">Devamsızlık</th>
-              <th className="px-3 py-2">Ödev puanı</th>
-              <th className="px-3 py-2">Ders içi performans puanı</th>
-              <th className="px-3 py-2">Not</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.student_id} className="border-b border-border last:border-b-0">
-                <td className="px-3 py-2 font-medium text-text">{entry.student_name}</td>
-                <td className="px-3 py-2">
-                  <AttendanceBadge attendance={entry.attendance} />
-                </td>
-                <td className="tabular px-3 py-2 text-[13px] text-text">
-                  {entry.homework_score ?? '—'}
-                </td>
-                <td className="tabular px-3 py-2 text-[13px] text-text">
-                  {entry.interest_score ?? '—'}
-                </td>
-                <td className="px-3 py-2 text-[13px] text-text">
-                  {entry.teacher_note || '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        rows={entries}
+        columns={COLUMNS}
+        rowKey={(e) => e.student_id}
+        rowLabel={(e) => e.student_name}
+      />
     </div>
   );
 }
