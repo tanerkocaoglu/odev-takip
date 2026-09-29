@@ -2,65 +2,89 @@ import { useState, type FormEvent } from 'react';
 import type { Guardian } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import { useList } from '../../hooks/useList';
-import Modal from '../../components/admin/Modal';
-import Pagination from '../../components/admin/Pagination';
+import { formatDate } from '../../utils/date';
 import {
-  DangerButton,
-  EmptyState,
+  ActionError,
+  Badge,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
+  FormActions,
   FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
+  InlineNotice,
+  Input,
+  ListState,
+  Modal,
+  Pagination,
   SearchBox,
-  inputClass,
-} from '../../components/admin/ui';
+  Toolbar,
+  type Column,
+} from '../../components/ui';
 
 export default function GuardiansPage() {
-  const { items, total, page, pageSize, loading, error, setError, q, setQ, setPage, reload } =
+  const { items, total, page, pageSize, loading, error, q, setQ, setPage, reload } =
     useList<Guardian>((params) => adminApi.guardians.list(params));
 
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [createdNotice, setCreatedNotice] = useState<string | null>(null);
+
   const [formOpen, setFormOpen] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editGuardian, setEditGuardian] = useState<Guardian | null>(null);
   const [fullName, setFullName] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
   const [password, setPassword] = useState('');
   const [consentAt, setConsentAt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [resetId, setResetId] = useState<string | null>(null);
+  const [resetGuardian, setResetGuardian] = useState<Guardian | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
+  const [deleteGuardian, setDeleteGuardian] = useState<Guardian | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   function openCreate() {
-    setEditId(null);
+    setEditGuardian(null);
     setFullName('');
     setWhatsappPhone('');
     setPassword('');
     setConsentAt(false);
     setFormError(null);
+    setFieldErrors({});
     setFormOpen(true);
   }
 
   function openEdit(guardian: Guardian) {
-    setEditId(guardian.id);
+    setEditGuardian(guardian);
     setFullName(guardian.full_name);
     setWhatsappPhone(guardian.whatsapp_phone);
     setConsentAt(guardian.consent_at !== null);
     setFormError(null);
+    setFieldErrors({});
     setFormOpen(true);
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    setSubmitting(true);
     setFormError(null);
+    // WhatsApp numarası zorunlu (fallback yok — spec §3.1): boşsa alanın altında gösterilir.
+    if (!whatsappPhone.trim()) {
+      setFieldErrors({
+        whatsapp_phone: 'WhatsApp numarası zorunlu; rapor bağlantısı bu numaraya gönderilir.',
+      });
+      return;
+    }
+    setFieldErrors({});
+    setSubmitting(true);
     try {
-      if (editId) {
-        await adminApi.guardians.patch(editId, {
+      if (editGuardian) {
+        await adminApi.guardians.patch(editGuardian.id, {
           full_name: fullName.trim(),
           whatsapp_phone: whatsappPhone.trim(),
           consent_at: consentAt,
@@ -75,11 +99,20 @@ export default function GuardiansPage() {
         if (consentAt) {
           await adminApi.guardians.patch(created.id, { consent_at: true });
         }
+        setCreatedNotice(
+          `${created.full_name} oluşturuldu. Kullanıcı adı: ${created.username} — başlangıç şifresiyle birlikte veliye iletin.`,
+        );
       }
       setFormOpen(false);
       await reload();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      if (err instanceof ApiClientError) {
+        const fields = err.fields ?? {};
+        setFieldErrors(fields);
+        if (Object.keys(fields).length === 0) setFormError(err.message);
+      } else {
+        setFormError('Veli kaydedilemedi.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -87,170 +120,223 @@ export default function GuardiansPage() {
 
   async function handleReset(event: FormEvent) {
     event.preventDefault();
-    if (!resetId) return;
+    if (!resetGuardian) return;
     setResetSubmitting(true);
     setResetError(null);
     try {
-      await adminApi.guardians.resetPassword(resetId, resetPassword);
-      setResetId(null);
+      await adminApi.guardians.resetPassword(resetGuardian.id, resetPassword);
+      setResetGuardian(null);
       setResetPassword('');
     } catch (err) {
-      setResetError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setResetError(err instanceof ApiClientError ? err.message : 'Şifre sıfırlanamadı.');
     } finally {
       setResetSubmitting(false);
     }
   }
 
-  async function handleDelete(guardian: Guardian) {
-    if (!window.confirm(`${guardian.full_name} silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteGuardian) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.guardians.remove(guardian.id);
+      await adminApi.guardians.remove(deleteGuardian.id);
+      setDeleteGuardian(null);
       await reload();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setDeleteGuardian(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Veli silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
 
-  /** Tek tıkla KVKK onayı aç/kapat — tablo satırından. */
+  /** Tek tıkla KVKK onayı aç/kapat — satırdan. */
   async function toggleConsent(guardian: Guardian) {
     const newValue = guardian.consent_at === null;
+    setActionError(null);
     try {
       await adminApi.guardians.patch(guardian.id, { consent_at: newValue });
       await reload();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setActionError(err instanceof ApiClientError ? err.message : 'KVKK onayı değiştirilemedi.');
     }
   }
 
   /** Ekrandaki aktif arama sonucunu CSV indirir (spec §5.7). */
   async function handleExport() {
     setExporting(true);
-    setError(null);
+    setActionError(null);
     try {
       await adminApi.exports.guardians({ q });
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
+      setActionError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
     } finally {
       setExporting(false);
     }
   }
 
+  const columns: Column<Guardian>[] = [
+    {
+      key: 'name',
+      header: 'Ad',
+      card: 'title',
+      cell: (g) => <span className="font-medium">{g.full_name}</span>,
+    },
+    {
+      key: 'username',
+      header: 'Kullanıcı adı',
+      className: 'tabular text-muted',
+      cell: (g) => g.username,
+    },
+    {
+      key: 'phone',
+      header: 'WhatsApp',
+      className: 'tabular text-muted',
+      cell: (g) => g.whatsapp_phone,
+    },
+    {
+      key: 'children',
+      header: 'Çocuk',
+      className: 'tabular text-muted',
+      cell: (g) => g.child_count ?? 0,
+    },
+    {
+      key: 'consent',
+      header: 'KVKK',
+      cell: (g) => (
+        <button
+          type="button"
+          onClick={() => void toggleConsent(g)}
+          aria-label={
+            g.consent_at
+              ? `${g.full_name}: KVKK onayı verildi (${formatDate(g.consent_at)}). Kaldırmak için tıklayın`
+              : `${g.full_name}: KVKK onayı yok. Vermek için tıklayın`
+          }
+          title="KVKK açık rızası — rapor gönderimi için zorunlu"
+          className="-my-1 rounded-full max-md:-my-3 max-md:py-3"
+        >
+          {g.consent_at ? (
+            <Badge tone="positive">Onaylı</Badge>
+          ) : (
+            <Badge tone="warning">Onaysız</Badge>
+          )}
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <SearchBox value={q} onChange={(v) => setQ(v)} placeholder="Veli ara…" />
-        <div className="flex items-center gap-2">
-          <SecondaryButton onClick={handleExport} disabled={exporting}>
-            {exporting ? 'İndiriliyor…' : 'CSV indir'}
-          </SecondaryButton>
-          <PrimaryButton onClick={openCreate}>Yeni veli</PrimaryButton>
-        </div>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <SearchBox
+              value={q}
+              onChange={(v) => setQ(v)}
+              placeholder="Veli ara…"
+              label="Veli ara"
+            />
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={total} /> veli
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={handleExport} loading={exporting}>
+              {exporting ? 'İndiriliyor…' : 'CSV indir'}
+            </Button>
+            <Button variant="primary" onClick={openCreate}>
+              Yeni veli
+            </Button>
+          </>
+        }
+      />
 
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : items.length === 0 ? (
-        <EmptyState message="Veli bulunamadı." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Ad</th>
-                <th className="px-3 py-2">Kullanıcı adı</th>
-                <th className="px-3 py-2">WhatsApp</th>
-                <th className="px-3 py-2">Çocuk</th>
-                <th className="px-3 py-2" title="KVKK açık rızası — rapor gönderimi için zorunlu">
-                  KVKK
-                </th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((guardian) => (
-                <tr key={guardian.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{guardian.full_name}</td>
-                  <td className="tabular px-3 py-2 text-muted">{guardian.username}</td>
-                  <td className="tabular px-3 py-2 text-muted">{guardian.whatsapp_phone}</td>
-                  <td className="tabular px-3 py-2 text-muted">{guardian.child_count ?? 0}</td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleConsent(guardian)}
-                      title={
-                        guardian.consent_at
-                          ? `Onay verildi: ${new Date(guardian.consent_at).toLocaleDateString('tr-TR')}`
-                          : 'KVKK onayı yok — tıklayarak ver'
-                      }
-                      className={
-                        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ' +
-                        (guardian.consent_at
-                          ? 'bg-status-sent/10 text-status-sent'
-                          : 'bg-att-late/10 text-att-late')
-                      }
-                    >
-                      {guardian.consent_at ? '✓ Onaylı' : '✗ Onaysız'}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetId(guardian.id);
-                        setResetPassword('');
-                        setResetError(null);
-                      }}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Şifre sıfırla
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openEdit(guardian)}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Düzenle
-                    </button>
-                    <DangerButton onClick={() => handleDelete(guardian)}>Sil</DangerButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {createdNotice && (
+        <div role="status">
+          <InlineNotice tone="success">{createdNotice}</InlineNotice>
         </div>
       )}
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
+
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void reload()}
+        empty={items.length === 0}
+        emptyMessage="Veli bulunamadı."
+      >
+        <DataTable
+          rows={items}
+          columns={columns}
+          rowKey={(g) => g.id}
+          rowLabel={(g) => g.full_name}
+          actions={(g) => [
+            { label: 'Düzenle', onSelect: () => openEdit(g) },
+            {
+              label: 'Şifre sıfırla',
+              onSelect: () => {
+                setResetGuardian(g);
+                setResetPassword('');
+                setResetError(null);
+              },
+            },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteGuardian(g) },
+          ]}
+        />
+      </ListState>
       <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+
+      <ConfirmDialog
+        open={deleteGuardian !== null}
+        title="Veliyi sil"
+        confirmLabel="Veliyi sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteGuardian(null)}
+      >
+        {deleteGuardian?.full_name} silinsin mi?
+      </ConfirmDialog>
 
       <Modal
         open={formOpen}
-        title={editId ? 'Veliyi düzenle' : 'Yeni veli'}
+        title={editGuardian ? 'Veliyi düzenle' : 'Yeni veli'}
         onClose={() => setFormOpen(false)}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Ad soyad" htmlFor="g-name">
-            <input
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          <Field label="Ad soyad" htmlFor="g-name" error={fieldErrors.full_name}>
+            <Input
               id="g-name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
-              className={inputClass}
             />
           </Field>
-          <Field label="WhatsApp numarası (zorunlu)" htmlFor="g-whatsapp">
-            <input
+          <Field
+            label="WhatsApp numarası (zorunlu)"
+            htmlFor="g-whatsapp"
+            error={fieldErrors.whatsapp_phone}
+          >
+            <Input
               id="g-whatsapp"
               type="tel"
               value={whatsappPhone}
               onChange={(e) => setWhatsappPhone(e.target.value)}
-              required
-              className={inputClass}
+              className="tabular"
               placeholder="+90 5XX XXX XX XX"
             />
           </Field>
-          {!editId && (
-            <Field label="Başlangıç şifresi (veliye iletin)" htmlFor="g-password">
-              <input
+          {!editGuardian && (
+            <Field
+              label="Başlangıç şifresi (veliye iletin)"
+              htmlFor="g-password"
+              error={fieldErrors.password}
+              hint="En az 6 karakter. Kullanıcı adı otomatik üretilir."
+            >
+              <Input
                 id="g-password"
                 type="password"
                 autoComplete="new-password"
@@ -258,17 +344,21 @@ export default function GuardiansPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className={inputClass}
               />
             </Field>
           )}
-          {editId && (
+          {editGuardian && (
             <p className="text-xs text-muted">
-              Kullanıcı adı: otomatik üretilir (veli…). Şifre değişimi için "Şifre sıfırla".
+              Kullanıcı adı:{' '}
+              <span className="tabular font-medium text-text">{editGuardian.username}</span>{' '}
+              (otomatik üretilir). Şifre değişimi için "Şifre sıfırla".
             </p>
           )}
           {/* KVKK açık rızası — yeni veli oluşturma ve düzenleme için */}
-          <label className="flex cursor-pointer items-center gap-2 text-sm" htmlFor="g-consent">
+          <label
+            className="flex min-h-9 cursor-pointer items-center gap-2 text-sm max-md:min-h-11"
+            htmlFor="g-consent"
+          >
             <input
               id="g-consent"
               type="checkbox"
@@ -283,23 +373,26 @@ export default function GuardiansPage() {
           </label>
 
           <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              {editGuardian ? 'Veliyi kaydet' : 'Veliyi ekle'}
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
       <Modal
-        open={resetId !== null}
-        title="Şifre sıfırla"
-        onClose={() => setResetId(null)}
+        open={resetGuardian !== null}
+        title={`${resetGuardian?.full_name ?? ''} — şifre sıfırla`}
+        onClose={() => setResetGuardian(null)}
       >
         <form onSubmit={handleReset} className="space-y-4">
+          <p className="text-sm text-muted">
+            Kullanıcı adı: {resetGuardian?.username}. Eski oturumlar bu işlemle sona erer.
+          </p>
           <Field label="Yeni şifre (veliye iletin)" htmlFor="g-reset">
-            <input
+            <Input
               id="g-reset"
               type="password"
               autoComplete="new-password"
@@ -307,16 +400,15 @@ export default function GuardiansPage() {
               onChange={(e) => setResetPassword(e.target.value)}
               required
               minLength={6}
-              className={inputClass}
             />
           </Field>
           <FormError message={resetError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setResetId(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={resetSubmitting}>
-              {resetSubmitting ? 'Sıfırlanıyor…' : 'Şifreyi sıfırla'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setResetGuardian(null)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={resetSubmitting}>
+              Şifreyi sıfırla
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>
