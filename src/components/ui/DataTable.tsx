@@ -91,7 +91,7 @@ export function DataTable<T>({
     <TableCard className="relative">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-border bg-subtle/60">
+          <tr className="border-b border-border bg-subtle">
             {columns.map((c) => (
               <th key={c.key} className={cx(thClass(), 'whitespace-nowrap')}>
                 {c.header}
