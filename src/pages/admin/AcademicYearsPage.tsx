@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { AcademicYear } from '../../types';
-import { adminApi } from '../../services/api';
-import { ApiClientError } from '../../services/api';
-import Modal from '../../components/admin/Modal';
+import { adminApi, ApiClientError } from '../../services/api';
 import {
+  ActionError,
   Badge,
-  EmptyState,
+  Button,
+  DataTable,
   Field,
+  FormActions,
   FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
-  inputClass,
-} from '../../components/admin/ui';
+  Input,
+  ListState,
+  Modal,
+  PageHeader,
+  type Column,
+} from '../../components/ui';
+import { formatDate } from '../../utils/date';
 
 export default function AcademicYearsPage() {
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
@@ -34,7 +38,7 @@ export default function AcademicYearsPage() {
       const data = await adminApi.academicYears.list();
       setYears(data.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bir hata oluştu.');
+      setError(err instanceof Error ? err.message : 'Eğitim yılları yüklenemedi. Yeniden deneyin.');
     } finally {
       setLoading(false);
     }
@@ -62,127 +66,136 @@ export default function AcademicYearsPage() {
       setIsActive(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setFormError(err instanceof ApiClientError ? err.message : 'Eğitim yılı kaydedilemedi.');
     } finally {
       setSubmitting(false);
     }
   }
 
   async function toggleActive(year: AcademicYear) {
+    setActionError(null);
     try {
       await adminApi.academicYears.patch(year.id, { is_active: true });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bir hata oluştu.');
+      setActionError(err instanceof Error ? err.message : 'Yıl aktif yapılamadı.');
     }
   }
 
+  function openForm(year?: AcademicYear) {
+    if (year) {
+      setName(year.name);
+      setStartDate(year.start_date);
+      setEndDate(year.end_date);
+      setIsActive(year.is_active === 1);
+    }
+    setFormError(null);
+    setFormOpen(true);
+  }
+
+  const columns: Column<AcademicYear>[] = [
+    {
+      key: 'name',
+      header: 'Yıl',
+      card: 'title',
+      cell: (y) => <span className="font-medium">{y.name}</span>,
+    },
+    {
+      key: 'start',
+      header: 'Başlangıç',
+      className: 'tabular text-muted',
+      cell: (y) => formatDate(y.start_date),
+    },
+    {
+      key: 'end',
+      header: 'Bitiş',
+      className: 'tabular text-muted',
+      cell: (y) => formatDate(y.end_date),
+    },
+    {
+      key: 'status',
+      header: 'Durum',
+      cell: (y) =>
+        y.is_active === 1 ? (
+          <Badge tone="positive">Aktif</Badge>
+        ) : (
+          <Badge tone="neutral">Pasif</Badge>
+        ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted">
-          Eğitim yılı tanımlayın; tek yıl aktif olabilir.
-        </p>
-        <PrimaryButton onClick={() => setFormOpen(true)}>Yeni eğitim yılı</PrimaryButton>
-      </div>
-
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : years.length === 0 ? (
-        <EmptyState message="Henüz eğitim yılı tanımlanmamış." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Yıl</th>
-                <th className="px-3 py-2">Başlangıç</th>
-                <th className="px-3 py-2">Bitiş</th>
-                <th className="px-3 py-2">Durum</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {years.map((year) => (
-                <tr key={year.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{year.name}</td>
-                  <td className="tabular px-3 py-2 text-muted">{year.start_date}</td>
-                  <td className="tabular px-3 py-2 text-muted">{year.end_date}</td>
-                  <td className="px-3 py-2">
-                    {year.is_active === 1 ? (
-                      <Badge tone="positive">Aktif</Badge>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => toggleActive(year)}
-                        className="text-sm font-medium text-accent underline-offset-2 hover:underline"
-                      >
-                        Aktif yap
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setName(year.name);
-                        setStartDate(year.start_date);
-                        setEndDate(year.end_date);
-                        setIsActive(year.is_active === 1);
-                        setFormOpen(true);
-                      }}
-                      className="text-sm font-medium text-muted hover:text-text"
-                    >
-                      Düzenle
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <Modal
-        open={formOpen}
+      <PageHeader
+        description="Eğitim yılı tanımlayın; tek yıl aktif olabilir."
         title="Eğitim yılı"
-        onClose={() => setFormOpen(false)}
+        actions={
+          <Button variant="primary" onClick={() => openForm()}>
+            Yeni eğitim yılı
+          </Button>
+        }
+      />
+
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
+
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={years.length === 0}
+        emptyMessage="Henüz eğitim yılı tanımlanmamış."
+        emptyAction={
+          <Button variant="primary" onClick={() => openForm()}>
+            Yeni eğitim yılı
+          </Button>
+        }
       >
+        <DataTable
+          rows={years}
+          columns={columns}
+          rowKey={(y) => y.id}
+          rowLabel={(y) => y.name}
+          actions={(y) => [
+            ...(y.is_active === 1
+              ? []
+              : [{ label: 'Aktif yap', onSelect: () => void toggleActive(y) }]),
+            { label: 'Düzenle', onSelect: () => openForm(y) },
+          ]}
+        />
+      </ListState>
+
+      <Modal open={formOpen} title="Eğitim yılı" onClose={() => setFormOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
           <Field label="Yıl adı" htmlFor="year-name">
-            <input
+            <Input
               id="year-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className={inputClass}
               placeholder="2026-2027"
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Başlangıç" htmlFor="year-start">
-              <input
+              <Input
                 id="year-start"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
-                className={inputClass}
               />
             </Field>
             <Field label="Bitiş" htmlFor="year-end">
-              <input
+              <Input
                 id="year-end"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 required
-                className={inputClass}
               />
             </Field>
           </div>
-          <label className="flex items-center gap-2 text-sm text-text">
+          <label className="flex min-h-9 items-center gap-2 text-sm text-text max-md:min-h-11">
             <input
               type="checkbox"
               checked={isActive}
@@ -192,12 +205,12 @@ export default function AcademicYearsPage() {
             Bu yılı aktif yap
           </label>
           <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              Eğitim yılını kaydet
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>
