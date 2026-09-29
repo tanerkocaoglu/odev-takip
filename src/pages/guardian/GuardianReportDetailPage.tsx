@@ -7,26 +7,16 @@
  * bu sayfa yalnızca teslim geçmişini ve canlı `prev_submissions` verisini ekler.
  */
 
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
-import type { GuardianReportDetail } from "../../types";
-import {
-  guardianApi,
-  openProtectedFile,
-  ApiClientError,
-} from "../../services/api";
-import GuardianReportView from "../../components/customer/GuardianReportView";
-import SubmissionHistory from "../../components/customer/SubmissionHistory";
-import {
-  buttonClass,
-  EmptyState,
-  ErrorState,
-  Skeleton,
-  useToast,
-} from "../../components/ui";
-import HomeworkAttachments from "../../components/HomeworkAttachments";
-import SubmissionFileGrid from "../../components/SubmissionFileGrid";
+import { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import type { GuardianReportDetail } from '../../types';
+import { guardianApi, openProtectedFile, ApiClientError } from '../../services/api';
+import GuardianReportView from '../../components/customer/GuardianReportView';
+import SubmissionHistory from '../../components/customer/SubmissionHistory';
+import { buttonClass, EmptyState, ErrorState, Skeleton, useToast } from '../../components/ui';
+import HomeworkAttachments from '../../components/HomeworkAttachments';
+import SubmissionFileGrid from '../../components/SubmissionFileGrid';
 
 function DetailSkeleton() {
   return (
@@ -41,7 +31,7 @@ function DetailSkeleton() {
 
 function BackLink() {
   return (
-    <Link to="/guardian" className={buttonClass("ghost", "sm", "-ml-2 mb-3")}>
+    <Link to="/guardian" className={buttonClass('ghost', 'sm', '-ml-2 mb-3')}>
       <ArrowLeft size={16} aria-hidden="true" />
       Raporlarım
     </Link>
@@ -71,7 +61,7 @@ export default function GuardianReportDetailPage() {
           setError(
             err instanceof ApiClientError
               ? err.message
-              : "Rapor yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.",
+              : 'Rapor yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
           );
         }
       })
@@ -88,9 +78,7 @@ export default function GuardianReportDetailPage() {
       await openProtectedFile(key);
     } catch (err) {
       toast.error(
-        err instanceof ApiClientError
-          ? err.message
-          : "Dosya açılamadı. Yeniden deneyin.",
+        err instanceof ApiClientError ? err.message : 'Dosya açılamadı. Yeniden deneyin.',
       );
     }
   }
@@ -108,10 +96,7 @@ export default function GuardianReportDetailPage() {
     return (
       <div>
         <BackLink />
-        <ErrorState
-          message={error}
-          onRetry={() => setReloadKey((k) => k + 1)}
-        />
+        <ErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
       </div>
     );
   }
@@ -143,8 +128,7 @@ export default function GuardianReportDetailPage() {
             const prev = prevByClassCourse.get(course.class_course_id);
             const teacherAttachments = prev?.attachments ?? [];
             const files = prev?.submission?.files ?? [];
-            if (teacherAttachments.length === 0 && files.length === 0)
-              return null;
+            if (teacherAttachments.length === 0 && files.length === 0) return null;
             return (
               <div className="mt-2 space-y-2">
                 {teacherAttachments.length > 0 && (
@@ -158,9 +142,7 @@ export default function GuardianReportDetailPage() {
                 )}
                 {files.length > 0 && (
                   <div>
-                    <p className="text-[13px] text-muted">
-                      Öğrencinin bu ödeve yüklediği dosyalar
-                    </p>
+                    <p className="text-[13px] text-muted">Öğrencinin bu ödeve yüklediği dosyalar</p>
                     <SubmissionFileGrid
                       variant="server"
                       files={files}

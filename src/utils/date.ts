@@ -48,3 +48,13 @@ export function formatDateTime(input: string | number | Date): string {
 export function formatDateIst(input: string | number | Date): string {
   return formatDateTime(input).slice(0, 10);
 }
+
+/** Bugünün tarihi `yyyy-aa-gg` — Europe/Istanbul takvimine göre (tarayıcı saat diliminden bağımsız). */
+export function todayIstanbulISO(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}

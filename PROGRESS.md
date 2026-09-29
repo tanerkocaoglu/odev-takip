@@ -5,6 +5,22 @@
 
 ---
 
+## Yeniden tasarım — Parti 5: öğrenci ekranı ✅
+
+**5a** (`3bb6c95`): `CustomerShell` — alt gezinme tam genişlik çubuk (56px + safe-area), içerik alt boşluğu
+çubuğa göre (pb-36 tahmini yerine), klavye açıkken çubuk kalkar, `dvh`; hesap diyaloğu
+`useDialogBehavior`'a taşındı (Escape artık `document`'ta). `HomeworkAttachments` comfortable varyantı
+(öğrenci + veli), `Badge spin`.
+**5b**: `HomeworkListPage` bölündü (`HomeworkCards`, `UploadPanel`, `useHomeworkUploads`, `uploadRules`,
+`cardStatus`): dosya başına durum + yeniden deneme + toplam ilerleme, seçim doğrulaması gösterimi,
+Badge'li teslim durumu, İstanbul günü ile "son tarih geçti". Yükleme kuralları aynen. **Karar (tasarım
+isteği gereği): dosyalar tek tek gönderilir → teslim atomik değil** (backend değişmedi; sunucu zaten append).
+Güncelleme/yeni testler: `customer-shell` (+3, Escape document), `student-upload` (+10: limit/boyut/tür
+gösterimi, sıralı istek + not, hata + ilerleme, yalnız hatalı dosyayı yeniden deneme, puan/not sızıntı
+taraması). Frontend 216/216, typecheck/lint/build temiz.
+
+---
+
 ## Düzeltme — rapor girişi açılışta otomatik kayıt tetiklemiyor ✅
 
 Sunucudan yüklenen durum taban çizgisi (`baselineRef`); kayıt yalnızca mevcut durum

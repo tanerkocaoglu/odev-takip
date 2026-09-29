@@ -389,6 +389,30 @@ Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entr
   ders kartları sayfa ortasında bölünmez (`break-inside-avoid`).
 - `ReportSnapshot` (admin gönderim önizlemesi) veri biçimi sabittir; görünümü Parti 6'da gözden geçirilir.
 
+### Öğrenci ekranı (Parti 5)
+
+- **Kırmızı çizgi (spec §6):** ekranda yalnızca ders, öğretmen, hafta, açıklama, son tarih,
+  öğretmenin PDF ekleri ve TESLİM DURUMU. Puan, öğretmen notu, rapor içeriği ve değerlendirme
+  süreci ASLA (`src/pages/student/*` bu alan adlarına hiç başvurmaz; `student-upload.test.tsx`
+  hem çalışma zamanı hem kaynak taraması ile doğrular — yeni öğrenci bileşeni de geçmeli).
+- **Yükleme kuralları DEĞİŞMEZ** (`uploadRules.ts`): jpg/jpeg/png/heic(heif)/pdf, dosya başına
+  10 MB, teslim başına toplam 30 (sunucudaki dosyalar dahil). İhlal: sabit kural cümlesi +
+  dosya bazlı ayrıntı (`InlineNotice`, `role=alert`); boyut/tür ihlalinde geçerli dosyalar eklenir,
+  30 aşımında seçimin tamamı reddedilir ve kalan kontenjan söylenir. HEIC dönüşüm hatası sunucunun
+  Türkçe mesajıyla dosyanın satırında görünür.
+- **Dosya başına yükleme** (`useHomeworkUploads`): her dosya kendi isteğiyle SIRAYLA
+  (`studentApi.submit(id, [dosya], not)`; sunucu ilk dosyada teslimi oluşturur, sonrakini ekler).
+  Durumlar: Hazır / Yükleniyor… / Yüklendi / Yüklenemedi (+ o dosya için "Yeniden dene"),
+  toplam ilerleme ("3 / 8 dosya yüklendi", `role=progressbar`). Hepsi yüklenince liste yenilenir ve
+  "Tamamlanan" sekmesine geçilir. **Not: teslim artık atomik değildir** — kısmi yükleme mümkündür
+  (yüklenenler kaybolmaz).
+- **Telefon:** bekleyen ödevler yatay kartlar (masaüstünde ızgara); her hedef ≥ 44px, alanlar 16px.
+  `CustomerShell` alt çubuğu 56px + `env(safe-area-inset-bottom)`; içerik alt boşluğu
+  `calc(5rem + env(safe-area-inset-bottom))`; klavye açıkken çubuk render edilmez. Hesap diyaloğu
+  `useDialogBehavior` kullanır. `HomeworkAttachments size="comfortable"` (44px satırlar) öğrenci/veli için.
+- Durum rozetleri `Badge`: Yüklendi (positive) · Geç yüklendi (warning) · Yüklenmedi (neutral; süresi
+  geçmişse danger + "Son tarih geçti" warning).
+
 ### Yükleniyor / hata / boş
 
 Her veri ekranı üçünü de ele alır: **yükleniyor** → `LoadingState` (iskelet);
@@ -430,8 +454,7 @@ Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
   sağda). `md`+ sekmeler şeritte; dar ekranda şeridin altında yapışkan sekme
   çubuğu (sekme ≥ 44px, kısa etiket, tam ad `aria-label`).
 - **Öğrenci / veli** (`CustomerShell`): 56px üst şerit (yalnızca marka) + alt dock
-  (Ödevlerim/Raporlarım + Hesap). *(Dock ve hesap paneli Parti 5'te
-  gözden geçirilecek.)*
+  (Ödevlerim/Raporlarım + Hesap). Alt çubuk içerik alt boşluğuyla eşleştirilmiştir (bkz. "Öğrenci ekranı").
 - Her kabukta sayfada **tek** `BrandLogo` bulunur (admin'de kenar çubuğu +
   dar ekran çubuğu CSS ile dönüşümlü görünür).
 - **Giriş / şifre değiştirme:** `lg`+ solda teal marka paneli (`brand-panel`) +
