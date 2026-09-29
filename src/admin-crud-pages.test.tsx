@@ -3,7 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import ClassesPage from './pages/admin/ClassesPage';
 import CoursesPage from './pages/admin/CoursesPage';
@@ -121,5 +121,42 @@ describe('Eğitim yılı', () => {
         true,
       ),
     );
+  });
+
+  it('Düzenle yeni kayıt oluşturmaz: PATCH gider, yalnızca değişen alanlarla', async () => {
+    wrap(<AcademicYearsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '2025-2026 için işlemler' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Düzenle' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Eğitim yılını düzenle' });
+    expect(within(dialog).getByLabelText('Yıl adı')).toHaveValue('2025-2026');
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-06-26' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Eğitim yılını kaydet' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.startsWith('PATCH') && c.includes('/academic-years/y2'))).toBe(
+        true,
+      ),
+    );
+    expect(calls.some((c) => c.startsWith('POST'))).toBe(false);
+    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, i]) => i?.method === 'PATCH',
+    )!;
+    expect(JSON.parse(String(call[1].body))).toEqual({ end_date: '2026-06-26' });
+  });
+
+  it('düzenlemede ad çakışması (409) yıl adı alanının altında görünür', async () => {
+    overrides['PATCH'] = json(
+      { error: { code: 'CONFLICT', message: 'Bu adla bir eğitim yılı zaten var.' } },
+      409,
+    );
+    wrap(<AcademicYearsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '2025-2026 için işlemler' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Düzenle' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Yıl adı'), { target: { value: '2026-2027' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Eğitim yılını kaydet' }));
+    expect(
+      await within(dialog).findByText('Bu adla bir eğitim yılı zaten var.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

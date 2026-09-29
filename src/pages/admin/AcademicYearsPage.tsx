@@ -30,6 +30,8 @@ export default function AcademicYearsPage() {
   const [isActive, setIsActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [editYear, setEditYear] = useState<AcademicYear | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,25 +50,45 @@ export default function AcademicYearsPage() {
     load();
   }, [load]);
 
-  async function handleCreate(event: FormEvent) {
+  /** Yeni yıl → POST; "Düzenle" → PATCH (yeni kayıt oluşturmaz; yalnızca değişen alanlar gider). */
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
     setFormError(null);
+    setFieldErrors({});
     try {
-      await adminApi.academicYears.create({
-        name: name.trim(),
-        start_date: startDate,
-        end_date: endDate,
-        is_active: isActive,
-      });
+      if (editYear) {
+        const patch: Parameters<typeof adminApi.academicYears.patch>[1] = {};
+        if (name.trim() !== editYear.name) patch.name = name.trim();
+        if (startDate !== editYear.start_date) patch.start_date = startDate;
+        if (endDate !== editYear.end_date) patch.end_date = endDate;
+        if (isActive !== (editYear.is_active === 1)) patch.is_active = isActive;
+        await adminApi.academicYears.patch(editYear.id, patch);
+      } else {
+        await adminApi.academicYears.create({
+          name: name.trim(),
+          start_date: startDate,
+          end_date: endDate,
+          is_active: isActive,
+        });
+      }
       setFormOpen(false);
+      setEditYear(null);
       setName('');
       setStartDate('');
       setEndDate('');
       setIsActive(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Eğitim yılı kaydedilemedi.');
+      if (err instanceof ApiClientError) {
+        const fields = err.fields ?? {};
+        setFieldErrors(fields);
+        // Adla çakışma (409) yıl adı alanının altında; alan eşlemesi yoksa genel hata
+        if (err.status === 409) setFieldErrors({ name: err.message });
+        else if (Object.keys(fields).length === 0) setFormError(err.message);
+      } else {
+        setFormError('Eğitim yılı kaydedilemedi.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -83,13 +105,20 @@ export default function AcademicYearsPage() {
   }
 
   function openForm(year?: AcademicYear) {
+    setEditYear(year ?? null);
     if (year) {
       setName(year.name);
       setStartDate(year.start_date);
       setEndDate(year.end_date);
       setIsActive(year.is_active === 1);
+    } else {
+      setName('');
+      setStartDate('');
+      setEndDate('');
+      setIsActive(false);
     }
     setFormError(null);
+    setFieldErrors({});
     setFormOpen(true);
   }
 
@@ -164,9 +193,13 @@ export default function AcademicYearsPage() {
         />
       </ListState>
 
-      <Modal open={formOpen} title="Eğitim yılı" onClose={() => setFormOpen(false)}>
-        <form onSubmit={handleCreate} className="space-y-4">
-          <Field label="Yıl adı" htmlFor="year-name">
+      <Modal
+        open={formOpen}
+        title={editYear ? 'Eğitim yılını düzenle' : 'Yeni eğitim yılı'}
+        onClose={() => setFormOpen(false)}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Field label="Yıl adı" htmlFor="year-name" error={fieldErrors.name}>
             <Input
               id="year-name"
               value={name}
@@ -176,7 +209,7 @@ export default function AcademicYearsPage() {
             />
           </Field>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Başlangıç" htmlFor="year-start">
+            <Field label="Başlangıç" htmlFor="year-start" error={fieldErrors.start_date}>
               <Input
                 id="year-start"
                 type="date"
@@ -185,7 +218,7 @@ export default function AcademicYearsPage() {
                 required
               />
             </Field>
-            <Field label="Bitiş" htmlFor="year-end">
+            <Field label="Bitiş" htmlFor="year-end" error={fieldErrors.end_date}>
               <Input
                 id="year-end"
                 type="date"
@@ -208,7 +241,7 @@ export default function AcademicYearsPage() {
           <FormActions>
             <Button onClick={() => setFormOpen(false)}>İptal</Button>
             <Button variant="primary" type="submit" loading={submitting}>
-              Eğitim yılını kaydet
+              {editYear ? 'Eğitim yılını kaydet' : 'Eğitim yılını ekle'}
             </Button>
           </FormActions>
         </form>
