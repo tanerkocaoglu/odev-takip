@@ -7,23 +7,44 @@
  * bu sayfa yalnızca teslim geçmişini ve canlı `prev_submissions` verisini ekler.
  */
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import type { GuardianReportDetail } from '../../types';
-import { guardianApi, openProtectedFile, ApiClientError } from '../../services/api';
-import GuardianReportView from '../../components/customer/GuardianReportView';
-import SubmissionHistory from '../../components/customer/SubmissionHistory';
-import HomeworkAttachments from '../../components/HomeworkAttachments';
-import SubmissionFileGrid from '../../components/SubmissionFileGrid';
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import type { GuardianReportDetail } from "../../types";
+import {
+  guardianApi,
+  openProtectedFile,
+  ApiClientError,
+} from "../../services/api";
+import GuardianReportView from "../../components/customer/GuardianReportView";
+import SubmissionHistory from "../../components/customer/SubmissionHistory";
+import {
+  buttonClass,
+  EmptyState,
+  ErrorState,
+  Skeleton,
+  useToast,
+} from "../../components/ui";
+import HomeworkAttachments from "../../components/HomeworkAttachments";
+import SubmissionFileGrid from "../../components/SubmissionFileGrid";
 
 function DetailSkeleton() {
   return (
-    <div className="customer-face space-y-4" aria-hidden="true">
-      <div className="shimmer h-32 w-full rounded-3xl" />
-      <div className="shimmer h-12 w-full rounded-2xl" />
-      <div className="shimmer h-64 w-full rounded-2xl" />
-      <div className="shimmer h-64 w-full rounded-2xl" />
+    <div role="status" aria-busy="true" className="space-y-4">
+      <span className="sr-only">Yükleniyor…</span>
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-48 w-full" />
+      <Skeleton className="h-64 w-full" />
     </div>
+  );
+}
+
+function BackLink() {
+  return (
+    <Link to="/guardian" className={buttonClass("ghost", "sm", "-ml-2 mb-3")}>
+      <ArrowLeft size={16} aria-hidden="true" />
+      Raporlarım
+    </Link>
   );
 }
 
@@ -32,6 +53,8 @@ export default function GuardianReportDetailPage() {
   const [data, setData] = useState<GuardianReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const toast = useToast();
 
   useEffect(() => {
     if (!id) return;
@@ -45,7 +68,11 @@ export default function GuardianReportDetailPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+          setError(
+            err instanceof ApiClientError
+              ? err.message
+              : "Rapor yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.",
+          );
         }
       })
       .finally(() => {
@@ -54,30 +81,46 @@ export default function GuardianReportDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   async function openFile(key: string) {
     try {
       await openProtectedFile(key);
     } catch (err) {
-      window.alert(err instanceof ApiClientError ? err.message : 'Dosya açılamadı.');
+      toast.error(
+        err instanceof ApiClientError
+          ? err.message
+          : "Dosya açılamadı. Yeniden deneyin.",
+      );
     }
   }
 
-  if (loading) return <DetailSkeleton />;
+  if (loading) {
+    return (
+      <div>
+        <BackLink />
+        <DetailSkeleton />
+      </div>
+    );
+  }
 
   if (error) {
     return (
-      <p role="alert" className="text-sm font-medium text-sub-missing">
-        {error}
-      </p>
+      <div>
+        <BackLink />
+        <ErrorState
+          message={error}
+          onRetry={() => setReloadKey((k) => k + 1)}
+        />
+      </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="rounded-3xl border border-dashed border-border bg-surface/60 py-14 text-center">
-        <p className="text-sm font-medium text-text">Rapor bulunamadı</p>
+      <div>
+        <BackLink />
+        <EmptyState message="Rapor bulunamadı." />
       </div>
     );
   }
@@ -89,49 +132,55 @@ export default function GuardianReportDetailPage() {
   );
 
   return (
-    <div className="space-y-10">
-      <GuardianReportView
-        snapshot={data.snapshot}
-        variant="guardian"
-        sentAt={data.digest.sent_at}
-        renderPrevHomework={(course) => {
-          const prev = prevByClassCourse.get(course.class_course_id);
-          const teacherAttachments = prev?.attachments ?? [];
-          const files = prev?.submission?.files ?? [];
-          if (teacherAttachments.length === 0 && files.length === 0) return null;
-          return (
-            <div className="mt-2 space-y-2">
-              {teacherAttachments.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted">Öğretmenin eklediği dosyalar</p>
-                  <HomeworkAttachments
-                    attachments={teacherAttachments}
-                    onOpen={(key) => void openFile(key)}
-                  />
-                </div>
-              )}
-              {files.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted">
-                    Öğrencinin bu ödeve yüklediği dosyalar
-                  </p>
-                  <SubmissionFileGrid
-                    variant="server"
-                    files={files}
-                    collapsible
-                    onOpenPdf={(key) => void openFile(key)}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        }}
-      />
+    <div>
+      <BackLink />
+      <div className="space-y-8">
+        <GuardianReportView
+          snapshot={data.snapshot}
+          variant="guardian"
+          sentAt={data.digest.sent_at}
+          renderPrevHomework={(course) => {
+            const prev = prevByClassCourse.get(course.class_course_id);
+            const teacherAttachments = prev?.attachments ?? [];
+            const files = prev?.submission?.files ?? [];
+            if (teacherAttachments.length === 0 && files.length === 0)
+              return null;
+            return (
+              <div className="mt-2 space-y-2">
+                {teacherAttachments.length > 0 && (
+                  <div>
+                    <p className="text-[13px] text-muted">
+                      Öğretmenin eklediği dosyalar
+                    </p>
+                    <HomeworkAttachments
+                      attachments={teacherAttachments}
+                      onOpen={(key) => void openFile(key)}
+                    />
+                  </div>
+                )}
+                {files.length > 0 && (
+                  <div>
+                    <p className="text-[13px] text-muted">
+                      Öğrencinin bu ödeve yüklediği dosyalar
+                    </p>
+                    <SubmissionFileGrid
+                      variant="server"
+                      files={files}
+                      collapsible
+                      onOpenPdf={(key) => void openFile(key)}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          }}
+        />
 
-      <SubmissionHistory
-        submissions={data.submissions}
-        onOpenFile={(key) => void openFile(key)}
-      />
+        <SubmissionHistory
+          submissions={data.submissions}
+          onOpenFile={(key) => void openFile(key)}
+        />
+      </div>
     </div>
   );
 }
