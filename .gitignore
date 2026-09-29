@@ -10,3 +10,8 @@ backend/backups/
 .env
 backend/.env
 *.log
+
+# Yerel bileşen galerisi (dev aracı; commit edilmez)
+gallery.html
+src/__gallery.tsx
+src/__gallery-main.tsx

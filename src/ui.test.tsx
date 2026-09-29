@@ -5,7 +5,16 @@
 import { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { Button, ConfirmDialog, LoadingState, Modal, ToastProvider, useToast } from './components/ui';
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  LoadingState,
+  Modal,
+  ToastProvider,
+  useToast,
+} from './components/ui';
 import BrandLogo from './components/BrandLogo';
 
 function ModalHost() {
@@ -111,5 +120,18 @@ describe('LoadingState', () => {
   it('ekran okuyucuya "Yükleniyor…" duyurur', () => {
     render(<LoadingState />);
     expect(screen.getByRole('status')).toHaveTextContent('Yükleniyor…');
+  });
+});
+
+describe('CountChip', () => {
+  it('yalnızca sayıyı gösterir: ikon yok (durum rozetinden ayrı)', () => {
+    const { container } = render(<CountChip value={14} />);
+    expect(container).toHaveTextContent('14');
+    expect(container.querySelector('svg')).toBeNull();
+  });
+
+  it('nötr durum rozeti çizgi (eksi) ikonu taşımaz', () => {
+    const { container } = render(<Badge tone="neutral">Taslak</Badge>);
+    expect(container.querySelector('svg.lucide-minus')).toBeNull();
   });
 });

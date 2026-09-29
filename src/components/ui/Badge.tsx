@@ -6,14 +6,14 @@
  */
 
 import type { ReactNode } from 'react';
-import { CircleAlert, CircleCheck, Clock, Info, Minus, type LucideIcon } from 'lucide-react';
+import { Circle, CircleAlert, CircleCheck, Clock, Info, type LucideIcon } from 'lucide-react';
 import { ATTENDANCE_LABELS, type Attendance } from '../../types';
 import { cx } from './cx';
 
 export type BadgeTone = 'neutral' | 'positive' | 'warning' | 'danger' | 'info';
 
 const TONES: Record<BadgeTone, { cls: string; icon: LucideIcon }> = {
-  neutral: { cls: 'bg-muted/10 text-muted', icon: Minus },
+  neutral: { cls: 'bg-muted/10 text-muted', icon: Circle },
   positive: { cls: 'bg-success/10 text-success', icon: CircleCheck },
   warning: { cls: 'bg-warning/10 text-warning', icon: Clock },
   danger: { cls: 'bg-danger/10 text-danger', icon: CircleAlert },

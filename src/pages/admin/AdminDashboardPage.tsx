@@ -22,6 +22,7 @@ import type { AdminDashboard, RiskList } from '../../types';
 import { DAY_LABELS, RISK_FLAG_LABELS, type RiskFlag } from '../../types';
 import { adminApi, downloadBackup, ApiClientError } from '../../services/api';
 import { Badge, EmptyState, FormError, PageTitle } from '../../components/admin/ui';
+import { CountChip } from '../../components/ui';
 import { formatDate } from '../../utils/date';
 
 /** İskelet bloğu — shimmer sınıfı index.css'te tanımlı. */
@@ -29,10 +30,30 @@ function Skeleton({ className = '' }: { className?: string }) {
   return <div aria-hidden="true" className={'shimmer rounded ' + className} />;
 }
 
-/** Özet kartı ikonu — accent %10 daire içinde. */
-function CardIcon({ Icon }: { Icon: LucideIcon }) {
+const CARD_ICON_TONES = {
+  success: 'bg-success/10 text-success',
+  warning: 'bg-warning/10 text-warning',
+  info: 'bg-info/10 text-info',
+  neutral: 'bg-subtle text-muted',
+} as const;
+
+/**
+ * Özet kartı ikonu. Kartın anlamı yalnızca bu dairenin semantik renginde
+ * (ikon + sayı + etiket birlikte) taşınır; accent yalnızca etkileşim içindir.
+ */
+function CardIcon({
+  Icon,
+  tone = 'neutral',
+}: {
+  Icon: LucideIcon;
+  tone?: keyof typeof CARD_ICON_TONES;
+}) {
   return (
-    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/10 text-accent">
+    <span
+      className={
+        'flex h-8 w-8 items-center justify-center rounded-full ' + CARD_ICON_TONES[tone]
+      }
+    >
       <Icon size={16} aria-hidden="true" />
     </span>
   );
@@ -174,7 +195,7 @@ export default function AdminDashboardPage() {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
               {label}
             </span>
-            {count !== null && <Badge tone="neutral">{count}</Badge>}
+            {count !== null && <CountChip value={count} />}
           </button>
         );
       })}
@@ -216,22 +237,21 @@ export default function AdminDashboardPage() {
         </p>
       )}
 
-      {/* Özet kartları — üst kenarlık anlam rengi; tıklanabilirler Level 2 hover */}
+      {/* Özet kartları — kenarlıklı, üst çizgisiz; anlam ikon dairesinin
+          semantik renginde. Tıklanabilir kartlar hover'da accent kenarlık alır. */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="elevation-1 rounded-md border border-border border-t-2 border-t-status-sent bg-surface p-4">
-          <CardIcon Icon={CheckCircle} />
+        <div className="rounded-md border border-border bg-surface p-4">
+          <CardIcon Icon={CheckCircle} tone="success" />
           <p className="tabular mt-2 text-2xl font-semibold text-text">{completed}</p>
           <p className="mt-1 text-xs text-muted">
             Tamamlanan rapor{data.week ? ` · ${data.week.label}` : ''}
           </p>
         </div>
-        <div
-          className={
-            'elevation-1 rounded-md border border-border border-t-2 bg-surface p-4 ' +
-            (data.week_not_started ? 'border-t-border' : 'border-t-att-late')
-          }
-        >
-          <CardIcon Icon={data.week_not_started ? LayoutDashboard : AlertTriangle} />
+        <div className="rounded-md border border-border bg-surface p-4">
+          <CardIcon
+            Icon={data.week_not_started ? LayoutDashboard : AlertTriangle}
+            tone={data.week_not_started ? 'neutral' : 'warning'}
+          />
           <p className="tabular mt-2 text-2xl font-semibold text-text">
             {data.week_not_started ? '—' : Math.max(0, total - completed)}
           </p>
@@ -241,9 +261,9 @@ export default function AdminDashboardPage() {
         </div>
         <Link
           to="/admin/digests"
-          className="card-interactive elevation-1 block rounded-md border border-border border-t-2 border-t-status-completed bg-surface p-4"
+          className="card-interactive block rounded-md border border-border bg-surface p-4"
         >
-          <CardIcon Icon={Send} />
+          <CardIcon Icon={Send} tone="info" />
           <p className="tabular mt-2 text-2xl font-semibold text-text">
             {data.digests.ready}
             <span className="text-base font-normal text-muted"> hazır</span>
@@ -254,7 +274,7 @@ export default function AdminDashboardPage() {
         </Link>
         <Link
           to="/admin/reports"
-          className="card-interactive elevation-1 block rounded-md border border-border border-t-2 border-t-accent bg-surface p-4"
+          className="card-interactive block rounded-md border border-border bg-surface p-4"
         >
           <CardIcon Icon={Archive} />
           <p className="mt-2 text-base font-semibold text-text">Tüm raporlar</p>

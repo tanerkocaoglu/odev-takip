@@ -13,6 +13,7 @@ export {
   textareaClass,
 } from './Field';
 export { Badge, StatusBadge, AttendanceBadge, type BadgeTone } from './Badge';
+export { CountChip } from './CountChip';
 export { Card } from './Card';
 export { TableCard } from './Table';
 export { thClass, tdClass, type Density } from './tableStyles';

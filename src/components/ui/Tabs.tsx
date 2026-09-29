@@ -4,6 +4,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { CountChip } from './CountChip';
 import { cx } from './cx';
 
 export interface TabItem<T extends string> {
@@ -47,11 +48,7 @@ export function Tabs<T extends string>({
           >
             {t.icon}
             {t.label}
-            {t.count !== undefined && (
-              <span className="tabular rounded-full bg-subtle px-1.5 text-xs text-muted">
-                {t.count}
-              </span>
-            )}
+            {t.count !== undefined && <CountChip value={t.count} />}
             {active && (
               <span
                 aria-hidden="true"
