@@ -1,30 +1,46 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { Course } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
-import Modal from '../../components/admin/Modal';
 import {
-  DangerButton,
-  EmptyState,
+  ActionError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
-  FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
+  FormActions,
+  Input,
+  ListState,
+  Modal,
   SearchBox,
-  inputClass,
-} from '../../components/admin/ui';
+  Toolbar,
+  type Column,
+} from '../../components/ui';
+
+const COLUMNS: Column<Course>[] = [
+  {
+    key: 'name',
+    header: 'Ders adı',
+    card: 'title',
+    cell: (c) => <span className="font-medium">{c.name}</span>,
+  },
+];
 
 export default function CoursesPage() {
   const [q, setQ] = useState('');
   const [items, setItems] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [deleteItem, setDeleteItem] = useState<Course | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,7 +49,7 @@ export default function CoursesPage() {
       const data = await adminApi.courses.list(q || undefined);
       setItems(data.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bir hata oluştu.');
+      setError(err instanceof Error ? err.message : 'Dersler yüklenemedi. Yeniden deneyin.');
     } finally {
       setLoading(false);
     }
@@ -70,87 +86,106 @@ export default function CoursesPage() {
       setFormOpen(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setFormError(err instanceof ApiClientError ? err.message : 'Ders kaydedilemedi.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(item: Course) {
-    if (!window.confirm(`"${item.name}" silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteItem) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.courses.remove(item.id);
+      await adminApi.courses.remove(deleteItem.id);
+      setDeleteItem(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setDeleteItem(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Ders silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <SearchBox value={q} onChange={setQ} placeholder="Ders ara…" />
-        <PrimaryButton onClick={openCreate}>Yeni ders</PrimaryButton>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <SearchBox value={q} onChange={setQ} placeholder="Ders ara…" label="Ders ara" />
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={items.length} /> ders
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <Button variant="primary" onClick={openCreate}>
+            Yeni ders
+          </Button>
+        }
+      />
 
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : items.length === 0 ? (
-        <EmptyState message="Ders tanımlanmamış." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Ders adı</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{item.name}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(item)}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Düzenle
-                    </button>
-                    <DangerButton onClick={() => handleDelete(item)}>Sil</DangerButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
+
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={items.length === 0}
+        emptyMessage="Ders tanımlanmamış."
+        emptyAction={
+          <Button variant="primary" onClick={openCreate}>
+            Yeni ders
+          </Button>
+        }
+      >
+        <DataTable
+          rows={items}
+          columns={COLUMNS}
+          rowKey={(c) => c.id}
+          rowLabel={(c) => c.name}
+          actions={(c) => [
+            { label: 'Düzenle', onSelect: () => openEdit(c) },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteItem(c) },
+          ]}
+        />
+      </ListState>
+
+      <ConfirmDialog
+        open={deleteItem !== null}
+        title="Dersi sil"
+        confirmLabel="Dersi sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteItem(null)}
+      >
+        "{deleteItem?.name}" silinsin mi?
+      </ConfirmDialog>
 
       <Modal
         open={formOpen}
         title={editId ? 'Dersi düzenle' : 'Yeni ders'}
         onClose={() => setFormOpen(false)}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Ders adı" htmlFor="course-name">
-            <input
+        <form onSubmit={handleSubmit}>
+          <Field label="Ders adı" htmlFor="course-name" error={formError ?? undefined}>
+            <Input
               id="course-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className={inputClass}
               placeholder="Matematik"
             />
           </Field>
-          <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              {editId ? 'Dersi kaydet' : 'Dersi ekle'}
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>
