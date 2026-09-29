@@ -1,34 +1,36 @@
 /**
- * Öğretmen kabuğu — admin'in iç araç görsel diliyle paylaşılan üst navigasyon.
+ * Öğretmen kabuğu — mobil öncelikli üst navigasyon.
  *
- * Admin'den bilinçli fark: sol sabit dikey menü YOK. Öğretmen mobil öncelikli
- * olduğu için üst şerit korunur; sekmeler <md ekranda yatay kaydırılabilir
- * şeride döner ve dokunma hedefleri 44px'in altına inmez.
+ * - 56px üst şerit: marka solda, kullanıcı + çıkış sağda.
+ * - Masaüstü (md+): sekmeler şeritte ortalanır.
+ * - Mobil: şeridin altında yapışkan sekme çubuğu; her sekme ≥ 44px yüksekliğinde,
+ *   kısa etiketle sığar ("Geçmiş"); tam ad ekran okuyucuya kalır.
  *
- * İçerik `admin-content` hook'u altında yaşar; admin listelerindeki satır
- * hover'ı (zemin + solda ince accent şerit) öğretmen tablolarında da geçerlidir.
- * Renk/tipografi/marka admin ile aynı: global teal `--accent`, `h-20` şerit,
- * `h-16` logo.
+ * İçerik `admin-content` hook'u altında yaşar (satır hover şeridi).
+ * Admin kabuğuyla aynı görsel dil: teal accent, aynı token'lar.
  */
 
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import {
-  ClipboardCheck,
-  History,
-  LayoutDashboard,
-  type LucideIcon,
-} from 'lucide-react';
+import { ClipboardCheck, History, LayoutDashboard, LogOut, type LucideIcon } from 'lucide-react';
 import BrandLogo from '../BrandLogo';
 import { useAuth } from '../../context/AuthContext';
+import { Button, cx } from '../ui';
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Yönetici',
   teacher: 'Öğretmen',
 };
 
-const TABS: { to: string; label: string; end?: boolean; icon: LucideIcon }[] = [
+const TABS: {
+  to: string;
+  label: string;
+  /** Dar ekranda görünen kısa ad (yoksa `label`). */
+  short?: string;
+  end?: boolean;
+  icon: LucideIcon;
+}[] = [
   { to: '/teacher', label: 'Bu hafta', end: true, icon: LayoutDashboard },
-  { to: '/teacher/reports/history', label: 'Geçmiş raporlarım', icon: History },
+  { to: '/teacher/reports/history', label: 'Geçmiş raporlarım', short: 'Geçmiş', icon: History },
   { to: '/teacher/submissions', label: 'Teslimler', icon: ClipboardCheck },
 ];
 
@@ -43,93 +45,80 @@ export default function TeacherShell() {
 
   return (
     <div className="min-h-screen bg-bg">
-      <header className="bg-surface md:border-b md:border-border">
-        <div className="mx-auto flex h-20 max-w-5xl items-center justify-between gap-3 px-4">
-          <Link
-            to="/teacher"
-            className="flex shrink-0 items-center transition-opacity hover:opacity-80"
-          >
+      <header className="border-b border-border bg-surface">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4">
+          <Link to="/teacher" className="flex shrink-0 items-center">
             <BrandLogo size="sm" />
           </Link>
 
           {/* Masaüstü: satır içi sekmeler */}
           <nav aria-label="Öğretmen menüsü" className="hidden items-center gap-1 md:flex">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <NavLink
-                  key={tab.to}
-                  to={tab.to}
-                  end={tab.end}
-                  className={({ isActive }) =>
-                    'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ' +
-                    (isActive
+            {TABS.map(({ to, label, end, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  cx(
+                    'flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors',
+                    isActive
                       ? 'bg-accent/10 text-accent'
-                      : 'text-muted hover:bg-bg hover:text-text')
-                  }
-                >
-                  <Icon size={17} aria-hidden="true" className="shrink-0" />
-                  {tab.label}
-                </NavLink>
-              );
-            })}
+                      : 'text-muted hover:bg-subtle hover:text-text',
+                  )
+                }
+              >
+                <Icon size={17} aria-hidden="true" className="shrink-0" />
+                {label}
+              </NavLink>
+            ))}
           </nav>
 
-          <div className="flex shrink-0 items-center gap-3">
-            {user && (
-              <>
-                <span className="hidden text-sm text-muted sm:inline">
-                  {user.full_name} · {ROLE_LABELS[user.role] ?? user.role}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-bg"
-                >
-                  Çıkış
-                </button>
-              </>
-            )}
-          </div>
+          {user && (
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="hidden text-sm text-muted sm:inline">
+                {user.full_name} · {ROLE_LABELS[user.role] ?? user.role}
+              </span>
+              <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Çıkış">
+                <LogOut size={16} aria-hidden="true" />
+                <span className="hidden sm:inline">Çıkış</span>
+              </Button>
+            </div>
+          )}
         </div>
-
       </header>
 
-      {/* Mobil: marka satırı akışta kalır, kaydırınca doğal olarak kaybolur;
-          sekme şeridi `sticky` olduğundan hep görünür kalır. Böylece dikey
-          alan kazanılır ama "Bu hafta / Geçmiş / Teslimler" geçişi zorlaşmaz.
-          (Sticky, kapsayıcı yeterince uzun olsun diye header'ın DIŞINDA.) */}
+      {/* Mobil sekme çubuğu — header'ın DIŞINDA (sticky kapsayıcı yeterince uzun olsun) */}
       <nav
         aria-label="Öğretmen menüsü"
-        className="sticky top-0 z-30 flex gap-1 overflow-x-auto border-b border-border bg-surface/95 px-2 backdrop-blur md:hidden"
+        className="sticky top-0 z-30 flex border-b border-border bg-surface md:hidden"
       >
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              end={tab.end}
-              className={({ isActive }) =>
-                'relative flex min-h-[44px] shrink-0 items-center gap-2 rounded-md px-4 text-sm font-medium transition-colors ' +
-                (isActive ? 'text-accent' : 'text-muted hover:text-text')
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent"
-                    />
-                  )}
-                  <Icon size={17} aria-hidden="true" className="shrink-0" />
-                  {tab.label}
-                </>
-              )}
-            </NavLink>
-          );
-        })}
+        {TABS.map(({ to, label, short, end, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            aria-label={label}
+            className={({ isActive }) =>
+              cx(
+                'relative flex min-h-11 flex-1 items-center justify-center gap-2 px-2 text-sm font-medium transition-colors',
+                isActive ? 'text-accent' : 'text-muted hover:text-text',
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-accent"
+                  />
+                )}
+                <Icon size={17} aria-hidden="true" className="shrink-0" />
+                <span aria-hidden="true">{short ?? label}</span>
+              </>
+            )}
+          </NavLink>
+        ))}
       </nav>
 
       <main className="admin-content mx-auto max-w-5xl px-4 py-6">

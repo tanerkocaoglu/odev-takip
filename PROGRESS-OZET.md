@@ -134,6 +134,14 @@ rıza sürümleme, otomatik saklama süresi ve okuma audit log'u **ertelendi**;
    --execute` → satır silme script'i) henüz çalıştırılmadı. Ayrıca `seed.ts`
    PASKAL'ı hâlâ üretir → `db:seed`/`db:reset` onu geri getirir (kod izi; ayrı iş).
 
+4b. **Yeniden tasarım — Parti 7 temizlik listesi (iş sonunda sil):**
+   `.customer-face` / `.brand-scope` / `.brand-hero` / `.brand-canvas` /
+   `.brand-panel` (eski marka sınıfları) ve `--brand`/`--brand-deco`; eski
+   `att-*` / `status-*` / `sub-*` / `amber|red|blue|green` Tailwind takma adları
+   ve ilgili CSS değişkenleri; `elevation-*` sınıfları; `admin/ui.tsx`,
+   `admin/Modal.tsx`, `admin/Pagination.tsx` shim'leri (import'lar `components/ui`'a);
+   yerel galeri (`src/__gallery*.tsx`, `gallery.html` — gitignore'da).
+
 ## Bilinen ve belgelenmiş sınırlar
 
 - "Başlamamış hafta eksik sayılmaz" kuralı yalnızca admin dashboard'unda;

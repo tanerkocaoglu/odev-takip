@@ -118,7 +118,7 @@ export function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={cx(inputClass, 'w-auto')}
+        className={inputClass.replace('w-full ', '')}
       >
         {children}
       </select>

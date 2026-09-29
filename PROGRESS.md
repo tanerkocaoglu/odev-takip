@@ -5,6 +5,25 @@
 
 ---
 
+## Yeniden tasarım — Parti 2: layout, giriş, şifre değiştirme ✅
+
+**Ön düzeltmeler (ayrı commit `bcd6ce5`):** `CountChip` (ikonsuz sayaç; nötr
+rozetin çizgi ikonu sayıyı negatif gösteriyordu — tek kullanım panel filtreleri +
+`Tabs`), nötr rozet ikonu boş daire; panel özet kartlarının renkli üst çizgileri
+kaldırıldı (accent yalnızca etkileşim; anlam ikon dairesinin semantik renginde);
+lint uyarısının kaynağı yerel galeri dosyasıydı → export'lu bileşen + ayrı giriş
+dosyasına bölündü, `.gitignore`'a eklendi (eslint-disable yok).
+
+**Parti 2:** Admin gruplu menü + hamburger çekmece (`useDialogBehavior` ortak),
+öğretmen 56px şerit + kısa etiketli sekmeler, müşteri şeridi 56px, giriş ve
+şifre değiştirme yeni bileşenlerle, favicon/apple-touch-icon wordmark
+ikonundan yeniden üretildi (tek seferlik sharp, script commit'lenmedi).
+Gizlilik bağlantısı kontrastı: `#0D6B62` / bg `#F7F8F9` = **5.99:1** (≥ 4.5).
+Güncellenen test: `admin-layout.test.tsx` (logo iki kopya → `getAllByRole`; yeni:
+gruplar + çekmece açma/kapama testleri).
+
+---
+
 ## Yeniden tasarım — Parti 1: temel (token, font, ortak bileşenler, wordmark) ✅
 
 **Kapsam:** Tasarım sistemi temeli. Backend/API/şema/yetki dokunulmadı. Tek teal

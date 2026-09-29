@@ -1,30 +1,21 @@
 /**
- * Giriş ekranı — Aşama 2a retrofit sonrası.
+ * Giriş ekranı (comfortable yoğunluk).
  * Tek form: "E-posta veya kullanıcı adı" + "Şifre". Sunucu identifier'ın
  * email mi username mi olduğunu çözüp rolü belirler (spec.md §2.1):
  * - Admin/öğretmen: e-posta + şifre
- * - Veli/öğrenci: username + şifre (OTP kaldırıldı)
- * Tasarım kuralları: comfortable yoğunluk, alan altında kırmızı + metin
- * hata, yükleniyor durumu, buton ne yaptığını söyler.
+ * - Veli/öğrenci: username + şifre
  *
- * Görsel katman: rol-nötr marka kimliği (`.brand-scope` → marka mavisi accent
- * ve odak halkası). Mobilde marka tam ekran; logo üstte, form kartı alt-ortada
- * (kartın altı da marka rengi kalır — beyaz boşluk yok). Masaüstünde sol marka
- * paneli + sağ form. Davranış (form, yönlendirme, hata) değişmez.
+ * Düzen: dar ekranda üstte ince teal wordmark şeridi, altında form; lg ve
+ * üstünde solda teal marka paneli, sağda form. Davranış (form,
+ * yönlendirme, hata) değişmez.
  */
 
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import BrandLogo from '../components/BrandLogo';
+import { Button, Field, FormError, Input } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { ApiClientError } from '../services/api';
-
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return (
-    <p className="mt-1 text-xs font-medium text-att-absent">{message}</p>
-  );
-}
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -58,7 +49,7 @@ export default function LoginPage() {
         setFormError(err.message);
         setFieldErrors(err.fields ?? {});
       } else {
-        setFormError('Bir hata oluştu, lütfen tekrar deneyin.');
+        setFormError('Giriş yapılamadı. Bağlantınızı kontrol edip yeniden deneyin.');
       }
     } finally {
       setSubmitting(false);
@@ -66,105 +57,75 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="brand-scope brand-canvas relative flex min-h-[100dvh] flex-col lg:grid lg:grid-cols-[minmax(0,45%)_1fr]">
-      {/* Mobil: marka tüm ekranı kaplar (kartın altı da marka kalır). */}
-      <div
-        aria-hidden="true"
-        className="brand-panel pointer-events-none absolute inset-0 overflow-hidden lg:hidden"
-      >
-        <span className="absolute -right-16 -top-16 h-64 w-64 rounded-full border border-white/15" />
-        <span className="absolute -bottom-24 -right-10 h-72 w-72 rounded-full bg-white/5" />
-      </div>
-
-      {/* Logo + slogan. Masaüstünde sol marka paneli dolgusunu taşır; mobilde
-          saydamdır (tam ekran katman arkada). Beyaz metinler koyu marka
-          üzerinde kontrastlıdır; parlak deko tonu yalnızca dekoratiftir. */}
-      <aside className="relative z-10 flex justify-center px-6 pt-24 text-center lg:block lg:min-h-screen lg:px-12 lg:pt-0">
-        <div
-          aria-hidden="true"
-          className="brand-panel pointer-events-none absolute inset-0 hidden overflow-hidden lg:block"
-        >
-          <span className="absolute -right-16 -top-16 h-64 w-64 rounded-full border border-white/15" />
-          <span className="absolute -bottom-24 -right-10 h-72 w-72 rounded-full bg-white/5" />
-        </div>
-
-        <div className="relative z-10 flex flex-col items-center gap-4 lg:h-full lg:items-start lg:justify-center lg:gap-6">
-          <span className="rounded-2xl bg-surface p-4 shadow-[var(--elevation-3)]">
-            <BrandLogo size="lg" />
-          </span>
-          <p className="text-center text-xl font-semibold leading-snug tracking-wide text-accent-fg lg:text-left lg:text-2xl">
-            ÖDEV TAKİP
+    <div className="flex min-h-[100dvh] flex-col bg-bg lg:grid lg:grid-cols-[minmax(0,42%)_1fr]">
+      {/* Marka paneli — dar ekranda yalnızca wordmark'lı ince teal şerit,
+          masaüstünde tam sütun. Sayfadaki TEK BrandLogo burada. */}
+      <aside className="brand-panel flex flex-col justify-between px-4 py-4 text-accent-fg lg:p-12">
+        <BrandLogo tone="inverse" size="md" />
+        <div className="hidden max-w-sm lg:block">
+          <p className="text-2xl font-semibold leading-snug">
+            Haftalık ödev ve ders raporları, tek yerde.
+          </p>
+          <p className="mt-3 text-base leading-relaxed text-accent-fg/85">
+            Öğretmen raporunu girer, öğrenci ödevini yükler, veli haftalık özeti telefonundan okur.
           </p>
         </div>
+        <span aria-hidden="true" className="hidden lg:block" />
       </aside>
 
-      {/* Form — mobilde alt-ortada, masaüstünde sağ kolonda dikey ortada. */}
-      <div className="relative z-10 flex flex-1 items-center justify-center px-4 pb-10 lg:pb-0">
+      <main className="flex flex-1 flex-col items-center px-4 py-10 lg:justify-center">
         <div className="w-full max-w-sm">
-          <div className="rounded-3xl border border-border bg-surface p-6 shadow-[var(--elevation-3)]">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label
-                  htmlFor="login-identifier"
-                  className="mb-1 block text-sm font-medium text-muted"
-                >
-                  E-posta veya kullanıcı adı
-                </label>
-                <input
-                  id="login-identifier"
-                  type="text"
-                  autoComplete="username"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent"
-                />
-                <FieldError message={fieldErrors.identifier} />
-              </div>
+          <h1 className="text-xl font-semibold text-text">Giriş yap</h1>
+          <p className="mt-1 text-sm text-muted">
+            Öğretmen ve yöneticiler e-posta, öğrenci ve veliler kullanıcı adıyla girer.
+          </p>
 
-              <div>
-                <label
-                  htmlFor="login-password"
-                  className="mb-1 block text-sm font-medium text-muted"
-                >
-                  Şifre
-                </label>
-                <input
-                  id="login-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent"
-                />
-                <FieldError message={fieldErrors.password} />
-              </div>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+            <Field
+              label="E-posta veya kullanıcı adı"
+              htmlFor="login-identifier"
+              error={fieldErrors.identifier}
+            >
+              <Input
+                id="login-identifier"
+                type="text"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="h-11"
+              />
+            </Field>
 
-              {formError && (
-                <p role="alert" className="text-sm font-medium text-att-absent">
-                  {formError}
-                </p>
-              )}
+            <Field label="Şifre" htmlFor="login-password" error={fieldErrors.password}>
+              <Input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-11"
+              />
+            </Field>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="flex min-h-12 w-full items-center justify-center rounded-xl bg-accent px-4 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitting ? 'Giriş yapılıyor…' : 'Giriş yap'}
-              </button>
-            </form>
-          </div>
+            <FormError message={formError} />
 
-          <p className="mt-4 text-center">
+            <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full">
+              {submitting ? 'Giriş yapılıyor…' : 'Giriş yap'}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center">
             <Link
               to="/gizlilik"
-              className="text-xs font-medium text-accent hover:underline"
+              className="inline-flex min-h-11 items-center text-sm font-medium text-accent underline underline-offset-2 hover:text-accent-hover"
             >
               Gizlilik ve Aydınlatma Metni
             </Link>
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

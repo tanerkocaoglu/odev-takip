@@ -10,13 +10,9 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import BrandLogo from '../components/BrandLogo';
+import { Button, Card, Field, FormError, Input } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { ApiClientError } from '../services/api';
-
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <p className="mt-1 text-xs font-medium text-att-absent">{message}</p>;
-}
 
 /** Katı şifre politikası (backend ile aynı) — min 8 + büyük/küçük/rakam. */
 function policyError(password: string): string | null {
@@ -26,9 +22,6 @@ function policyError(password: string): string | null {
   if (!/\d/.test(password)) return 'Şifre en az bir rakam içermeli.';
   return null;
 }
-
-const inputClass =
-  'h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent';
 
 export default function ChangePasswordPage() {
   const { user, changePassword } = useAuth();
@@ -78,7 +71,7 @@ export default function ChangePasswordPage() {
         setFormError(err.message);
         setFieldErrors(err.fields ?? {});
       } else {
-        setFormError('Bir hata oluştu, lütfen tekrar deneyin.');
+        setFormError('Şifre değiştirilemedi. Bağlantınızı kontrol edip yeniden deneyin.');
       }
     } finally {
       setSubmitting(false);
@@ -86,82 +79,72 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-bg px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="flex justify-center">
-          <BrandLogo size="sm" />
+          <BrandLogo size="md" />
         </div>
 
-        <div className="mt-6 rounded-md border border-border bg-surface p-6">
+        <Card padding="lg" className="mt-6">
           <h1 className="text-xl font-semibold text-text">Yeni şifre belirle</h1>
           <p className="mt-1 text-sm text-muted">
             İlk girişte şifrenizi değiştirmeniz gerekiyor.
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-4 space-y-4" noValidate>
-            <div>
-              <label htmlFor="cp-current" className="mb-1 block text-sm font-medium text-muted">
-                Mevcut şifre
-              </label>
-              <input
+          <form onSubmit={handleSubmit} className="mt-5 space-y-4" noValidate>
+            <Field
+              label="Mevcut şifre"
+              htmlFor="cp-current"
+              error={fieldErrors.current_password}
+            >
+              <Input
                 id="cp-current"
                 type="password"
                 autoComplete="current-password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className={inputClass}
+                className="h-11"
               />
-              <FieldError message={fieldErrors.current_password} />
-            </div>
+            </Field>
 
-            <div>
-              <label htmlFor="cp-new" className="mb-1 block text-sm font-medium text-muted">
-                Yeni şifre
-              </label>
-              <input
+            <Field
+              label="Yeni şifre"
+              htmlFor="cp-new"
+              error={fieldErrors.new_password}
+              hint="En az 8 karakter; bir büyük harf, bir küçük harf ve bir rakam."
+            >
+              <Input
                 id="cp-new"
                 type="password"
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className={inputClass}
+                className="h-11"
               />
-              <p className="mt-1 text-xs text-muted">
-                En az 8 karakter; bir büyük harf, bir küçük harf ve bir rakam.
-              </p>
-              <FieldError message={fieldErrors.new_password} />
-            </div>
+            </Field>
 
-            <div>
-              <label htmlFor="cp-confirm" className="mb-1 block text-sm font-medium text-muted">
-                Yeni şifre (tekrar)
-              </label>
-              <input
+            <Field
+              label="Yeni şifre (tekrar)"
+              htmlFor="cp-confirm"
+              error={fieldErrors.confirm_password}
+            >
+              <Input
                 id="cp-confirm"
                 type="password"
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className={inputClass}
+                className="h-11"
               />
-              <FieldError message={fieldErrors.confirm_password} />
-            </div>
+            </Field>
 
-            {formError && (
-              <p role="alert" className="text-sm font-medium text-att-absent">
-                {formError}
-              </p>
-            )}
+            <FormError message={formError} />
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-md bg-accent px-4 py-2.5 text-sm font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? 'Kaydediliyor…' : 'Şifreyi değiştir'}
-            </button>
+            <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full">
+              {submitting ? 'Şifre değiştiriliyor…' : 'Şifreyi değiştir'}
+            </Button>
           </form>
-        </div>
+        </Card>
       </div>
     </div>
   );

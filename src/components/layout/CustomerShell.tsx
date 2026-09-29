@@ -98,12 +98,12 @@ export default function CustomerShell() {
             : 'border-b border-transparent bg-transparent')
         }
       >
-        <div className="mx-auto flex h-20 max-w-2xl items-center justify-center px-4 lg:max-w-5xl">
+        <div className="mx-auto flex h-14 max-w-2xl items-center px-4 lg:max-w-5xl">
           <BrandLogo size="sm" />
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl px-4 pb-36 pt-24 lg:max-w-5xl">{<Outlet />}</main>
+      <main className="mx-auto w-full max-w-2xl px-4 pb-36 pt-20 lg:max-w-5xl">{<Outlet />}</main>
 
       {/* Alt dock — mobil öncelikli, büyük dokunma hedefli gezinme. */}
       <nav className="fixed inset-x-0 bottom-0 z-30" aria-label="Ana gezinme">

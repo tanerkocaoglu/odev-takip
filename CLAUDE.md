@@ -287,7 +287,7 @@ her zaman aynı ailenin düz rengidir. **Yeni renk, hex veya `rgb()` yazma**;
 - **İki yarıçap:** `rounded-md` = 8px (buton, input, kart, satır, banner) ve
   `rounded-lg` = 12px (modal, çekmece, büyük yüzey). Rozet/çip/avatar
   `rounded-full`. `rounded-xl/2xl/3xl` yazılmaz (12px'e eşlenmiştir, kullanma).
-- Kart: `<Card>` (`border border-border bg-surface`). Tıklanabilir kart/satır:
+- Kart: `<Card>` (`border border-border bg-surface`). Kartlarda renkli üst/yan çizgi YOKTUR; anlam ikon dairesinin semantik renginde (`bg-success/10 text-success` vb.) verilir. Tıklanabilir kart/satır:
   `<Card interactive>` veya `card-interactive` sınıfı → hover'da accent
   kenarlık + `shadow-hover`. **Hover'da yükselme (`translateY`) YOKTUR.**
 - Gölge yalnızca: `shadow-hover` (etkileşimli kart hover), `shadow-float`
@@ -316,7 +316,8 @@ Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 | `Button` | `variant`: `primary` (sayfada tek ana eylem) · `secondary` (varsayılan) · `ghost` · `danger` (kenarlıklı) · `danger-solid` (onay diyaloğunda son adım); `size`: `sm`/`md`/`lg`; `loading` (döner ikon + devre dışı, metin değişmez). Bağlantı buton görünümü: `buttonClass(variant,size)` |
 | `Field` + `Input` / `Select` / `Textarea` | Her alan `Field` içinde (görünür etiket, `error` ikonlu metin, `hint`). Ham element gerekirse `inputClass` / `textareaClass` |
 | `SearchBox`, `FilterSelect`, `FilterChip` | liste arama/filtre; dar ekranda çip şeridi |
-| `Badge` (`tone`: neutral/positive/warning/danger/info), `StatusBadge`, `AttendanceBadge` | durum rozeti; ikon otomatik |
+| `Badge` (`tone`: neutral/positive/warning/danger/info), `StatusBadge`, `AttendanceBadge` | durum rozeti; ikon otomatik. **Sayı göstermek için KULLANILMAZ** |
+| `CountChip` | sekme/filtre yanındaki sayaç (ikonsuz, nötr). Sayı = `CountChip`, durum = `Badge` |
 | `Card` | `padding`: none/sm/md/lg; `interactive` |
 | `TableCard` + `thClass`/`tdClass` | tablo kapsayıcısı ve hücre sınıfları; `Density` = compact/comfortable |
 | `Tabs` | bölüm içi sekme (`role=tablist`), `count` sayaçlı |
@@ -364,8 +365,34 @@ kaydırılmaz, öğrenci başına kart görünümüne geçer (`spec.md` §6.1).
 Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
 `index.html` `viewport-fit=cover` içerir; sabit alt çubuklar
 `pb-[env(safe-area-inset-bottom)]` kullanır.
-*(Navigasyon düzeni — admin çekmece, öğretmen/öğrenci/veli başlık ve dock —
-Parti 2'de yazılıp bu bölüme işlenecek.)*
+### Navigasyon ve kabuklar
+
+- **Admin** (`AdminLayout`): `lg`+ sol sabit menü 240px (marka, **gruplu** öğeler:
+  Panel · Kurulum · Kişiler · Haftalık döngü; altta kullanıcı + çıkış).
+  `lg` altında menü gizlidir: üstte yapışkan 56px çubuk (hamburger + marka) ve
+  soldan açılan **çekmece** (`role=dialog`, `useDialogBehavior` ile odak tuzağı,
+  Escape, odak geri dönüşü; link tıklayınca kapanır). Yeni menü öğesi
+  `NAV_GROUPS`'a eklenir; ikon-only şerit YOKTUR.
+- **Öğretmen** (`TeacherShell`): 56px üst şerit (marka solda, kullanıcı + çıkış
+  sağda). `md`+ sekmeler şeritte; dar ekranda şeridin altında yapışkan sekme
+  çubuğu (sekme ≥ 44px, kısa etiket, tam ad `aria-label`).
+- **Öğrenci / veli** (`CustomerShell`): 56px üst şerit (yalnızca marka) + alt dock
+  (Ödevlerim/Raporlarım + Hesap). *(Dock ve hesap paneli Parti 5'te
+  gözden geçirilecek.)*
+- Her kabukta sayfada **tek** `BrandLogo` bulunur (admin'de kenar çubuğu +
+  dar ekran çubuğu CSS ile dönüşümlü görünür).
+- **Giriş / şifre değiştirme:** `lg`+ solda teal marka paneli (`brand-panel`) +
+  sağda form; dar ekranda üstte ince teal wordmark şeridi + form. Linkler
+  `text-accent` (bg üzerinde 5.99:1, beyaz üzerinde 6.37:1).
+
+### Mobil
+
+Dört rolden üçü telefondadır. **Yalnızca admin paneli masaüstü önceliklidir;
+kalan her şey mobil önceliklidir.** Rapor giriş tablosu dar ekranda yatay
+kaydırılmaz, öğrenci başına kart görünümüne geçer (`spec.md` §6.1).
+Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
+`index.html` `viewport-fit=cover` içerir; sabit alt çubuklar
+`pb-[env(safe-area-inset-bottom)]` kullanır.
 
 ### Erişilebilirlik tabanı
 
