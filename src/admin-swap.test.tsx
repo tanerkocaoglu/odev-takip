@@ -152,8 +152,8 @@ describe('ClassCoursesPage — atama takası', () => {
     expect(
       await screen.findByText('Aynı öğretmene ait atamaların yerini değiştirmeye gerek yok.'),
     ).toBeInTheDocument();
-    const swapCalls = fetchMock.mock.calls.filter(([u, i]) =>
-      String(u).includes('/admin/class-courses/swap') && i?.method === 'POST',
+    const swapCalls = fetchMock.mock.calls.filter(
+      ([u, i]) => String(u).includes('/admin/class-courses/swap') && i?.method === 'POST',
     );
     expect(swapCalls).toHaveLength(0);
   });
@@ -164,7 +164,11 @@ describe('TeachersPage — atamaları devret', () => {
     return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = (init?.method ?? 'GET').toUpperCase();
-      if (url.includes('/admin/teachers') && method === 'POST' && url.includes('transfer-assignments')) {
+      if (
+        url.includes('/admin/teachers') &&
+        method === 'POST' &&
+        url.includes('transfer-assignments')
+      ) {
         return ok({ reassigned: 2 });
       }
       if (url.includes('/admin/teachers')) return ok(TEACHERS);
@@ -194,9 +198,10 @@ describe('TeachersPage — atamaları devret', () => {
       expect(screen.getByText('Ogretmen 1')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Atamaları devret' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /için işlemler/ })[0]);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Atamaları devret' }));
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     const submitBtn = within(dialog).getByRole('button', { name: 'Atamaları devret' });
     // Atama sayısı yüklenince (2 > 0) gönderim etkinleşir.
     await waitFor(() => {
@@ -207,11 +212,55 @@ describe('TeachersPage — atamaları devret', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      const transferCall = fetchMock.mock.calls.find(([u, i]) =>
-        String(u).includes('/admin/teachers/t1/transfer-assignments') && i?.method === 'POST',
+      const transferCall = fetchMock.mock.calls.find(
+        ([u, i]) =>
+          String(u).includes('/admin/teachers/t1/transfer-assignments') && i?.method === 'POST',
       );
       expect(transferCall).toBeDefined();
       expect(JSON.parse(String(transferCall![1]!.body))).toEqual({ target_teacher_id: 't2' });
     });
+  });
+});
+
+describe('TeachersPage — silme 409', () => {
+  it('aktif atama varsa sunucu mesajı + "Atamaları devret" / "Atamalara git" çıkış yolları', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (method === 'DELETE') {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({
+              error: {
+                code: 'CONFLICT',
+                message: 'Bu öğretmenin aktif atamaları var, önce atamaları kaldırın.',
+              },
+            }),
+            headers: { get: () => null },
+          };
+        }
+        if (String(input).includes('/admin/class-courses')) return ok({ items: [] });
+        return ok(TEACHERS);
+      }),
+    );
+    render(
+      <MemoryRouter>
+        <TeachersPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Ogretmen 1');
+    fireEvent.click(screen.getAllByRole('button', { name: /için işlemler/ })[0]);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Sil' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Öğretmeni sil' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Bu öğretmenin aktif atamaları var');
+    expect(within(alert).getByRole('link', { name: 'Atamalara git' })).toHaveAttribute(
+      'href',
+      '/admin/class-courses',
+    );
+    expect(within(alert).getByRole('button', { name: 'Atamaları devret' })).toBeInTheDocument();
+    expect(screen.getByText('Ogretmen 1')).toBeInTheDocument();
   });
 });

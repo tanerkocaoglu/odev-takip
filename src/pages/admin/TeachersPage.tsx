@@ -2,23 +2,45 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { Teacher } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import { useList } from '../../hooks/useList';
-import Modal from '../../components/admin/Modal';
-import Pagination from '../../components/admin/Pagination';
+import { Link } from 'react-router-dom';
 import {
-  DangerButton,
-  EmptyState,
+  ActionError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
+  FormActions,
   FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
+  Input,
+  ListState,
+  Modal,
+  Pagination,
   SearchBox,
-  inputClass,
-} from '../../components/admin/ui';
+  Select,
+  Toolbar,
+  buttonClass,
+  type Column,
+} from '../../components/ui';
+
+const COLUMNS: Column<Teacher>[] = [
+  {
+    key: 'name',
+    header: 'Ad',
+    card: 'title',
+    cell: (t) => <span className="font-medium">{t.full_name}</span>,
+  },
+  { key: 'email', header: 'E-posta', className: 'text-muted', cell: (t) => t.email },
+];
 
 export default function TeachersPage() {
-  const { items, total, page, pageSize, loading, error, setError, q, setQ, setPage, reload } =
+  const { items, total, page, pageSize, loading, error, q, setQ, setPage, reload } =
     useList<Teacher>((params) => adminApi.teachers.list(params));
+
+  const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [blockedTeacher, setBlockedTeacher] = useState<Teacher | null>(null);
 
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
 
@@ -93,13 +115,22 @@ export default function TeachersPage() {
     }
   }
 
-  async function handleDelete(teacher: Teacher) {
-    if (!window.confirm(`${teacher.full_name} silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteTeacher) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.teachers.remove(teacher.id);
+      await adminApi.teachers.remove(deleteTeacher.id);
+      setDeleteTeacher(null);
+      setBlockedTeacher(null);
       await reload();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      // 409: aktif atama var → çıkış yolu (devret / Atamalar) sunulur; liste yerinde kalır.
+      setBlockedTeacher(err instanceof ApiClientError && err.status === 409 ? deleteTeacher : null);
+      setDeleteTeacher(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Öğretmen silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -135,83 +166,112 @@ export default function TeachersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <SearchBox value={q} onChange={(v) => { setQ(v); }} placeholder="Öğretmen ara…" />
-        <PrimaryButton onClick={openCreate}>Yeni öğretmen</PrimaryButton>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <SearchBox value={q} onChange={setQ} placeholder="Öğretmen ara…" label="Öğretmen ara" />
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={total} /> öğretmen
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <Button variant="primary" onClick={openCreate}>
+            Yeni öğretmen
+          </Button>
+        }
+      />
 
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : items.length === 0 ? (
-        <EmptyState message="Öğretmen bulunamadı." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Ad</th>
-                <th className="px-3 py-2">E-posta</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((teacher) => (
-                <tr key={teacher.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{teacher.full_name}</td>
-                  <td className="px-3 py-2 text-muted">{teacher.email}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => void openTransfer(teacher)}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Atamaları devret
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetId(teacher.id);
-                        setResetPassword('');
-                        setResetError(null);
-                      }}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Şifre sıfırla
-                    </button>
-                    <DangerButton onClick={() => handleDelete(teacher)}>Sil</DangerButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ActionError
+        message={actionError}
+        onDismiss={() => {
+          setActionError(null);
+          setBlockedTeacher(null);
+        }}
+      >
+        {blockedTeacher && (
+          <>
+            <Button
+              size="sm"
+              onClick={() => {
+                const t = blockedTeacher;
+                setActionError(null);
+                setBlockedTeacher(null);
+                void openTransfer(t);
+              }}
+            >
+              Atamaları devret
+            </Button>
+            <Link to="/admin/class-courses" className={buttonClass('secondary', 'sm')}>
+              Atamalara git
+            </Link>
+          </>
+        )}
+      </ActionError>
+
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void reload()}
+        empty={items.length === 0}
+        emptyMessage="Öğretmen bulunamadı."
+      >
+        <DataTable
+          rows={items}
+          columns={COLUMNS}
+          rowKey={(t) => t.id}
+          rowLabel={(t) => t.full_name}
+          actions={(t) => [
+            { label: 'Atamaları devret', onSelect: () => void openTransfer(t) },
+            {
+              label: 'Şifre sıfırla',
+              onSelect: () => {
+                setResetId(t.id);
+                setResetPassword('');
+                setResetError(null);
+              },
+            },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteTeacher(t) },
+          ]}
+        />
+      </ListState>
       <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+
+      <ConfirmDialog
+        open={deleteTeacher !== null}
+        title="Öğretmeni sil"
+        confirmLabel="Öğretmeni sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteTeacher(null)}
+      >
+        {deleteTeacher?.full_name} silinsin mi? Aktif ataması olan öğretmen silinemez; önce
+        atamaları devredin.
+      </ConfirmDialog>
 
       <Modal open={formOpen} title="Yeni öğretmen" onClose={() => setFormOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
           <Field label="Ad soyad" htmlFor="t-name">
-            <input
+            <Input
               id="t-name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
-              className={inputClass}
             />
           </Field>
           <Field label="E-posta" htmlFor="t-email">
-            <input
+            <Input
               id="t-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className={inputClass}
             />
           </Field>
           <Field label="Şifre (öğretmene iletin)" htmlFor="t-password">
-            <input
+            <Input
               id="t-password"
               type="password"
               autoComplete="new-password"
@@ -219,16 +279,15 @@ export default function TeachersPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className={inputClass}
             />
           </Field>
           <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" disabled={submitting}>
               {submitting ? 'Oluşturuluyor…' : 'Öğretmen oluştur'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
@@ -242,21 +301,20 @@ export default function TeachersPage() {
             {transferCount > 0 ? (
               <>
                 <span className="tabular font-medium text-text">{transferCount}</span> atama
-                aşağıdaki öğretmene devredilecek. Devir sonrası bu öğretmenin ataması
-                kalmayacağı için silinebilir.
+                aşağıdaki öğretmene devredilecek. Devir sonrası bu öğretmenin ataması kalmayacağı
+                için silinebilir.
               </>
             ) : (
               'Bu öğretmenin devredilecek ataması yok.'
             )}
           </p>
           <Field label="Hedef öğretmen" htmlFor="t-transfer-target">
-            <select
+            <Select
               id="t-transfer-target"
               value={targetTeacherId}
               onChange={(e) => setTargetTeacherId(e.target.value)}
               required
               disabled={transferCount === 0}
-              className={inputClass}
             >
               <option value="">Seçin…</option>
               {allTeachers
@@ -266,26 +324,26 @@ export default function TeachersPage() {
                     {t.full_name}
                   </option>
                 ))}
-            </select>
+            </Select>
           </Field>
           <FormError message={transferError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setTransferTeacher(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={transferSubmitting || transferCount === 0}>
+          <FormActions>
+            <Button onClick={() => setTransferTeacher(null)}>İptal</Button>
+            <Button
+              variant="primary"
+              type="submit"
+              disabled={transferSubmitting || transferCount === 0}
+            >
               {transferSubmitting ? 'Devrediliyor…' : 'Atamaları devret'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
-      <Modal
-        open={resetId !== null}
-        title="Şifre sıfırla"
-        onClose={() => setResetId(null)}
-      >
+      <Modal open={resetId !== null} title="Şifre sıfırla" onClose={() => setResetId(null)}>
         <form onSubmit={handleReset} className="space-y-4">
           <Field label="Yeni şifre (öğretmene iletin)" htmlFor="t-reset">
-            <input
+            <Input
               id="t-reset"
               type="password"
               autoComplete="new-password"
@@ -293,16 +351,15 @@ export default function TeachersPage() {
               onChange={(e) => setResetPassword(e.target.value)}
               required
               minLength={6}
-              className={inputClass}
             />
           </Field>
           <FormError message={resetError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setResetId(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={resetSubmitting}>
+          <FormActions>
+            <Button onClick={() => setResetId(null)}>İptal</Button>
+            <Button variant="primary" type="submit" disabled={resetSubmitting}>
               {resetSubmitting ? 'Sıfırlanıyor…' : 'Şifreyi sıfırla'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>
