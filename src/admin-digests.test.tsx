@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import DigestSendPage from './pages/admin/DigestSendPage';
 
@@ -22,6 +22,9 @@ function makeDigest(
     sent_at: string | null;
     first_viewed_at: string | null;
     last_viewed_at: string | null;
+    id: string;
+    student_name: string;
+    missing_course_count: number;
   }>,
 ) {
   return {
@@ -92,14 +95,21 @@ describe('DigestSendPage — durum ve eylem butonları', () => {
     });
     expect(screen.getByRole('button', { name: 'Gönder' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Yeniden gönder' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'İptal' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Öğrenci 1 için işlemler' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('sent (iptal edilmemiş) digest → "Yeniden gönder" + "İptal"', async () => {
+  it('sent (iptal edilmemiş) digest → "Yeniden gönder" + menüde "Bağlantıyı iptal et"', async () => {
     vi.stubGlobal(
       'fetch',
       makeFetch([
-        makeDigest({ status: 'sent', is_revoked: false, send_count: 1, sent_at: '2026-08-04T09:00:00.000Z' }),
+        makeDigest({
+          status: 'sent',
+          is_revoked: false,
+          send_count: 1,
+          sent_at: '2026-08-04T09:00:00.000Z',
+        }),
       ]),
     );
     renderPage();
@@ -107,7 +117,10 @@ describe('DigestSendPage — durum ve eylem butonları', () => {
       expect(screen.getByText('Öğrenci 1')).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Yeniden gönder' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'İptal' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Öğrenci 1 için işlemler' }));
+    expect(
+      await screen.findByRole('menuitem', { name: 'Bağlantıyı iptal et' }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Gönder' })).not.toBeInTheDocument();
     expect(screen.getByText('Gönderildi')).toBeInTheDocument();
   });
@@ -116,7 +129,12 @@ describe('DigestSendPage — durum ve eylem butonları', () => {
     vi.stubGlobal(
       'fetch',
       makeFetch([
-        makeDigest({ status: 'sent', is_revoked: true, send_count: 1, sent_at: '2026-08-04T09:00:00.000Z' }),
+        makeDigest({
+          status: 'sent',
+          is_revoked: true,
+          send_count: 1,
+          sent_at: '2026-08-04T09:00:00.000Z',
+        }),
       ]),
     );
     renderPage();
@@ -125,7 +143,77 @@ describe('DigestSendPage — durum ve eylem butonları', () => {
     });
     // İptal edilmiş digest yeniden gönderilebilir; tekrar "İptal" sunulmaz.
     expect(screen.getByRole('button', { name: 'Yeniden gönder' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'İptal' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Öğrenci 1 için işlemler' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('pending ve ready satırları ayrışır: Eksikli uyarısı + Hazır rozeti + özet sayaçları', async () => {
+    vi.stubGlobal(
+      'fetch',
+      makeFetch([
+        makeDigest({ id: 'p', student_name: 'Eksikli Öğrenci', status: 'pending' }),
+        makeDigest({
+          id: 'r',
+          student_name: 'Hazır Öğrenci',
+          status: 'ready',
+          missing_course_count: 0,
+        }),
+      ]),
+    );
+    renderPage();
+    await screen.findByText('Eksikli Öğrenci');
+    expect(screen.getByText('1 / 4 dersin raporu var')).toBeInTheDocument();
+    expect(screen.getByText('Hazır', { selector: 'span.rounded-full' })).toBeInTheDocument();
+    expect(screen.getByText('Eksikli', { selector: 'span.rounded-full' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Gönderim özeti')).toHaveTextContent('1 hazır');
+    expect(screen.getByLabelText('Gönderim özeti')).toHaveTextContent('1 eksikli');
+  });
+});
+
+describe('DigestSendPage — bağlantı iptali onayı', () => {
+  function sentFetch() {
+    const base = makeFetch([
+      makeDigest({
+        status: 'sent',
+        is_revoked: false,
+        send_count: 1,
+        sent_at: '2026-08-04T09:00:00.000Z',
+      }),
+    ]);
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/revoke') ? ok({ ok: true }) : base(input, init),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+  const openDialog = async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Öğrenci 1 için işlemler' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Bağlantıyı iptal et' }));
+    return screen.findByRole('dialog', { name: 'Bağlantıyı iptal et' });
+  };
+
+  it('onay metni kim/hangi hafta/sınıf + kalıcı geçersizlik + 410 söyler; Vazgeç çağrı atmaz', async () => {
+    const fetchMock = sentFetch();
+    const dialog = await openDialog();
+    expect(dialog).toHaveTextContent('Öğrenci 1');
+    expect(dialog).toHaveTextContent('Veli 1');
+    expect(dialog).toHaveTextContent('20. hafta');
+    expect(dialog).toHaveTextContent('EURİST');
+    expect(dialog).toHaveTextContent('kalıcı olarak geçersiz');
+    expect(dialog).toHaveTextContent('410');
+    fireEvent.click(screen.getByRole('button', { name: 'Vazgeç' }));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/revoke'))).toBe(false);
+  });
+
+  it('"Bağlantıyı iptal et" onayı revoke çağırır', async () => {
+    const fetchMock = sentFetch();
+    const dialog = await openDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bağlantıyı iptal et' }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/revoke'))).toBe(true),
+    );
   });
 });
 
@@ -137,7 +225,12 @@ describe('DigestSendPage — yeniden gönderim (popup engelleme deseni)', () => 
     vi.stubGlobal(
       'fetch',
       makeFetch([
-        makeDigest({ status: 'sent', is_revoked: true, send_count: 1, sent_at: '2026-08-04T09:00:00.000Z' }),
+        makeDigest({
+          status: 'sent',
+          is_revoked: true,
+          send_count: 1,
+          sent_at: '2026-08-04T09:00:00.000Z',
+        }),
       ]),
     );
     renderPage();
@@ -168,7 +261,12 @@ describe('DigestSendPage — yeniden gönderim (popup engelleme deseni)', () => 
     vi.stubGlobal(
       'fetch',
       makeFetch([
-        makeDigest({ status: 'sent', is_revoked: true, send_count: 1, sent_at: '2026-08-04T09:00:00.000Z' }),
+        makeDigest({
+          status: 'sent',
+          is_revoked: true,
+          send_count: 1,
+          sent_at: '2026-08-04T09:00:00.000Z',
+        }),
       ]),
     );
     renderPage();
@@ -208,7 +306,13 @@ describe('DigestSendPage — yeniden gönderim (popup engelleme deseni)', () => 
 });
 
 const SNAPSHOT = {
-  week: { id: 'w1', week_no: 20, start_date: '2026-08-03', end_date: '2026-08-09', label: 'Hafta 20' },
+  week: {
+    id: 'w1',
+    week_no: 20,
+    start_date: '2026-08-03',
+    end_date: '2026-08-09',
+    label: 'Hafta 20',
+  },
   class: { id: 'c1', name: 'EURİST' },
   student: { id: 's1', name: 'Öğrenci 1' },
   guardian_name: 'Veli 1',
@@ -267,20 +371,15 @@ describe('DigestSendPage — gönderim öncesi düzenleme', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Önizle' }));
 
     // Son tarih gg.aa.yyyy gösterilir (ham ISO değil).
-    expect(await screen.findByText(/son tarih: 10\.08\.2026/)).toBeInTheDocument();
+    expect(await screen.findByText(/Son tarih: 10\.08\.2026/)).toBeInTheDocument();
 
     const links = await screen.findAllByRole('link', { name: 'Düzenle' });
     expect(links).toHaveLength(1);
-    expect(links[0].getAttribute('href')).toMatch(
-      /^\/teacher\/reports\/cc1\/w1\?returnTo=/,
-    );
+    expect(links[0].getAttribute('href')).toMatch(/^\/teacher\/reports\/cc1\/w1\?returnTo=/);
   });
 
   it('sent digest önizlemesinde "Düzenle" hiç görünmez', async () => {
-    vi.stubGlobal(
-      'fetch',
-      previewFetch('sent', false),
-    );
+    vi.stubGlobal('fetch', previewFetch('sent', false));
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Öğrenci 1')).toBeInTheDocument());

@@ -26,10 +26,16 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
 export default function CourseReportCard({
   course,
   renderPrevHomework,
+  renderHomework,
+  action,
 }: {
   course: DigestSnapshotCourse;
   /** "Verilmiş ödev" satırının altına eklenecek isteğe bağlı içerik (dosyalar). */
   renderPrevHomework?: () => ReactNode;
+  /** "Yapılacak ödev" satırının altına eklenecek isteğe bağlı içerik (admin önizleme ekleri). */
+  renderHomework?: () => ReactNode;
+  /** Başlık satırına eklenecek isteğe bağlı eylem (ör. admin "Düzenle"). */
+  action?: ReactNode;
 }) {
   const missing = course.status === 'missing';
   const stripe = missing ? 'missing' : (course.entry?.attendance ?? 'neutral');
@@ -51,11 +57,14 @@ export default function CourseReportCard({
             {course.lesson_time ? ` · ${course.lesson_time}` : ''}
           </p>
         </div>
-        {missing ? (
-          <Badge tone="warning">Bu hafta rapor girilmedi</Badge>
-        ) : course.entry ? (
-          <AttendanceBadge attendance={course.entry.attendance} />
-        ) : null}
+        <div className="flex items-center gap-2">
+          {missing ? (
+            <Badge tone="warning">Bu hafta rapor girilmedi</Badge>
+          ) : course.entry ? (
+            <AttendanceBadge attendance={course.entry.attendance} />
+          ) : null}
+          {action}
+        </div>
       </div>
 
       {missing ? (
@@ -80,15 +89,11 @@ export default function CourseReportCard({
               )}
             </>
           ) : (
-            <p className="mt-4 text-sm text-muted">
-              Bu hafta öğrenci için rapor satırı girilmedi.
-            </p>
+            <p className="mt-4 text-sm text-muted">Bu hafta öğrenci için rapor satırı girilmedi.</p>
           )}
 
           <dl className="mt-4 space-y-3">
-            {course.topic_covered && (
-              <InfoRow label="İşlenen konu">{course.topic_covered}</InfoRow>
-            )}
+            {course.topic_covered && <InfoRow label="İşlenen konu">{course.topic_covered}</InfoRow>}
             {(course.prev_homework_text || course.prev_homework_id) && (
               <div>
                 <InfoRow label="Verilmiş ödev">{course.prev_homework_text || '—'}</InfoRow>
@@ -103,6 +108,7 @@ export default function CourseReportCard({
                     Son tarih: {formatDate(course.homework.due_date)}
                   </span>
                 </InfoRow>
+                {renderHomework?.()}
                 {course.homework.graded_in_week && (
                   <p className="mt-1 text-[13px] text-muted">
                     Bu ödevin değerlendirmesi{' '}

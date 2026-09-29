@@ -31,6 +31,8 @@ export interface Column<T> {
   card?: 'title' | 'meta' | 'hide';
   /** Hücre ek sınıfı (ör. 'tabular text-muted'). */
   className?: string;
+  /** Tabloda hücre metni satır atlayabilir (uzun adlar); varsayılan tek satır. */
+  wrap?: boolean;
 }
 
 /** Satır seçimi (ör. takas için iki atama): onay kutusu tablo ilk sütununda / kart sol üstte. */
@@ -60,6 +62,7 @@ export function DataTable<T>({
   rowLabel,
   actions,
   select,
+  rowAction,
   mobile = 'cards',
 }: {
   rows: T[];
@@ -69,6 +72,8 @@ export function DataTable<T>({
   rowLabel: (row: T) => string;
   actions?: (row: T) => RowMenuItem[];
   select?: RowSelect<T>;
+  /** Satırın görünür ana eylem(ler)i (ör. "Gönder"); menüden önce yer alır. */
+  rowAction?: (row: T) => ReactNode;
   mobile?: 'cards' | 'scroll';
 }) {
   const isMobile = useIsMobile();
@@ -98,7 +103,9 @@ export function DataTable<T>({
                 <div className="min-w-0 flex-1 text-sm font-medium text-text">
                   {titleCol.cell(row)}
                 </div>
-                {actions && <RowMenu label={rowLabel(row)} items={actions(row)} />}
+                {actions && actions(row).length > 0 && (
+                  <RowMenu label={rowLabel(row)} items={actions(row)} />
+                )}
               </div>
               {meta.length > 0 && (
                 <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
@@ -111,6 +118,9 @@ export function DataTable<T>({
                     </div>
                   ))}
                 </dl>
+              )}
+              {rowAction && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">{rowAction(row)}</div>
               )}
             </Card>
           </li>
@@ -134,8 +144,8 @@ export function DataTable<T>({
                 {c.header}
               </th>
             ))}
-            {actions && (
-              <th className={cx(thClass(), 'sticky right-0 w-12 bg-subtle')}>
+            {(actions || rowAction) && (
+              <th className={cx(thClass(), 'sticky right-0 bg-subtle', !rowAction && 'w-12')}>
                 <span className="sr-only">İşlemler</span>
               </th>
             )}
@@ -156,14 +166,20 @@ export function DataTable<T>({
                 </td>
               )}
               {columns.map((c) => (
-                <td key={c.key} className={cx(tdClass(), 'whitespace-nowrap', c.className)}>
+                <td
+                  key={c.key}
+                  className={cx(tdClass(), !c.wrap && 'whitespace-nowrap', c.className)}
+                >
                   {c.cell(row)}
                 </td>
               ))}
-              {actions && (
+              {(actions || rowAction) && (
                 <td className={cx(tdClass(), 'sticky right-0 bg-surface text-right')}>
-                  <div className="flex justify-end">
-                    <RowMenu label={rowLabel(row)} items={actions(row)} />
+                  <div className="flex items-center justify-end gap-2">
+                    {rowAction?.(row)}
+                    {actions && actions(row).length > 0 && (
+                      <RowMenu label={rowLabel(row)} items={actions(row)} />
+                    )}
                   </div>
                 </td>
               )}
