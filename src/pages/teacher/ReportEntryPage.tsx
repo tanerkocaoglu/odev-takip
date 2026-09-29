@@ -130,6 +130,9 @@ export default function ReportEntryPage() {
   const reportIdRef = useRef<string | null>(null);
   const originalDueRef = useRef('');
   const readyRef = useRef(false);
+  // Son yüklenen/kaydedilen durumun serileştirilmiş hâli (JSON). Kayıt yalnızca bundan
+  // FARKLI bir durumda tetiklenir; `null` = yükleme sonrası ilk değerlendirme bekliyor.
+  const baselineRef = useRef<string | null>(null);
   const cellRefs = useRef(new Map<string, HTMLElement>());
   // Bekleyen otomatik kayıt: `pendingRef` değişiklik kaydedilmeden önce true,
   // `timerRef` debounce zamanlayıcısı, `flushSaveRef` her zaman en güncel kaydedici.
@@ -168,6 +171,7 @@ export default function ReportEntryPage() {
         // Otomatik kaydetme yalnızca gerçekten yazılabilir bir raporda çalışır.
         // Kilitli raporda PUT hiç üretilmez (yalnızca `disabled` görünümü değil).
         readyRef.current = !locked && data.report.id !== null;
+        baselineRef.current = null;
       })
       .catch((err) => {
         if (!cancelled) {
@@ -206,8 +210,11 @@ export default function ReportEntryPage() {
     const id = reportIdRef.current;
     if (!id) return true;
     pendingRef.current = false;
+    const body = buildInput();
+    const key = JSON.stringify(body);
     try {
-      await teacherApi.saveReport(id, buildInput());
+      await teacherApi.saveReport(id, body);
+      baselineRef.current = key;
       setSaveState('saved');
       setSavedAt(Date.now());
       return true;
@@ -234,8 +241,24 @@ export default function ReportEntryPage() {
   }, []);
 
   // ---- Otomatik kaydetme: debounce ~2 sn (salt-okunur önizlemede kapalı) ----
+  // Dirty ölçütü: mevcut durumun serileştirilmiş hâli, son yüklenen/kaydedilen
+  // durumdan farklı mı? (Yalnızca "bir şey set edildi" bayrağı yerine karşılaştırma:
+  // yüklemedeki state ataması ve değeri değiştirmeyip geri alan düzenleme yanlışlıkla
+  // kayıt üretmez; toplu doldurma, puan, devamsızlık, not ve üst alanlar tek yoldan geçer.)
   useEffect(() => {
     if (readOnly || !readyRef.current || !reportIdRef.current) return;
+    const current = JSON.stringify(buildInput());
+    if (baselineRef.current === null) {
+      // Yükleme sonrası ilk değerlendirme: yüklenen durum taban çizgisidir, kayıt yok.
+      baselineRef.current = current;
+      return;
+    }
+    if (current === baselineRef.current) {
+      // Değişiklik geri alındı (ya da hiç olmadı): bekleyen kayıt gereksiz.
+      pendingRef.current = false;
+      setSaveState((prev) => (prev === 'saving' ? 'idle' : prev));
+      return;
+    }
     setSaveState('saving');
     pendingRef.current = true;
     const timer = setTimeout(() => {
@@ -244,7 +267,7 @@ export default function ReportEntryPage() {
     }, 2000);
     timerRef.current = timer;
     return () => clearTimeout(timer);
-  }, [topic, prevText, hwDesc, dueDate, entries, readOnly]);
+  }, [buildInput, readOnly]);
 
   // Sayfadan ayrılırken (sekme değişimi dahil) bekleyen değişiklik kaybolmasın.
   useEffect(
@@ -337,7 +360,9 @@ export default function ReportEntryPage() {
       // Bekleyen otomatik kaydı tamamla, sonra sunucuda doğrulat.
       if (timerRef.current) clearTimeout(timerRef.current);
       pendingRef.current = false;
-      await teacherApi.saveReport(id, buildInput());
+      const body = buildInput();
+      await teacherApi.saveReport(id, body);
+      baselineRef.current = JSON.stringify(body);
       await teacherApi.completeReport(id);
       navigate('/teacher');
     } catch (err) {

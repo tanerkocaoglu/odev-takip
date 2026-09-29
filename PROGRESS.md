@@ -5,6 +5,18 @@
 
 ---
 
+## Düzeltme — rapor girişi açılışta otomatik kayıt tetiklemiyor ✅
+
+Sunucudan yüklenen durum taban çizgisi (`baselineRef`); kayıt yalnızca mevcut durum
+tabandan farklıysa (JSON karşılaştırması: bayraktan güvenli — geri alınan düzenleme ve
+yükleme sırasındaki state atamaları yanlışlıkla kayıt üretmez) tetiklenir. Flush yalnızca
+bekleyen gerçek değişiklikte. Yerel seed gözlemi: draft/completed/sent-admin açılışta PUT yok,
+audit/updated_at/topic değişmedi; alan değişince PUT + (completed/sent'te) audit; admin
+düzenlemesi `weekly_digests` snapshot'ını değiştirmiyor. Backend'e dokunulmadı (git diff boş).
+Testler: +10 (`report-entry.test.tsx`).
+
+---
+
 ## Yeniden tasarım — Parti 4: veli ekranları, /r/{token}, gizlilik ✅
 
 Ön işler: (A) mobil rapor kartında sayı kutuları kaldırıldı — 1–10 radiogroup (10 dahil:

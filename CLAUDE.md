@@ -353,7 +353,9 @@ Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entr
   sayı kutusu YOKTUR** (dokununca ekran klavyesi açılıyordu); radiogroup tek girdidir.
   Kart alanlarının erişilebilir adları `Devamsızlık` (select), radiogroup'lar
   `Ödev puanı` / `Ders içi performans puanı`, `Not`. Sayı girişi yalnızca masaüstü tabloda.
-- **Otomatik kaydetme:** debounce 2 sn. Kart değiştirme ("Önceki/Sonraki"),
+- **Otomatik kaydetme:** debounce 2 sn, **yalnızca gerçek değişiklikte**: mevcut durumun JSON'u son yüklenen/kaydedilen
+  duruma (`baselineRef`) eşit değilse tetiklenir — açılışta kayıt YOKTUR (completed/sent-admin raporu
+  açmak `audit_logs`/`updated_at` üretmez, `topic_covered` NULL → "" olmaz). Kart değiştirme ("Önceki/Sonraki"),
   "Geri dön" ve sayfadan ayrılma bekleyen kaydı **hemen flush eder**
   (`flushPending`). Kaydedilemezse "Geri dön" bir kez uyarır.
 - **Kaydetme durumu:** `SaveStatus` (görsel kopya) + sayfada tek `SaveAnnouncer`

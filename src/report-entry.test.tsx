@@ -468,3 +468,98 @@ describe('mobil sabit alt çubuk', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/Kaydedildi \d{2}:\d{2}/));
   });
 });
+
+describe('otomatik kayıt yalnızca gerçek değişiklikte', () => {
+  async function openWithTimers() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+  }
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  it('açılışta hiçbir şey değişmediyse süre ilerlese de PUT gitmez ve durum boş kalır', async () => {
+    await openWithTimers();
+    await advance(6000);
+    expect(putBodies).toHaveLength(0);
+    expect(screen.getByRole('status')).toHaveTextContent('');
+    expect(screen.queryByText(/Kaydediliyor|Kaydedildi/)).toBeNull();
+  });
+
+  it('bir alan değişince 2 sn sonra TEK PUT gider; sonrasında yeni PUT yoktur', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await advance(1900);
+    expect(putBodies).toHaveLength(0);
+    await advance(300);
+    expect(putBodies).toHaveLength(1);
+    await advance(6000);
+    expect(putBodies).toHaveLength(1);
+  });
+
+  it('değeri değiştirip aynı değere geri almak PUT üretmez', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Ödev puanı', 'Veli'), { target: { value: '9' } });
+    fireEvent.change(cell('Ödev puanı', 'Veli'), { target: { value: '7' } }); // yüklenen değer
+    await advance(3000);
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it('aynı değeri yeniden seçmek (devamsızlık) PUT üretmez', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Devamsızlık', 'Ali'), { target: { value: 'present' } });
+    await advance(3000);
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it.each([
+    ['puan', () => fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '5' } })],
+    ['devamsızlık', () => fireEvent.change(cell('Devamsızlık', 'Ali'), { target: { value: 'late' } })],
+    ['not', () => fireEvent.change(cell('Not', 'Ali'), { target: { value: 'not' } })],
+    ['işlenen konu', () => fireEvent.change(screen.getByLabelText('İşlenen konu'), { target: { value: 'Yeni konu' } })],
+  ])('%s değişikliği PUT üretir', async (_ad, change) => {
+    await openWithTimers();
+    change();
+    await advance(2100);
+    expect(putBodies).toHaveLength(1);
+  });
+
+  it('toplu doldurma ("Tümü ödev puanı → Uygula") PUT üretir', async () => {
+    await openWithTimers();
+    fireEvent.change(screen.getByLabelText('Tümü ödev puanı'), { target: { value: '4' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Uygula' })[0]);
+    await advance(2100);
+    expect(putBodies).toHaveLength(1);
+    expect(putBodies[0]).toMatchObject({
+      entries: expect.arrayContaining([expect.objectContaining({ student_id: 's1', homework_score: 4 })]),
+    });
+  });
+
+  it('"Geri dön": değişiklik yoksa PUT gitmez; varsa hemen gider', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: /Geri dön/ }));
+    await waitFor(() => expect(screen.getByText('Öğretmen Paneli')).toBeInTheDocument());
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it('sayfadan ayrılırken (unmount) değişiklik yoksa PUT gitmez', async () => {
+    const { unmount } = renderPage();
+    await loaded();
+    unmount();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it('kaydedilen durum yeni taban olur: aynı değere dönmek yeniden PUT üretmez', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await advance(2100);
+    expect(putBodies).toHaveLength(1);
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await advance(3000);
+    expect(putBodies).toHaveLength(1);
+  });
+});
