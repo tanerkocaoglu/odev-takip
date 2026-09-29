@@ -18,6 +18,7 @@ export { Card } from './Card';
 export { TableCard } from './Table';
 export { thClass, tdClass, type Density } from './tableStyles';
 export { Tabs, type TabItem } from './Tabs';
+export { FilterChipRow } from './FilterChipRow';
 export { default as Modal } from './Modal';
 export { ConfirmDialog } from './ConfirmDialog';
 export { ToastProvider } from './Toast';

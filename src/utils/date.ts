@@ -13,3 +13,33 @@ export function formatDate(iso: string | null | undefined): string {
   if (!y || !m || !d) return iso;
   return `${d}.${m}.${y}`;
 }
+
+const ISTANBUL_PARTS = new Intl.DateTimeFormat('tr-TR', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function istanbulParts(input: string | number | Date): Record<string, string> | null {
+  const date = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(date.getTime())) return null;
+  const out: Record<string, string> = {};
+  for (const p of ISTANBUL_PARTS.formatToParts(date)) out[p.type] = p.value;
+  return out;
+}
+
+/** Anlık damga → `HH:mm` (Europe/Istanbul). Geçersiz girdide boş dize. */
+export function formatTime(input: string | number | Date): string {
+  const p = istanbulParts(input);
+  return p ? `${p.hour}:${p.minute}` : '';
+}
+
+/** Anlık damga → `gg.aa.yyyy HH:mm` (Europe/Istanbul; tarayıcı saat diliminden bağımsız). */
+export function formatDateTime(input: string | number | Date): string {
+  const p = istanbulParts(input);
+  return p ? `${p.day}.${p.month}.${p.year} ${p.hour}:${p.minute}` : '';
+}
