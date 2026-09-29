@@ -4,13 +4,14 @@
  * hem ikonla hem metinle gösterilir.
  */
 
+import { useRef } from 'react';
 import type {
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
-import { CircleAlert, Search } from 'lucide-react';
+import { CircleAlert, Search, X } from 'lucide-react';
 import { cx } from './cx';
 
 /** Ham `<input>`/`<select>` için ortak sınıf (bileşen kullanılamayan yerlerde). */
@@ -58,10 +59,7 @@ export function Select({ className = '', ...rest }: SelectHTMLAttributes<HTMLSel
   return <select className={cx(inputClass, className)} {...rest} />;
 }
 
-export function Textarea({
-  className = '',
-  ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className = '', ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cx(textareaClass, className)} {...rest} />;
 }
 
@@ -77,6 +75,7 @@ export function SearchBox({
   /** Ekran okuyucu etiketi (görünmez; yer tutucu etiket yerine geçmez). */
   label?: string;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="relative w-full max-w-xs">
       <Search
@@ -85,14 +84,32 @@ export function SearchBox({
         className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
       />
       <input
+        ref={inputRef}
         type="search"
         aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
-        className={cx(inputClass, 'pl-9')}
+        // Yerel "×" gizli; yerine aşağıdaki temizleme düğmesi
+        className={cx(
+          inputClass,
+          'pl-9 pr-10 [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none',
+        )}
       />
+      {value && (
+        <button
+          type="button"
+          aria-label={`${label} kutusunu temizle`}
+          onClick={() => {
+            onChange('');
+            inputRef.current?.focus();
+          }}
+          className="absolute right-0.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted transition-colors hover:bg-subtle hover:text-text max-md:h-11 max-md:w-11"
+        >
+          <X size={15} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }

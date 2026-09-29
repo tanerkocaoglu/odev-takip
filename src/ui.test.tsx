@@ -12,6 +12,7 @@ import {
   CountChip,
   LoadingState,
   Modal,
+  SearchBox,
   ToastProvider,
   useToast,
 } from './components/ui';
@@ -133,5 +134,31 @@ describe('CountChip', () => {
   it('nötr durum rozeti çizgi (eksi) ikonu taşımaz', () => {
     const { container } = render(<Badge tone="neutral">Taslak</Badge>);
     expect(container.querySelector('svg.lucide-minus')).toBeNull();
+  });
+});
+
+describe('SearchBox', () => {
+  function Host() {
+    const [q, setQ] = useState('');
+    return <SearchBox value={q} onChange={setQ} placeholder="Ara…" label="Öğrenci ara" />;
+  }
+
+  it('boşken temizleme düğmesi yok; yazınca çıkar, tıklayınca temizler ve odağı kutuya verir', () => {
+    render(<Host />);
+    const box = screen.getByRole('searchbox', { name: 'Öğrenci ara' });
+    expect(screen.queryByRole('button', { name: /temizle/ })).toBeNull();
+    fireEvent.change(box, { target: { value: 'şükrü' } });
+    const clear = screen.getByRole('button', { name: 'Öğrenci ara kutusunu temizle' });
+    fireEvent.click(clear);
+    expect(box).toHaveValue('');
+    expect(box).toHaveFocus();
+    expect(screen.queryByRole('button', { name: /temizle/ })).toBeNull();
+  });
+
+  it('yerel tarayıcı "×" düğmesi gizlenir', () => {
+    render(<Host />);
+    expect(screen.getByRole('searchbox').className).toContain(
+      '[&::-webkit-search-cancel-button]:hidden',
+    );
   });
 });
