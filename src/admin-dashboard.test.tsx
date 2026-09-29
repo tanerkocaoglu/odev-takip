@@ -58,7 +58,10 @@ afterEach(() => {
 
 describe('AdminDashboardPage — henüz başlamamış hafta', () => {
   it('banner gösterir; eksik listesi boş ve matris "Henüz başlamadı" der', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => ok(FUTURE_DASH)));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => ok(FUTURE_DASH)),
+    );
 
     render(
       <MemoryRouter>
@@ -75,9 +78,7 @@ describe('AdminDashboardPage — henüz başlamamış hafta', () => {
     expect(screen.getByText(/06\.09\.2027/)).toBeInTheDocument();
 
     // Eksik listesi boş: nötr boş durum metni.
-    expect(
-      screen.getByText(/raporlar hafta başladığında doldurulacak/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/raporlar hafta başladığında doldurulacak/i)).toBeInTheDocument();
 
     // Matris sekmesi: boş ders "Eksik" değil "Henüz başlamadı".
     fireEvent.click(screen.getByRole('tab', { name: /Tam matris/ }));
@@ -86,5 +87,37 @@ describe('AdminDashboardPage — henüz başlamamış hafta', () => {
     });
     // (kısa sekme etiketi "Eksik" de var; yalnızca rozetlere bakılır)
     expect(screen.queryByText('Eksik', { selector: 'span.rounded-full' })).toBeNull();
+  });
+});
+
+describe('AdminDashboardPage — yedek indirme', () => {
+  it('429 hız sınırında ne yapılacağını söyleyen mesaj gösterilir (panel yerinde kalır)', async () => {
+    localStorage.setItem('ds_token', 't');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/admin/backup') && init?.method === 'POST') {
+          return {
+            ok: false,
+            status: 429,
+            json: async () => ({
+              error: { code: 'RATE_LIMITED', message: 'Çok fazla yedek alma isteği yapıldı.' },
+            }),
+            headers: { get: () => null },
+          };
+        }
+        return ok(FUTURE_DASH);
+      }),
+    );
+    render(
+      <MemoryRouter>
+        <AdminDashboardPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Yedek indir' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Bir saat sonra yeniden deneyin');
+    expect(alert).toHaveTextContent('en son indirdiğiniz yedek');
+    expect(screen.getByRole('button', { name: 'Yedek indir' })).toBeEnabled();
   });
 });

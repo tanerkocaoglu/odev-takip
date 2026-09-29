@@ -21,12 +21,12 @@ import type { AdminDashboard, RiskList } from '../../types';
 import { DAY_LABELS, RISK_FLAG_LABELS, type RiskFlag } from '../../types';
 import { adminApi, downloadBackup, ApiClientError } from '../../services/api';
 import {
+  ActionError,
   Badge,
   Button,
   DataTable,
   EmptyState,
   ErrorState,
-  FormError,
   InlineNotice,
   ListState,
   PageHeader,
@@ -161,7 +161,14 @@ export default function AdminDashboardPage() {
       const filename = await downloadBackup();
       setBackupDone(`${filename} indirildi.`);
     } catch (err) {
-      setBackupError(err instanceof ApiClientError ? err.message : 'Yedek oluşturulamadı.');
+      setBackupError(
+        err instanceof ApiClientError && err.status === 429
+          ? // Hız sınırı (saatte birkaç yedek): ne olduğunu ve ne yapılacağını söyle
+            'Yedek alma sınırına ulaşıldı. Bir saat sonra yeniden deneyin; o zamana kadar en son indirdiğiniz yedek dosyasını kullanabilirsiniz.'
+          : err instanceof ApiClientError
+            ? err.message
+            : 'Yedek oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.',
+      );
     } finally {
       setBackupRunning(false);
     }
@@ -221,7 +228,7 @@ export default function AdminDashboardPage() {
           {backupDone}
         </p>
       )}
-      {backupError && <FormError message={backupError} />}
+      <ActionError message={backupError} onDismiss={() => setBackupError(null)} />
 
       {/* Hafta henüz başlamadıysa doldurulmuş rapor yoktur; bu durumda
           "eksik" değil "henüz başlamadı" bilgisi gösterilir (spec §5.1/§5.5). */}
