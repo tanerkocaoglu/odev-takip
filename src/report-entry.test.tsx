@@ -1,0 +1,565 @@
+/**
+ * Rapor giriş ekranı — klavye modeli, devamsızlık mantığı, otomatik kaydetme
+ * durumları ve bekleyen kaydın flush edilmesi.
+ * (jsdom'da hem masaüstü tablo hem mobil kart DOM'dadır; tablo hücreleri
+ * `"<alan> — <öğrenci>"` erişilebilir adıyla bulunur.)
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import ReportEntryPage from './pages/teacher/ReportEntryPage';
+
+const REPORT = {
+  report: {
+    id: 'r1',
+    class_course_id: 'cc1',
+    week_id: 'w1',
+    status: 'draft',
+    completed_at: null,
+    updated_at: '2026-01-05T10:00:00.000Z',
+    topic_covered: 'Konu',
+    prev_homework_text: 'Geçen ödev',
+    homework: { description: 'Ödev', due_date: '2026-01-12' },
+    week: { week_no: 5, start_date: '2026-01-05', end_date: '2026-01-11', label: '05 - 11 Ocak' },
+    class_name: 'ÖKLİD',
+    course_name: 'Matematik',
+    teacher_name: 'Öğretmen',
+    day_of_week: 1,
+    lesson_time: '09:00',
+  },
+  entries: [
+    { student_id: 's1', student_name: 'Ali', attendance: 'present', homework_score: null, interest_score: null, teacher_note: null },
+    { student_id: 's2', student_name: 'Veli', attendance: 'present', homework_score: 7, interest_score: 8, teacher_note: null },
+  ],
+  locked_for_teacher: false,
+  week_range_invalid: false,
+};
+
+let putBodies: Array<Record<string, unknown>>;
+let putShouldFail: boolean;
+
+function installFetch() {
+  putBodies = [];
+  putShouldFail = false;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((_url: string, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'PUT') {
+        if (putShouldFail) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({ error: { code: 'INTERNAL', message: 'Sunucu hatası' } }),
+          });
+        }
+        putBodies.push(JSON.parse(String(init?.body)));
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => REPORT });
+    }),
+  );
+}
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={['/teacher/reports/cc1/w1']}>
+      <Routes>
+        <Route path="/teacher/reports/:classCourseId/:weekId" element={<ReportEntryPage />} />
+        <Route path="/teacher" element={<div>Öğretmen Paneli</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+async function loaded() {
+  await waitFor(() => expect(screen.getByLabelText('Ödev puanı — Ali')).toBeInTheDocument());
+}
+
+const cell = (field: string, name: string) => screen.getByLabelText(`${field} — ${name}`);
+
+beforeEach(() => {
+  localStorage.clear();
+  installFetch();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('klavye modeli (masaüstü tablo)', () => {
+  it('Enter aynı sütunda bir satır aşağı iner', async () => {
+    renderPage();
+    await loaded();
+    const hw = cell('Ödev puanı', 'Ali');
+    hw.focus();
+    fireEvent.keyDown(hw, { key: 'Enter' });
+    expect(document.activeElement).toBe(cell('Ödev puanı', 'Veli'));
+  });
+
+  it('ok tuşları hücreler arasında gezer (sağ/sol/yukarı/aşağı)', async () => {
+    renderPage();
+    await loaded();
+    const hw = cell('Ödev puanı', 'Ali');
+    hw.focus();
+    fireEvent.keyDown(hw, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(cell('Ders içi performans puanı', 'Ali'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(cell('Ders içi performans puanı', 'Veli'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(cell('Ödev puanı', 'Veli'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(hw);
+  });
+
+  it('select içinde ok tuşları hücre gezinmesini almaz; Enter yine aşağı iner', async () => {
+    renderPage();
+    await loaded();
+    const sel = cell('Devamsızlık', 'Ali');
+    sel.focus();
+    fireEvent.keyDown(sel, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(sel);
+    fireEvent.keyDown(sel, { key: 'Enter' });
+    expect(document.activeElement).toBe(cell('Devamsızlık', 'Veli'));
+  });
+});
+
+describe('puan girişi (mevcut davranış korunur)', () => {
+  it('rakamla girilir; 10 yazılabilir; aralık dışı değerler 1–10\'a kırpılır', async () => {
+    renderPage();
+    await loaded();
+    const hw = cell('Ödev puanı', 'Ali') as HTMLInputElement;
+    fireEvent.change(hw, { target: { value: '1' } });
+    expect(hw.value).toBe('1');
+    fireEvent.change(hw, { target: { value: '10' } });
+    expect(hw.value).toBe('10');
+    fireEvent.change(hw, { target: { value: '15' } });
+    expect(hw.value).toBe('10');
+    fireEvent.change(hw, { target: { value: '0' } });
+    expect(hw.value).toBe('1');
+    fireEvent.change(hw, { target: { value: '' } });
+    expect(hw.value).toBe('');
+  });
+});
+
+describe('devamsızlık (masaüstü)', () => {
+  it('devamsız satırda performans kapanır ve null olur; ödev puanı açık kalır', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.change(cell('Ders içi performans puanı', 'Veli'), { target: { value: '9' } });
+    fireEvent.change(cell('Devamsızlık', 'Veli'), { target: { value: 'absent' } });
+    const interest = cell('Ders içi performans puanı', 'Veli') as HTMLInputElement;
+    expect(interest).toBeDisabled();
+    expect(interest.value).toBe('');
+    expect(cell('Ödev puanı', 'Veli')).not.toBeDisabled();
+    expect((cell('Ödev puanı', 'Veli') as HTMLInputElement).value).toBe('7');
+    // Diğer satır etkilenmez
+    expect(cell('Ders içi performans puanı', 'Ali')).not.toBeDisabled();
+  });
+});
+
+describe('kaydetme durumu', () => {
+  it('Kaydediliyor… → Kaydedildi HH:mm (aria-live bölgesinde)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+    const live = screen.getAllByRole('status')[0];
+    expect(live).toHaveAttribute('aria-live', 'polite');
+
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    expect(live).toHaveTextContent('Kaydediliyor…');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    await waitFor(() => expect(live).toHaveTextContent(/Kaydedildi \d{2}:\d{2}/));
+    expect(putBodies.length).toBeGreaterThan(0);
+  });
+
+  it('kayıt başarısızsa "Kaydedilemedi" + "Yeniden dene"; yeniden deneme kaydeder', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+    putShouldFail = true;
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    const live = screen.getAllByRole('status')[0];
+    await waitFor(() => expect(live).toHaveTextContent('Kaydedilemedi'));
+
+    putShouldFail = false;
+    fireEvent.click(screen.getAllByRole('button', { name: 'Yeniden dene' })[0]);
+    await waitFor(() => expect(live).toHaveTextContent(/Kaydedildi/));
+    expect(putBodies.at(-1)).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ student_id: 's1', homework_score: 6 }),
+      ]),
+    });
+  });
+});
+
+describe('bekleyen kaydın flush edilmesi', () => {
+  it('"Geri dön" 2 sn beklemeden bekleyen değişikliği kaydeder, sonra çıkar', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '9' } });
+    expect(putBodies).toHaveLength(0); // debounce henüz dolmadı
+
+    fireEvent.click(screen.getByRole('button', { name: /Geri dön/ }));
+    await waitFor(() => expect(screen.getByText('Öğretmen Paneli')).toBeInTheDocument());
+    expect(putBodies).toHaveLength(1);
+    expect(putBodies[0]).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ student_id: 's1', homework_score: 9 }),
+      ]),
+    });
+  });
+
+  it('sayfadan ayrılırken (unmount) bekleyen değişiklik gönderilir', async () => {
+    const { unmount } = renderPage();
+    await loaded();
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '4' } });
+    expect(putBodies).toHaveLength(0);
+    unmount();
+    await waitFor(() => expect(putBodies).toHaveLength(1));
+  });
+});
+
+describe('mobil kart: puan radiogroup (sayı kutusu yok)', () => {
+  const hwGroup = () => screen.getByRole('radiogroup', { name: 'Ödev puanı' });
+  const intGroup = () => screen.getByRole('radiogroup', { name: 'Ders içi performans puanı' });
+  const radios = (group: HTMLElement) =>
+    Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+  /** Tuşu, odaktaki radio'ya (yoksa seçili radio'ya) gönderir — tarayıcıdaki gibi olay gruba kabarır. */
+  const press = (group: HTMLElement, key: string) => {
+    const target = group.contains(document.activeElement)
+      ? document.activeElement!
+      : (radios(group).find((r) => r.getAttribute('aria-checked') === 'true') ?? radios(group)[0]);
+    fireEvent.keyDown(target, { key });
+  };
+  const checkedOf = (group: HTMLElement) =>
+    radios(group).find((r) => r.getAttribute('aria-checked') === 'true')?.textContent ?? null;
+
+  it('mobil kartta sayı kutusu yoktur; puan yalnızca radiogroup ile girilir', async () => {
+    renderPage();
+    await loaded();
+    // Mobil kart alanları etiketle bulunur: yalnızca devamsızlık seçicisi, not ve iki radiogroup
+    expect(screen.queryByLabelText('Ödev puanı', { selector: 'input' })).toBeNull();
+    expect(screen.queryByLabelText('Ders içi performans puanı', { selector: 'input' })).toBeNull();
+    expect(document.getElementById('m-hw')).toBeNull();
+    expect(document.getElementById('m-int')).toBeNull();
+  });
+
+  it('1–10 tüm değerler (10 dahil) seçilebilir ve state\'e yansır', async () => {
+    renderPage();
+    await loaded();
+    const g = hwGroup();
+    for (let n = 1; n <= 10; n++) {
+      fireEvent.click(radios(g)[n - 1]);
+      expect(checkedOf(g)).toBe(String(n));
+    }
+    // Masaüstü tablo hücresi aynı state'i gösterir (10 kaydedilmiş sayıdır)
+    expect((cell('Ödev puanı', 'Ali') as HTMLInputElement).value).toBe('10');
+    // 10 düğmesi klavyeyle de erişilebilir: End → 10
+    fireEvent.click(radios(g)[0]);
+    press(g, 'End');
+    expect(checkedOf(g)).toBe('10');
+  });
+
+  it('her grup 10 radio içerir ve tek Tab durağı vardır (roving tabindex)', async () => {
+    renderPage();
+    await loaded();
+    for (const g of [hwGroup(), intGroup()]) {
+      const rs = radios(g);
+      expect(rs).toHaveLength(10);
+      expect(rs.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    }
+    expect(radios(hwGroup()).find((r) => r.tabIndex === 0)).toHaveTextContent('1');
+    fireEvent.click(radios(hwGroup())[6]); // 7
+    expect(radios(hwGroup()).find((r) => r.tabIndex === 0)).toHaveTextContent('7');
+    expect(radios(hwGroup())[6]).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('ok tuşları grup içinde gezer ve seçer; sonda başa sarar; Home/End', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(hwGroup())[4]); // 5
+    const g = hwGroup();
+    fireEvent.keyDown(radios(g)[4], { key: 'ArrowRight' });
+    expect(checkedOf(g)).toBe('6');
+    expect(document.activeElement).toBe(radios(g)[5]);
+    press(g, 'ArrowLeft');
+    expect(checkedOf(g)).toBe('5');
+    press(g, 'End');
+    expect(checkedOf(g)).toBe('10');
+    press(g, 'ArrowRight'); // 10 → 1
+    expect(checkedOf(g)).toBe('1');
+    press(g, 'ArrowLeft'); // 1 → 10
+    expect(checkedOf(g)).toBe('10');
+    press(g, 'Home');
+    expect(checkedOf(g)).toBe('1');
+  });
+
+  it('rakam tuşu: 1–9 aynı sayıyı, "0" tuşu 10\'u seçer (10 tek tuşla girilir)', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(hwGroup())[4]);
+    const g = hwGroup();
+    press(g, '3');
+    expect(checkedOf(g)).toBe('3');
+    press(g, '0');
+    expect(checkedOf(g)).toBe('10');
+    press(g, '9');
+    expect(checkedOf(g)).toBe('9');
+  });
+
+  it('devamsız seçilince performans grubu kapanır ve değer null olur; ödev grubu açık kalır', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(intGroup())[7]); // 8
+    fireEvent.change(screen.getByLabelText('Devamsızlık'), { target: { value: 'absent' } });
+    expect(radios(intGroup()).every((r) => r.disabled)).toBe(true);
+    expect(checkedOf(intGroup())).toBeNull();
+    expect(radios(hwGroup()).every((r) => !r.disabled)).toBe(true);
+    expect(screen.getByText(/Devamsız\/izinli öğrencide ders içi performans girilmez\./)).toBeInTheDocument();
+    // Ödev puanı devamsız satırda da girilir
+    fireEvent.click(radios(hwGroup())[4]);
+    expect(checkedOf(hwGroup())).toBe('5');
+  });
+
+  it('Önceki/Sonraki bekleyen kaydı 2 sn beklemeden flush eder ve kartı değiştirir', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(hwGroup())[8]); // Ali: 9
+    expect(putBodies).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));
+    await waitFor(() => expect(putBodies).toHaveLength(1));
+    expect(putBodies[0]).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ student_id: 's1', homework_score: 9 }),
+      ]),
+    });
+    expect(screen.getByRole('group', { name: 'Veli, 2 / 2' })).toBeInTheDocument();
+    expect(checkedOf(hwGroup())).toBe('7');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Önceki' }));
+    expect(checkedOf(hwGroup())).toBe('9');
+  });
+
+  it('bekleyen kayıt yokken kart değiştirmek fazladan PUT üretmez', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    const before = putBodies.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(putBodies).toHaveLength(before);
+  });
+});
+
+describe('mobil: ders bilgileri katlanır', () => {
+  it('varsayılan kapalı (aria-expanded=false); tıklayınca açılır; alanlar DOM\'da tektir', async () => {
+    renderPage();
+    await loaded();
+    const toggle = screen.getByRole('button', { name: /Ders bilgileri/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByLabelText('İşlenen konu')).toHaveLength(1);
+    expect(toggle).toHaveTextContent('Konu: Konu');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('mobil sabit alt çubuk', () => {
+  function stubViewport(height: number) {
+    const listeners = new Set<() => void>();
+    const vv = {
+      height,
+      offsetTop: 0,
+      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+    };
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    return {
+      resize(h: number) {
+        vv.height = h;
+        act(() => listeners.forEach((cb) => cb()));
+      },
+    };
+  }
+
+  afterEach(() => {
+    Object.defineProperty(window, 'visualViewport', { value: undefined, configurable: true });
+  });
+
+  it('Önceki/Sonraki çubukta durur; iOS güvenli alan payını kullanır', async () => {
+    stubViewport(800);
+    renderPage();
+    await loaded();
+    const bar = screen.getByTestId('mobile-bar');
+    expect(bar.className).toContain('safe-area-inset-bottom');
+    expect(bar.className).toContain('fixed');
+    expect(bar.className).toContain('md:hidden');
+    expect(within(bar).getByRole('button', { name: /Önceki/ })).toBeDisabled();
+    expect(within(bar).getByRole('button', { name: /Sonraki/ })).toBeEnabled();
+  });
+
+  it('son kartta "Sonraki" yerine "Özet" gelir ve tamamlama özetine kaydırır', async () => {
+    stubViewport(800);
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderPage();
+    await loaded();
+    const bar = screen.getByTestId('mobile-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /Sonraki/ }));
+    expect(within(bar).queryByRole('button', { name: /Sonraki/ })).toBeNull();
+    fireEvent.click(within(bar).getByRole('button', { name: /Özet/ }));
+    expect(scroll).toHaveBeenCalled();
+    // "Raporu tamamla" tek kopyadır (çubukta yinelenmez)
+    expect(screen.getAllByRole('button', { name: 'Raporu tamamla' })).toHaveLength(1);
+  });
+
+  it('ekran klavyesi açılınca (not alanı odakta, görünür yükseklik < %80) çubuk kalkar; kapanınca döner', async () => {
+    const vp = stubViewport(800);
+    renderPage();
+    await loaded();
+    expect(screen.getByTestId('mobile-bar')).toBeInTheDocument();
+
+    const note = screen.getByLabelText('Not');
+    note.focus();
+    vp.resize(420); // klavye açıldı
+    await waitFor(() => expect(screen.queryByTestId('mobile-bar')).toBeNull());
+
+    vp.resize(800); // klavye kapandı
+    await waitFor(() => expect(screen.getByTestId('mobile-bar')).toBeInTheDocument());
+  });
+
+  it('metin alanı odakta değilken görünür yükseklik küçülse de (ör. adres çubuğu) çubuk kalır', async () => {
+    const vp = stubViewport(800);
+    renderPage();
+    await loaded();
+    (document.activeElement as HTMLElement | null)?.blur();
+    vp.resize(600);
+    expect(screen.getByTestId('mobile-bar')).toBeInTheDocument();
+  });
+
+  it('kaydetme durumu duyurusu tek aria-live bölgesinde; çubuk gizlense de sürer', async () => {
+    const vp = stubViewport(800);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    screen.getByLabelText('Not').focus();
+    vp.resize(400);
+    fireEvent.change(screen.getByLabelText('Not'), { target: { value: 'not' } });
+    expect(screen.queryByTestId('mobile-bar')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Kaydediliyor…');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/Kaydedildi \d{2}:\d{2}/));
+  });
+});
+
+describe('otomatik kayıt yalnızca gerçek değişiklikte', () => {
+  async function openWithTimers() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+  }
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  it('açılışta hiçbir şey değişmediyse süre ilerlese de PUT gitmez ve durum boş kalır', async () => {
+    await openWithTimers();
+    await advance(6000);
+    expect(putBodies).toHaveLength(0);
+    expect(screen.getByRole('status')).toHaveTextContent('');
+    expect(screen.queryByText(/Kaydediliyor|Kaydedildi/)).toBeNull();
+  });
+
+  it('bir alan değişince 2 sn sonra TEK PUT gider; sonrasında yeni PUT yoktur', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await advance(1900);
+    expect(putBodies).toHaveLength(0);
+    await advance(300);
+    expect(putBodies).toHaveLength(1);
+    await advance(6000);
+    expect(putBodies).toHaveLength(1);
+  });
+
+  it('değeri değiştirip aynı değere geri almak PUT üretmez', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Ödev puanı', 'Veli'), { target: { value: '9' } });
+    fireEvent.change(cell('Ödev puanı', 'Veli'), { target: { value: '7' } }); // yüklenen değer
+    await advance(3000);
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it('aynı değeri yeniden seçmek (devamsızlık) PUT üretmez', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Devamsızlık', 'Ali'), { target: { value: 'present' } });
+    await advance(3000);
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it.each([
+    ['puan', () => fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '5' } })],
+    ['devamsızlık', () => fireEvent.change(cell('Devamsızlık', 'Ali'), { target: { value: 'late' } })],
+    ['not', () => fireEvent.change(cell('Not', 'Ali'), { target: { value: 'not' } })],
+    ['işlenen konu', () => fireEvent.change(screen.getByLabelText('İşlenen konu'), { target: { value: 'Yeni konu' } })],
+  ])('%s değişikliği PUT üretir', async (_ad, change) => {
+    await openWithTimers();
+    change();
+    await advance(2100);
+    expect(putBodies).toHaveLength(1);
+  });
+
+  it('toplu doldurma ("Tümü ödev puanı → Uygula") PUT üretir', async () => {
+    await openWithTimers();
+    fireEvent.change(screen.getByLabelText('Tümü ödev puanı'), { target: { value: '4' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Uygula' })[0]);
+    await advance(2100);
+    expect(putBodies).toHaveLength(1);
+    expect(putBodies[0]).toMatchObject({
+      entries: expect.arrayContaining([expect.objectContaining({ student_id: 's1', homework_score: 4 })]),
+    });
+  });
+
+  it('"Geri dön": değişiklik yoksa PUT gitmez; varsa hemen gider', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: /Geri dön/ }));
+    await waitFor(() => expect(screen.getByText('Öğretmen Paneli')).toBeInTheDocument());
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it('sayfadan ayrılırken (unmount) değişiklik yoksa PUT gitmez', async () => {
+    const { unmount } = renderPage();
+    await loaded();
+    unmount();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(putBodies).toHaveLength(0);
+  });
+
+  it('kaydedilen durum yeni taban olur: aynı değere dönmek yeniden PUT üretmez', async () => {
+    await openWithTimers();
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await advance(2100);
+    expect(putBodies).toHaveLength(1);
+    fireEvent.change(cell('Ödev puanı', 'Ali'), { target: { value: '6' } });
+    await advance(3000);
+    expect(putBodies).toHaveLength(1);
+  });
+});

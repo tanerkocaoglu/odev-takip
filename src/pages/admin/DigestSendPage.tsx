@@ -12,21 +12,42 @@ import { Link } from 'react-router-dom';
 import { Send } from 'lucide-react';
 import type { AdminDigestItem, DigestSnapshot, ClassItem } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
+import { formatDateIst } from '../../utils/date';
 import ReportSnapshot from '../../components/ReportSnapshot';
 import {
+  ActionError,
   Badge,
-  EmptyState,
-  FormError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
+  FilterSelect,
+  InlineNotice,
+  ListState,
   LoadingState,
-  PageTitle,
+  Modal,
+  PageHeader,
+  Toolbar,
+  buttonClass,
   type BadgeTone,
-} from '../../components/admin/ui';
+  type Column,
+} from '../../components/ui';
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Eksikli',
   ready: 'Hazır',
   sent: 'Gönderildi',
 };
+
+const DIGEST_TONES: Record<string, BadgeTone> = {
+  pending: 'warning',
+  ready: 'info',
+  sent: 'positive',
+};
+
+/** Satırın özeti: "Öğrenci · Hafta N · Sınıf" — onay metinleri ve açıklamalar bunu kullanır. */
+const describeItem = (item: AdminDigestItem) =>
+  `${item.student_name} (veli: ${item.guardian_name}) · ${item.week.week_no}. hafta · ${item.class.name ?? '—'}`;
 
 export default function DigestSendPage() {
   const [items, setItems] = useState<AdminDigestItem[] | null>(null);
@@ -39,6 +60,8 @@ export default function DigestSendPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendOk, setSendOk] = useState<string | null>(null);
   const [copyLink, setCopyLink] = useState<string | null>(null);
+  const [revokeItem, setRevokeItem] = useState<AdminDigestItem | null>(null);
+  const [revoking, setRevoking] = useState(false);
 
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [preview, setPreview] = useState<DigestSnapshot | null>(null);
@@ -50,7 +73,11 @@ export default function DigestSendPage() {
       const res = await adminApi.digests.list({ class_id: classId || undefined });
       setItems(res.items);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Gönderim listesi yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      );
     } finally {
       setLoading(false);
     }
@@ -113,8 +140,13 @@ export default function DigestSendPage() {
       } else {
         setCopyLink(res.wa_me_url);
       }
-      setSendOk(`${item.student_name} için rapor gönderildi.`);
+      setSendOk(
+        `${item.student_name} için ${item.week.week_no}. hafta raporu gönderildi (${item.class.name ?? '—'}). ${
+          win ? 'WhatsApp yeni sekmede açıldı.' : ''
+        }`.trim(),
+      );
       await load();
+      focusNextSend(item.id);
     } catch (err) {
       if (win) win.close();
       setSendError(err instanceof ApiClientError ? err.message : 'Rapor gönderilemedi.');
@@ -123,15 +155,29 @@ export default function DigestSendPage() {
     }
   }
 
-  async function handleRevoke(item: AdminDigestItem) {
-    if (!window.confirm(`${item.student_name} için gönderimi iptal et?`)) return;
+  async function handleRevoke() {
+    if (!revokeItem) return;
+    setRevoking(true);
     setSendError(null);
     try {
-      await adminApi.digests.revoke(item.id);
+      await adminApi.digests.revoke(revokeItem.id);
+      setRevokeItem(null);
       await load();
     } catch (err) {
-      setSendError(err instanceof ApiClientError ? err.message : 'İptal edilemedi.');
+      setRevokeItem(null);
+      setSendError(err instanceof ApiClientError ? err.message : 'Bağlantı iptal edilemedi.');
+    } finally {
+      setRevoking(false);
     }
+  }
+
+  /** "Gönder ve sonraki": gönderimden sonra odak listedeki bir sonraki "Gönder" düğmesine geçer. */
+  function focusNextSend(sentId: string) {
+    window.setTimeout(() => {
+      const buttons = Array.from(document.querySelectorAll<HTMLElement>('[data-digest-send]'));
+      const next = buttons.find((b) => b.dataset.digestSend !== sentId) ?? buttons[0];
+      next?.focus();
+    }, 0);
   }
 
   async function copyLinkToClipboard(url: string) {
@@ -143,18 +189,11 @@ export default function DigestSendPage() {
     }
   }
 
-  const DIGEST_TONES: Record<string, BadgeTone> = {
-    pending: 'warning',
-    ready: 'info',
-    sent: 'positive',
-  };
   const badge = (status: string, isRevoked: boolean) =>
     isRevoked ? (
       <Badge tone="neutral">İptal edildi</Badge>
     ) : (
-      <Badge tone={DIGEST_TONES[status] ?? 'neutral'}>
-        {STATUS_LABELS[status] ?? status}
-      </Badge>
+      <Badge tone={DIGEST_TONES[status] ?? 'neutral'}>{STATUS_LABELS[status] ?? status}</Badge>
     );
 
   // Önizlenen digest gönderilmemişse (pending/ready) veya geri çekilmişse
@@ -166,75 +205,229 @@ export default function DigestSendPage() {
   const canEditPreview =
     previewItem !== null && (previewItem.is_revoked || previewItem.status !== 'sent');
 
+  const counts = {
+    ready: items?.filter((i) => i.status === 'ready' && !i.is_revoked).length ?? 0,
+    pending: items?.filter((i) => i.status === 'pending').length ?? 0,
+    sent: items?.filter((i) => i.status === 'sent' && !i.is_revoked).length ?? 0,
+  };
+
+  const columns: Column<AdminDigestItem>[] = [
+    {
+      key: 'student',
+      header: 'Öğrenci',
+      card: 'title',
+      wrap: true,
+      cell: (i) => <span className="font-medium">{i.student_name}</span>,
+    },
+    {
+      key: 'guardian',
+      header: 'Veli',
+      wrap: true,
+      className: 'text-muted',
+      cell: (i) => i.guardian_name,
+    },
+    { key: 'class', header: 'Sınıf', cell: (i) => i.class.name ?? '—' },
+    {
+      key: 'status',
+      header: 'Durum',
+      cell: (i) => (
+        <span className="flex flex-col items-start gap-0.5">
+          {badge(i.status, i.is_revoked)}
+          {i.status === 'pending' && (
+            <span className="tabular text-xs font-medium text-warning">
+              {i.total_courses - i.missing_course_count} / {i.total_courses} dersin raporu var
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'sent',
+      header: 'Gönderim',
+      className: 'tabular text-muted',
+      cell: (i) => (i.sent_at ? `${i.send_count} · ${formatDateIst(i.sent_at)}` : '—'),
+    },
+    {
+      key: 'viewed',
+      header: 'Görüntülenme',
+      wrap: true,
+      className: 'text-muted',
+      cell: (i) =>
+        i.last_viewed_at ? (
+          <span className="text-success">
+            Görüntülendi: <span className="tabular">{formatDateIst(i.last_viewed_at)}</span>
+          </span>
+        ) : (
+          <span>Henüz görüntülenmedi</span>
+        ),
+    },
+  ];
+
+  function sendAction(item: AdminDigestItem) {
+    // pending/ready → "Gönder"; sent (iptal edilmiş dahil) → "Yeniden gönder".
+    // İptal edilen digest yeniden gönderilebilir: send yeni token üretir,
+    // is_revoked=0 yapar, send_count artırır (spec §5.4).
+    const isSent = item.status === 'sent';
+    const canSend = !isSent && !item.is_revoked;
+    const canResend = isSent;
+    const descId = `send-desc-${item.id}`;
+    return (
+      <>
+        <Button size="sm" variant="ghost" onClick={() => void openPreview(item)}>
+          Önizle
+        </Button>
+        {(canSend || canResend) && (
+          <>
+            <Button
+              size="sm"
+              variant="primary"
+              data-digest-send={item.id}
+              aria-describedby={descId}
+              loading={sendingId === item.id}
+              onClick={() => void handleSend(item)}
+            >
+              {canResend ? 'Yeniden gönder' : 'Gönder'}
+            </Button>
+            <span id={descId} className="sr-only">
+              {canResend
+                ? `${describeItem(item)}: yeni rapor bağlantısı üretir, önceki bağlantı geçersiz olur; WhatsApp yeni sekmede açılır.`
+                : `${describeItem(item)}: rapor bağlantısı üretilir ve WhatsApp yeni sekmede açılır${
+                    item.status === 'pending'
+                      ? `; ${item.missing_course_count} dersin raporu eksik gider`
+                      : ''
+                  }.`}
+            </span>
+          </>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <PageTitle icon={Send}>Haftalık gönderim</PageTitle>
-          <p className="text-sm text-muted">
-            Hazır raporlar gönderilebilir; eksikli raporlar yalnızca eksik dersleri içerir.
-          </p>
-        </div>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-muted">Sınıf</span>
-          <select
-            value={classId}
-            onChange={(e) => setClassId(e.target.value)}
-            className="h-9 rounded-md border border-border bg-surface px-3 text-sm text-text focus:border-accent"
-          >
-            <option value="">Tümü</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <PageHeader
+        icon={Send}
+        title="Haftalık gönderim"
+        description="Hazır raporlar gönderilebilir; eksikli raporlar yalnızca girilmiş dersleri içerir. Gönder, rapor bağlantısını üretir ve WhatsApp'ı yeni sekmede açar."
+      />
 
-      <FormError message={error} />
-      <FormError message={sendError} />
-      {sendOk && <p className="text-sm font-medium text-status-sent">{sendOk}</p>}
+      <Toolbar
+        filters={
+          <>
+            <FilterSelect label="Sınıf" value={classId} onChange={setClassId}>
+              <option value="">Tümü</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </FilterSelect>
+            {items && !loading && !error && (
+              <p
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-2 text-[13px] text-muted"
+                aria-label="Gönderim özeti"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <CountChip value={counts.ready} /> hazır
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <CountChip value={counts.pending} /> eksikli
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <CountChip value={counts.sent} /> gönderildi
+                </span>
+              </p>
+            )}
+          </>
+        }
+      />
+
+      <ActionError message={sendError} onDismiss={() => setSendError(null)} />
+      {sendOk && (
+        <div role="status">
+          <InlineNotice tone="success">{sendOk}</InlineNotice>
+        </div>
+      )}
 
       {copyLink && (
-        <div className="rounded-md border border-border bg-surface p-4 text-sm">
-          <p className="text-muted">
+        <InlineNotice tone="warning">
+          <p>
             Tarayıcı açılır pencereyi engelledi. WhatsApp bağlantısını kopyalayıp elle
             açabilirsiniz:
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <code className="break-all rounded bg-bg px-2 py-1 text-xs text-text">
+            <code className="break-all rounded bg-subtle px-2 py-1 text-xs text-text">
               {copyLink}
             </code>
-            <button
-              type="button"
-              onClick={() => void copyLinkToClipboard(copyLink)}
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-            >
+            <Button size="sm" onClick={() => void copyLinkToClipboard(copyLink)}>
               Kopyala
-            </button>
+            </Button>
           </div>
-        </div>
+        </InlineNotice>
       )}
 
-      {preview && previewId && (
-        <div className="rounded-md border border-border bg-surface p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-text">Önizleme</h2>
-            <button
-              type="button"
-              onClick={() => {
-                setPreviewId(null);
-                setPreview(null);
-              }}
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-            >
-              Kapat
-            </button>
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={!items || items.length === 0}
+        emptyMessage="Bu hafta gönderilecek kayıt yok."
+      >
+        <DataTable
+          rows={items ?? []}
+          columns={columns}
+          rowKey={(i) => i.id}
+          rowLabel={(i) => i.student_name}
+          rowAction={sendAction}
+          actions={(i) =>
+            i.status === 'sent' && !i.is_revoked
+              ? [
+                  {
+                    label: 'Bağlantıyı iptal et',
+                    danger: true,
+                    onSelect: () => setRevokeItem(i),
+                  },
+                ]
+              : []
+          }
+        />
+      </ListState>
+
+      <ConfirmDialog
+        open={revokeItem !== null}
+        title="Bağlantıyı iptal et"
+        confirmLabel="Bağlantıyı iptal et"
+        loading={revoking}
+        onConfirm={() => void handleRevoke()}
+        onCancel={() => setRevokeItem(null)}
+      >
+        {revokeItem && (
+          <div className="space-y-2">
+            <p>
+              <strong className="text-text">{describeItem(revokeItem)}</strong> raporunun bağlantısı
+              iptal edilecek.
+            </p>
+            <p>
+              Eski bağlantı kalıcı olarak geçersiz olur ve <code>/r/{'{token}'}</code> adresi 410
+              döner. Raporu yeniden gönderirseniz yeni bir bağlantı üretilir.
+            </p>
           </div>
+        )}
+      </ConfirmDialog>
+
+      <Modal
+        open={previewId !== null}
+        title={previewItem ? `Önizleme — ${previewItem.student_name}` : 'Önizleme'}
+        size="lg"
+        onClose={() => {
+          setPreviewId(null);
+          setPreview(null);
+        }}
+      >
+        {!preview && <LoadingState rows={3} />}
+        {preview && (
           <ReportSnapshot
             snapshot={preview}
-            showStudent
             renderCourseAction={
               canEditPreview
                 ? (course) =>
@@ -243,7 +436,7 @@ export default function DigestSendPage() {
                         to={`/teacher/reports/${course.class_course_id}/${preview.week.id}?returnTo=${encodeURIComponent(
                           '/admin/digests',
                         )}`}
-                        className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-text transition-colors hover:bg-bg"
+                        className={buttonClass('secondary', 'sm')}
                       >
                         Düzenle
                       </Link>
@@ -251,122 +444,8 @@ export default function DigestSendPage() {
                 : undefined
             }
           />
-        </div>
-      )}
-
-      {loading ? (
-        <LoadingState />
-      ) : items && items.length === 0 ? (
-        <EmptyState message="Bu hafta gönderilecek kayıt yok." />
-      ) : (
-        items && (
-          <div className="overflow-hidden rounded-md border border-border bg-surface">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
-                  <th className="px-3 py-2">Öğrenci</th>
-                  <th className="px-3 py-2">Veli</th>
-                  <th className="px-3 py-2">Sınıf</th>
-                  <th className="px-3 py-2">Durum</th>
-                  <th className="px-3 py-2">Gönderim</th>
-                  <th className="px-3 py-2">Görüntülenme</th>
-                  <th className="px-3 py-2 text-right">İşlem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => {
-                  const isRevoked = item.is_revoked;
-                  const isSent = item.status === 'sent';
-                  // pending/ready → "Gönder"; sent (iptal edilmiş dahil) → "Yeniden gönder".
-                  // İptal edilen digest yeniden gönderilebilir: send, yeni token üretir,
-                  // is_revoked=0 yapar, send_count artırır (spec §5.4).
-                  const canSend = !isSent && !isRevoked;
-                  const canResend = isSent;
-                  const canRevoke = isSent && !isRevoked;
-                  return (
-                    <tr key={item.id} className="border-b border-border last:border-b-0">
-                      <td className="px-3 py-2 font-medium text-text">{item.student_name}</td>
-                      <td className="px-3 py-2 text-[13px] text-muted">
-                        {item.guardian_name}
-                      </td>
-                      <td className="px-3 py-2 text-[13px] text-text">
-                        {item.class.name ?? '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        {badge(item.status, item.is_revoked)}
-                        {item.status === 'pending' && (
-                          <span className="mt-0.5 block text-xs text-muted">
-                            {item.total_courses - item.missing_course_count} dersten{' '}
-                            {item.total_courses} dersin raporu var
-                          </span>
-                        )}
-                      </td>
-                      <td className="tabular px-3 py-2 text-[13px] text-muted">
-                        {item.sent_at
-                          ? `${item.send_count} · ${new Date(item.sent_at).toLocaleDateString('tr-TR')}`
-                          : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-[13px] text-muted">
-                        {item.last_viewed_at ? (
-                          <span className="text-status-sent">
-                            Görüntülendi:{' '}
-                            <span className="tabular">
-                              {new Date(item.last_viewed_at).toLocaleDateString('tr-TR', {
-                                day: 'numeric',
-                                month: 'short',
-                              })}
-                            </span>
-                          </span>
-                        ) : (
-                          <span>Henüz görüntülenmedi</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => void openPreview(item)}
-                          className="mr-3 text-sm font-medium text-muted hover:text-text"
-                        >
-                          {previewId === item.id ? 'Gizle' : 'Önizle'}
-                        </button>
-                        {canSend && (
-                          <button
-                            type="button"
-                            disabled={sendingId === item.id}
-                            onClick={() => void handleSend(item)}
-                            className="card-interactive rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {sendingId === item.id ? 'Gönderiliyor…' : 'Gönder'}
-                          </button>
-                        )}
-                        {canResend && (
-                          <button
-                            type="button"
-                            disabled={sendingId === item.id}
-                            onClick={() => void handleSend(item)}
-                            className="card-interactive rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {sendingId === item.id ? 'Gönderiliyor…' : 'Yeniden gönder'}
-                          </button>
-                        )}
-                        {canRevoke && (
-                          <button
-                            type="button"
-                            onClick={() => void handleRevoke(item)}
-                            className="ml-2 rounded-md border border-danger/30 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger/5"
-                          >
-                            İptal
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

@@ -1210,7 +1210,7 @@ Projenin benimsenmesi bu ekrana bağlı. Gereksinimler:
 |---|---|
 | Frontend | React 18 + TypeScript + Vite (SPA) |
 | Routing | react-router-dom |
-| UI | Tailwind + shadcn/ui |
+| UI | Tailwind + elle yazılmış ortak bileşenler (`src/components/ui/`) |
 | Backend | Node.js + Express (REST API) |
 | DB | SQLite (`node:sqlite` — ORM yok, ham SQL) |
 | Auth | JWT (jsonwebtoken) — admin/öğretmen: e-posta+şifre; veli/öğrenci: username+şifre |

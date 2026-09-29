@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { AcademicYear, Week } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
-import Modal from '../../components/admin/Modal';
 import {
-  DangerButton,
-  EmptyState,
+  ActionError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
+  FormActions,
   FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
-  inputClass,
-} from '../../components/admin/ui';
+  Input,
+  ListState,
+  Modal,
+  Select,
+  Toolbar,
+  type Column,
+} from '../../components/ui';
+import { formatDate } from '../../utils/date';
 
 /**
  * Etiket önizlemesi: sunucunun `formatWeekLabel` çıktısının birebir karşılığı
@@ -39,6 +45,10 @@ export default function WeeksPage() {
   const [weeks, setWeeks] = useState<Week[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteWeek, setDeleteWeek] = useState<Week | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [createFieldErrors, setCreateFieldErrors] = useState<Record<string, string>>({});
 
   const [formOpen, setFormOpen] = useState(false);
   const [weekNo, setWeekNo] = useState(1);
@@ -73,7 +83,7 @@ export default function WeeksPage() {
       const data = await adminApi.weeks.list(yearId);
       setWeeks(data.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bir hata oluştu.');
+      setError(err instanceof Error ? err.message : 'Haftalar yüklenemedi. Yeniden deneyin.');
     } finally {
       setLoading(false);
     }
@@ -87,6 +97,7 @@ export default function WeeksPage() {
     event.preventDefault();
     setSubmitting(true);
     setFormError(null);
+    setCreateFieldErrors({});
     try {
       await adminApi.weeks.create({
         academic_year_id: yearId,
@@ -100,19 +111,30 @@ export default function WeeksPage() {
       setEndDate('');
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      if (err instanceof ApiClientError) {
+        setFormError(err.message);
+        setCreateFieldErrors(err.fields ?? {});
+      } else {
+        setFormError('Hafta kaydedilemedi.');
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(week: Week) {
-    if (!window.confirm(`Hafta ${week.week_no} silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteWeek) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.weeks.remove(week.id);
+      await adminApi.weeks.remove(deleteWeek.id);
+      setDeleteWeek(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setDeleteWeek(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Hafta silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -142,7 +164,7 @@ export default function WeeksPage() {
         setEditError(err.message);
         setEditFieldErrors(err.fields ?? {});
       } else {
-        setEditError('Bir hata oluştu.');
+        setEditError('Hafta kaydedilemedi.');
       }
     } finally {
       setEditSubmitting(false);
@@ -151,116 +173,144 @@ export default function WeeksPage() {
 
   const editPreview = previewWeekLabel(editStart, editEnd);
 
+  // Durum (geçmiş/şimdiki) sütunu yok: API hafta durumu döndürmez ve tarih/gün hesabı
+  // frontend'de yapılmaz (bkz. PROGRESS.md 6b kararı).
+  const columns: Column<Week>[] = [
+    {
+      key: 'no',
+      header: 'Hafta',
+      card: 'title',
+      className: 'tabular',
+      cell: (w) => <span className="tabular font-medium">Hafta {w.week_no}</span>,
+    },
+    {
+      key: 'start',
+      header: 'Başlangıç',
+      className: 'tabular text-muted',
+      cell: (w) => formatDate(w.start_date),
+    },
+    {
+      key: 'end',
+      header: 'Bitiş',
+      className: 'tabular text-muted',
+      cell: (w) => formatDate(w.end_date),
+    },
+    { key: 'label', header: 'Etiket', className: 'tabular text-muted', cell: (w) => w.label },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Field label="Eğitim yılı" htmlFor="week-year">
-          <select
-            id="week-year"
-            value={yearId}
-            onChange={(e) => setYearId(e.target.value)}
-            className={inputClass + ' max-w-xs'}
-          >
-            {years.map((y) => (
-              <option key={y.id} value={y.id}>
-                {y.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <PrimaryButton onClick={() => setFormOpen(true)} disabled={!yearId}>
-          Yeni hafta
-        </PrimaryButton>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <Field label="Eğitim yılı" htmlFor="week-year">
+              <Select
+                id="week-year"
+                value={yearId}
+                onChange={(e) => setYearId(e.target.value)}
+                className="max-w-xs"
+              >
+                {years.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={weeks.length} /> hafta
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <Button variant="primary" onClick={() => setFormOpen(true)} disabled={!yearId}>
+            Yeni hafta
+          </Button>
+        }
+      />
 
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : weeks.length === 0 ? (
-        <EmptyState message="Bu eğitim yılı için hafta tanımlanmamış." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Hafta</th>
-                <th className="px-3 py-2">Başlangıç</th>
-                <th className="px-3 py-2">Bitiş</th>
-                <th className="px-3 py-2">Etiket</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map((week) => (
-                <tr key={week.id} className="border-b border-border last:border-0">
-                  <td className="tabular px-3 py-2 font-medium text-text">{week.week_no}</td>
-                  <td className="tabular px-3 py-2 text-muted">{week.start_date}</td>
-                  <td className="tabular px-3 py-2 text-muted">{week.end_date}</td>
-                  <td className="px-3 py-2 text-muted">{week.label}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(week)}
-                        className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-bg"
-                      >
-                        Düzenle
-                      </button>
-                      <DangerButton onClick={() => handleDelete(week)}>Sil</DangerButton>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
+
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={weeks.length === 0}
+        emptyMessage="Bu eğitim yılı için hafta tanımlanmamış."
+        emptyAction={
+          <Button variant="primary" onClick={() => setFormOpen(true)} disabled={!yearId}>
+            Yeni hafta
+          </Button>
+        }
+      >
+        <DataTable
+          rows={weeks}
+          columns={columns}
+          rowKey={(w) => w.id}
+          rowLabel={(w) => `Hafta ${w.week_no}`}
+          actions={(w) => [
+            { label: 'Düzenle', onSelect: () => openEdit(w) },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteWeek(w) },
+          ]}
+        />
+      </ListState>
+
+      <ConfirmDialog
+        open={deleteWeek !== null}
+        title="Haftayı sil"
+        confirmLabel="Haftayı sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteWeek(null)}
+      >
+        Hafta {deleteWeek?.week_no} silinsin mi?
+      </ConfirmDialog>
 
       <Modal open={formOpen} title="Yeni hafta" onClose={() => setFormOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
-          <Field label="Hafta numarası" htmlFor="week-no">
-            <input
+          <Field label="Hafta numarası" htmlFor="week-no" error={createFieldErrors.week_no}>
+            <Input
               id="week-no"
               type="number"
               min={1}
               value={weekNo}
               onChange={(e) => setWeekNo(Number(e.target.value))}
               required
-              className={inputClass}
+              className="tabular"
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Başlangıç" htmlFor="week-start">
-              <input
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Başlangıç" htmlFor="week-start" error={createFieldErrors.start_date}>
+              <Input
                 id="week-start"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 required
-                className={inputClass}
               />
             </Field>
-            <Field label="Bitiş" htmlFor="week-end">
-              <input
+            <Field label="Bitiş" htmlFor="week-end" error={createFieldErrors.end_date}>
+              <Input
                 id="week-end"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 required
-                className={inputClass}
               />
             </Field>
           </div>
           <p className="text-sm text-muted">
             Etiket, girilen tarihlerden otomatik oluşturulur (örn. 07.09 - 13.09.2026).
           </p>
-          <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormError message={Object.keys(createFieldErrors).length === 0 ? formError : null} />
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              Haftayı ekle
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
@@ -270,9 +320,9 @@ export default function WeeksPage() {
         onClose={() => setEditWeek(null)}
       >
         <form onSubmit={handleEdit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Başlangıç" htmlFor="edit-week-start" error={editFieldErrors.start_date}>
-              <input
+              <Input
                 id="edit-week-start"
                 type="date"
                 value={editStart}
@@ -282,11 +332,10 @@ export default function WeeksPage() {
                   setEditFieldErrors({});
                 }}
                 required
-                className={inputClass}
               />
             </Field>
             <Field label="Bitiş" htmlFor="edit-week-end" error={editFieldErrors.end_date}>
-              <input
+              <Input
                 id="edit-week-end"
                 type="date"
                 value={editEnd}
@@ -296,26 +345,25 @@ export default function WeeksPage() {
                   setEditFieldErrors({});
                 }}
                 required
-                className={inputClass}
               />
             </Field>
           </div>
           <p className="text-sm text-muted">
             {editPreview ? (
               <>
-                Etiket: <span className="font-medium text-text">{editPreview}</span>
+                Etiket: <span className="tabular font-medium text-text">{editPreview}</span>
               </>
             ) : (
               'Etiket, girilen tarihlerden otomatik oluşturulur.'
             )}
           </p>
           <FormError message={Object.keys(editFieldErrors).length === 0 ? editError : null} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setEditWeek(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={editSubmitting}>
-              {editSubmitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setEditWeek(null)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={editSubmitting}>
+              Haftayı kaydet
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>

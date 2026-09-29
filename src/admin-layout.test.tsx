@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AdminLayout from './components/admin/AdminLayout';
 import { AuthProvider } from './context/AuthContext';
@@ -59,9 +59,36 @@ describe('AdminLayout — sol menü', () => {
 
   it('marka logosunu erişilebilir adıyla gösterir', () => {
     renderShell();
-    expect(
-      screen.getByRole('img', { name: 'Ödev Takip' }),
-    ).toBeInTheDocument();
+    // Kenar çubuğu + dar ekran çubuğu (CSS ile biri gizlenir)
+    expect(screen.getAllByRole('img', { name: 'Ödev Takip' }).length).toBeGreaterThan(0);
+  });
+
+  it('menü linkleri üç gruba ayrılır', () => {
+    renderShell();
+    for (const g of ['Kurulum', 'Kişiler', 'Haftalık döngü']) {
+      expect(screen.getByText(g)).toBeInTheDocument();
+    }
+  });
+
+  it('hamburger çekmeceyi açar; link tıklayınca ve Escape ile kapanır', () => {
+    renderShell();
+    const opener = screen.getByRole('button', { name: 'Menüyü aç' });
+    expect(opener).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(opener);
+    const dialog = screen.getByRole('dialog', { name: 'Yönetim menüsü' });
+    expect(opener).toHaveAttribute('aria-expanded', 'true');
+    // Çekmece içinde de 13 link var (kenar çubuğuyla birlikte iki kopya)
+    expect(within(dialog).getByRole('link', { name: 'Haftalar' })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('link', { name: 'Haftalar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('Haftalar içeriği')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menüyü aç' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('aktif sekmenin içeriğini gösterir', () => {

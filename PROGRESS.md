@@ -5,6 +5,179 @@
 
 ---
 
+## Yeniden tasarım — Parti 6c: veli/rapor/gönderim/özet ✅
+
+**Sayfalar (ayrı commit):** Veliler, Raporlar + rapor görünümü, Gönderim, Ödev özeti; Panel yedek hatası. Audit log sayfası yok (yalnızca sunucu tarafı).
+**Teşhis (Eğitim yılı Düzenle):** main'de de POST idi (yeniden yazım getirmedi); backend'de PATCH /admin/academic-years/:id var →
+frontend PATCH'e bağlandı (yalnızca değişen alanlar; ad çakışması alanın altında). Hafta durumu rozeti kapsam dışı bırakıldı.
+**Kararlar:** Gönderim'de ana eylem (Gönder/Yeniden gönder) satırda görünür (tıklama sayısı artmadı; menüde yalnızca "Bağlantıyı iptal et");
+iptal artık ConfirmDialog (kim/hafta/sınıf + "kalıcı geçersiz, 410"); gönder sonrası odak sıradaki "Gönder"e; önizleme modal.
+`ReportSnapshot` artık veli bileşenleriyle aynı (renkli yan çizgiler kalktı). Ödev özeti PNG 720→400px (WhatsApp'ta okunur),
+ders başına blok, sahte italik kaldırıldı; yazı tipi gömme doğrulandı (font engellenince DejaVu'ya düşüyor, normalde IBM Plex).
+Atamalar tepsisi 375'te ~94px. Yedek 429 → "bir saat sonra dene / son yedeği kullan". Shim'ler (admin/ui, Modal, Pagination) SİLİNDİ.
+**Parti 7 ölçümü:** `brand-panel` 1 (LoginPage) + index.css `brand-*`/`--brand*`/`elevation-*` tanımları; `att-*`/`status-*` 5 satır (DashboardPage) +
+tailwind.config takma adları; `text-[11px]` 3 (SubmissionFileGrid), `text-[12px]` 4 (HomeworkAttachments); hex: BrandLogo (SVG), PNG arka planı.
+**Doğrulama:** frontend 261/261; typecheck/lint/build temiz; 200 kayıtlı seed ile 1280/768/375.
+
+---
+
+## Yeniden tasarım — Parti 6b: kurulum sayfaları ✅
+
+**Düzeltmeler:** Panel sekmeleri 375'te kısa etiket (Eksik/Matris/Riskli; tam ad + sayı `aria-label`), kaydırmasız
+(320'de de sığar). `SearchBox`: yerel "×" gizli, kendi temizleme düğmesi (etiketli, ≥44px mobil); tüm aramalar
+tek bileşenden (shim de aynı bileşeni yeniden export eder).
+**Sayfalar (her biri ayrı commit):** Okullar, Öğretmenler, Sınıflar, Dersler, Eğitim yılı, Haftalar, Atamalar —
+`DataTable`/`RowMenu`/`ListState`/`Toolbar`/`FormActions`; `window.confirm` kalmadı (ConfirmDialog, eylem adlı düğme).
+**Yeni desenler (2):** `ActionError` (silme/eylem hatası listeyi bozmadan, çıkış yolu düğmeleriyle; Öğrenciler'deki
+silme hatası da bunu kullanır — 6a'da listeyi ErrorState ile değiştiriyordu) ve `DataTable select` (satır seçimi).
+**Kararlar:** Öğretmen silme 409 → sunucu mesajı + "Atamaları devret" / "Atamalara git". Devretme ve takas artık
+ConfirmDialog ile onaylanır: kim kimin yerine geçiyor, kaç atama etkilenir, "tek işlemde; başarısız olursa hiçbiri".
+Atamalar seçim tepsisi (Seçili N/2, seçili atamalar chip, tek tek kaldır, sabit). Haftalar: tarihler gg.aa.yyyy, 400
+hatası alanın altında, etiket sunucudan. Hafta durumu rozeti (geçmiş/şimdiki/başlamamış) kapsam dışı bırakıldı (spec'te yok, backend alanı gerektirir).
+**Bulgu:** Eğitim yılı "Düzenle" POST yapıyordu (6c'de PATCH'e bağlandı).
+**Doğrulama:** frontend 247/247 (+31: row-menu/students hariç yeni `admin-schools` 4, `admin-crud-pages` 4,
+`admin-weeks` +3, `admin-swap` +2 ve genişletilmiş takas/devir onayı, `ui` +2); mevcut testlerde yalnızca
+seçici/adım güncellendi (Panel `tab`, Öğretmenler/Haftalar menü + "Haftayı kaydet", takas onayı window.confirm→diyalog).
+typecheck/lint/build temiz. Okullar yükleniyor/hata durumları Chromium'da gecikme+abort ile görsel doğrulandı.
+**Shim bağımlıları (6c'de silinecek):** `AdminReportsPage`, `AdminReportViewPage`, `DigestSendPage`, `GuardiansPage`,
+`HomeworkSummaryPage`, `ReportSnapshot` (+ `admin-badges.test`).
+
+---
+
+## Yeniden tasarım — Parti 6a: admin liste deseni + Panel + Öğrenciler ✅
+
+**Kapsam:** ortak liste/menü/form bileşenleri (`RowMenu`, `DataTable`, `ListState`, `Toolbar`, `FormActions`,
+`StatCard`); Öğrenciler ve Panel bunlara taşındı (shim import'ları kalktı).
+**Kararlar:** satır eylemleri tek "⋯" menüsü (1280'de taşan 4 satır içi bağlantı çözüldü); silme artık
+`window.confirm` yerine `ConfirmDialog` (aynı soru: "X silinsin mi?", onay düğmesi "Öğrenciyi sil");
+geniş liste dar ekranda kart (justifikasyon: yatay kaydırma satır eylemini ve ilk sütunu gizler),
+tam matris kendi kapsayıcısında kayar (sınıf sütunu sabit); Panel bölüm düğmeleri gerçek sekme
+(`role=tab`); işlem sütunu tablo kayınca da sağda sabit. Hata düzeltmesi: `sr-only` başlık kaydırma
+kapsayıcısı dışına taşıp sayfaya yatay kaydırma ekliyordu (kapsayıcı `relative`).
+**Doğrulama:** frontend 232/232 (+16: `row-menu` 12, `admin-students` 4; 4 mevcut testte yalnızca seçici:
+`button`→`tab`); typecheck/lint temiz; 200 kayıtlı yerel seed ile 1280/768/375 görsel kontrol, sayfa gövdesi
+yatay taşmıyor.
+**Etkilenen:** `components/ui/{RowMenu,DataTable,Toolbar,StatCard}.tsx`, `pages/admin/{StudentsPage,AdminDashboardPage}.tsx`,
+`index.css` (sticky hücre hover), CLAUDE.md bileşen tablosu.
+
+---
+
+## Yeniden tasarım — Parti 5: öğrenci ekranı ✅
+
+**5a** (`3bb6c95`): `CustomerShell` — alt gezinme tam genişlik çubuk (56px + safe-area), içerik alt boşluğu
+çubuğa göre (pb-36 tahmini yerine), klavye açıkken çubuk kalkar, `dvh`; hesap diyaloğu
+`useDialogBehavior`'a taşındı (Escape artık `document`'ta). `HomeworkAttachments` comfortable varyantı
+(öğrenci + veli), `Badge spin`.
+**5b**: `HomeworkListPage` bölündü (`HomeworkCards`, `UploadPanel`, `useHomeworkUploads`, `uploadRules`,
+`cardStatus`): dosya başına durum + yeniden deneme + toplam ilerleme, seçim doğrulaması gösterimi,
+Badge'li teslim durumu, İstanbul günü ile "son tarih geçti". Yükleme kuralları aynen. **Karar (tasarım
+isteği gereği): dosyalar tek tek gönderilir → teslim atomik değil** (backend değişmedi; sunucu zaten append).
+Güncelleme/yeni testler: `customer-shell` (+3, Escape document), `student-upload` (+10: limit/boyut/tür
+gösterimi, sıralı istek + not, hata + ilerleme, yalnız hatalı dosyayı yeniden deneme, puan/not sızıntı
+taraması). Frontend 216/216, typecheck/lint/build temiz.
+
+---
+
+## Düzeltme — rapor girişi açılışta otomatik kayıt tetiklemiyor ✅
+
+Sunucudan yüklenen durum taban çizgisi (`baselineRef`); kayıt yalnızca mevcut durum
+tabandan farklıysa (JSON karşılaştırması: bayraktan güvenli — geri alınan düzenleme ve
+yükleme sırasındaki state atamaları yanlışlıkla kayıt üretmez) tetiklenir. Flush yalnızca
+bekleyen gerçek değişiklikte. Yerel seed gözlemi: draft/completed/sent-admin açılışta PUT yok,
+audit/updated_at/topic değişmedi; alan değişince PUT + (completed/sent'te) audit; admin
+düzenlemesi `weekly_digests` snapshot'ını değiştirmiyor. Backend'e dokunulmadı (git diff boş).
+Testler: +10 (`report-entry.test.tsx`).
+
+---
+
+## Yeniden tasarım — Parti 4: veli ekranları, /r/{token}, gizlilik ✅
+
+Ön işler: (A) mobil rapor kartında sayı kutuları kaldırıldı — 1–10 radiogroup (10 dahil:
+tıklama, `End`, `0` tuşu) tek girdi (`ec08ab4`); (B) rapor girişi açılış otomatik kaydı
+teşhisi yapıldı (kod değiştirilmedi; bulgular yanıt raporunda).
+**4a** (`1d15927`): `ReportCover`, `CourseOverview` (haftanın dersleri tek bakış, ham puanlar),
+`CourseReportCard`, `ScoreScale`, `SubmissionHistory` — `Badge` ile ikon+metin; yan çizgi/gradyan yok;
+tarih Europe/Istanbul (`formatDateIst`); yazdırma kuralları; `AttendanceChip` silindi.
+**4b** (`848eb4e`): veli ana ekranı (öğrenci çipleri, hafta filtresi, sınıf+gönderim tarihi),
+rapor detayı (geri bağlantısı, ErrorState, toast). İşlev değişmedi.
+**4c**: `PublicShell`; `/r/{token}` durumları (410, bozuk bağlantı, hata+yeniden dene); gizlilik
+sayfası yalnızca sunum (içerik aynen; `[Kurum adı]` vb. yer tutucular hâlâ dolu değil).
+Güncellenen test: `token-report.test.tsx` — geçerli biçimli token (kısa değerler artık "bağlantı geçersiz").
+Admin `AdminReportView` ve `DigestSend` önizlemesi görsel olarak doğrulandı (bozulmadı).
+**Doğrulama:** frontend 190/190, typecheck/lint/build temiz. Backend'e dokunulmadı.
+
+---
+
+## Yeniden tasarım — Parti 3: öğretmen ekranları ✅
+
+**3a** (`f132911`): dashboard, teslim kontrol, geçmiş raporlar — ui bileşenleri,
+`ErrorState`+yeniden dene, `InlineNotice`, `Tabs`, `FilterChipRow`; tarih/saat
+Europe/Istanbul (`formatDateTime`, `formatTime`).
+**3b** (`be396a2`, `cefd088` + bu commit): rapor giriş ekranı — (1) masaüstü tablo:
+klavye modeli ve puan girişi AYNEN korundu, hücrelere erişilebilir ad, `SaveStatus`/
+`SaveAnnouncer`, bekleyen kaydın flush'ı (kart değişimi, Geri dön, unmount), "Raporu
+tamamla" tablonun ardında; (2) mobil kart: `ScoreRadioGroup` (tek radiogroup, roving
+tabindex), ders bilgileri katlanır; (3) mobil sabit alt çubuk: safe-area, klavye açıkken
+kalkar (`useKeyboardOpen`), `dvh`, odaktaki alan görünür alana kaydırılır.
+Küçük düzeltmeler: öğretmen üst şeridi 768px'te sığar; mobil kontrol genişlikleri.
+
+**Doğrulama:** frontend 183/183 (baseline 149 → +34 yeni), typecheck/lint/build temiz;
+yeni testler: klavye, puan girişi (10 dahil), devamsızlık, radiogroup, flush, kaydetme
+durumları, alt çubuk + klavye. Görsel: 375/768/1280 (normal, devamsız, başlamamış, sent,
+completed). Chromium'da safe-area (CDP override → 34px) ve klavye (görünür yükseklik
+küçülmesi) emülasyonu ile doğrulandı; **gerçek iOS/Android klavyesi doğrulanamadı**.
+Backend'e dokunulmadı.
+
+---
+
+## Yeniden tasarım — Parti 2: layout, giriş, şifre değiştirme ✅
+
+**Ön düzeltmeler (ayrı commit `bcd6ce5`):** `CountChip` (ikonsuz sayaç; nötr
+rozetin çizgi ikonu sayıyı negatif gösteriyordu — tek kullanım panel filtreleri +
+`Tabs`), nötr rozet ikonu boş daire; panel özet kartlarının renkli üst çizgileri
+kaldırıldı (accent yalnızca etkileşim; anlam ikon dairesinin semantik renginde);
+lint uyarısının kaynağı yerel galeri dosyasıydı → export'lu bileşen + ayrı giriş
+dosyasına bölündü, `.gitignore`'a eklendi (eslint-disable yok).
+
+**Parti 2:** Admin gruplu menü + hamburger çekmece (`useDialogBehavior` ortak),
+öğretmen 56px şerit + kısa etiketli sekmeler, müşteri şeridi 56px, giriş ve
+şifre değiştirme yeni bileşenlerle, favicon/apple-touch-icon wordmark
+ikonundan yeniden üretildi (tek seferlik sharp, script commit'lenmedi).
+Gizlilik bağlantısı kontrastı: `#0D6B62` / bg `#F7F8F9` = **5.99:1** (≥ 4.5).
+Güncellenen test: `admin-layout.test.tsx` (logo iki kopya → `getAllByRole`; yeni:
+gruplar + çekmece açma/kapama testleri).
+
+---
+
+## Yeniden tasarım — Parti 1: temel (token, font, ortak bileşenler, wordmark) ✅
+
+**Kapsam:** Tasarım sistemi temeli. Backend/API/şema/yetki dokunulmadı. Tek teal
+kimlik (mavi müşteri kimliği kaldırıldı — geçiş takma adları duruyor), IBM Plex
+Sans self-host, semantik renk token'ları (kontrast doğrulandı; `warning` →
+`#A54A08`), 2 yarıçap, border-first derinlik (hover'da yükselme kaldırıldı),
+dar ekranda 16px input (iOS zoom), `src/components/ui/` (Button, Field/Input,
+Badge+ikon, Card, TableCard, Tabs, Modal+odak tuzağı, ConfirmDialog, Toast,
+iskelet/boş/hata durumları, PageHeader, Pagination), `useDialogBehavior`
+(Modal ve ileride çekmece için ortak), SVG `BrandLogo` wordmark (logo.png silindi).
+`components/admin/ui.tsx`, `Modal.tsx`, `Pagination.tsx` re-export shim.
+
+**Kararlar (kullanıcı onaylı):** wordmark tek BrandLogo'da; tek teal kimlik;
+admin mobil menüsü hamburger çekmece (Parti 2); yeni bağımlılık yalnızca
+`@fontsource/ibm-plex-sans`; çalışma branch'i `claude/inspiring-shannon-gu5sng`.
+
+**Baseline (Aşama 2 başı):** backend 460/460 (PROGRESS-OZET ile aynı), frontend
+149/149 (PROGRESS-OZET 148, görev metni 143 — fark: OZET sonrası eklenen testler).
+**Sonuç:** frontend 156/156 (+7 yeni `ui.test.tsx`/rozet), typecheck+lint temiz,
+build başarılı; gerçek Plex ile tipografi ve Türkçe glifler (ğ ı İ ş ç ö ü)
+1280/375'te görsel doğrulandı. Güncellenen test: `admin-badges.test.tsx` (yalnızca
+sınıf adları: `text-status-*` → semantik `text-info/success/muted`).
+
+**Etkilenen:** `src/index.css`, `tailwind.config.js`, `index.html`, `src/main.tsx`,
+`src/components/ui/*`, `BrandLogo.tsx`, `HomeworkSummarySheet.tsx` (wordmark),
+CLAUDE.md "Tasarım sistemi" (ARA SÜRÜM), spec.md §7 UI satırı (shadcn → elle yazılmış).
+
+---
+
 ## PASKAL sınıfı yerel hard-delete (veri temizliği) ✅
 
 ### Kapsam

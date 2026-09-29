@@ -370,7 +370,7 @@ describe('ReportEntryPage', () => {
     expect(screen.getByLabelText('Teslim tarihi')).toBeDisabled();
     expect(screen.getByLabelText('Verilmiş olan ödev')).toBeDisabled();
     expect(screen.getByLabelText('Devamsızlık')).toBeDisabled();
-    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı — Öğrenci A')).toBeDisabled();
     expect(
       screen.queryByRole('button', { name: 'Raporu tamamla' }),
     ).not.toBeInTheDocument();
@@ -427,8 +427,8 @@ describe('ReportEntryPage', () => {
     expect(screen.getByLabelText('Teslim tarihi')).toBeDisabled();
     expect(screen.getByLabelText('Verilmiş olan ödev')).toBeDisabled();
     expect(screen.getByLabelText('Devamsızlık')).toBeDisabled();
-    expect(screen.getByLabelText('Ödev puanı')).toBeDisabled();
-    expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı — Öğrenci A')).toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı — Öğrenci A')).toBeDisabled();
 
     // Yazmaya zorla: kilitliyken otomatik kaydetme (debounce PUT) tetiklenmemeli.
     fireEvent.change(screen.getByLabelText('İşlenen konu'), {
@@ -463,7 +463,7 @@ describe('ReportEntryPage', () => {
       screen.queryByRole('button', { name: 'Raporu tamamla' }),
     ).not.toBeInTheDocument();
     expect(screen.getByLabelText('İşlenen konu')).not.toBeDisabled();
-    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı — Öğrenci A')).not.toBeDisabled();
   });
 
   it('teslim rozeti tıklanabilir değildir (yalnızca metin)', async () => {    const withSubmission = {
@@ -501,13 +501,13 @@ describe('ReportEntryPage', () => {
     fireEvent.change(attendance, { target: { value: 'absent' } });
 
     // Ödev puanı devamsızlıktan bağımsız — açık (spec §4).
-    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı — Öğrenci A')).not.toBeDisabled();
     // Ders içi performans derse katılım ölçüsü — devamsızda kapalı.
-    expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı — Öğrenci A')).toBeDisabled();
 
     // Devamsız öğrenciye de önceki haftanın ödev puanı girilebilir.
-    fireEvent.change(screen.getByLabelText('Ödev puanı'), { target: { value: '5' } });
-    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('5');
+    fireEvent.change(screen.getByLabelText('Ödev puanı — Öğrenci A'), { target: { value: '5' } });
+    expect((screen.getByLabelText('Ödev puanı — Öğrenci A') as HTMLInputElement).value).toBe('5');
   });
 
   it('toplu ödev puanı devamsız satıra da uygulanır; toplu performans devamsızı atlar', async () => {
@@ -519,8 +519,8 @@ describe('ReportEntryPage', () => {
     });
 
     const attendance = screen.getByLabelText('Devamsızlık');
-    const homework = screen.getByLabelText('Ödev puanı') as HTMLInputElement;
-    const interest = screen.getByLabelText('Ders içi performans puanı') as HTMLInputElement;
+    const homework = screen.getByLabelText('Ödev puanı — Öğrenci A') as HTMLInputElement;
+    const interest = screen.getByLabelText('Ders içi performans puanı — Öğrenci A') as HTMLInputElement;
     const applyButtons = () => screen.getAllByRole('button', { name: 'Uygula' });
 
     fireEvent.change(attendance, { target: { value: 'absent' } });
@@ -565,13 +565,13 @@ describe('ReportEntryPage', () => {
     });
 
     // Sunucudan 'absent' geldiğinde yalnızca performans devre dışı.
-    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
-    expect(screen.getByLabelText('Ders içi performans puanı')).toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı — Öğrenci A')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı — Öğrenci A')).toBeDisabled();
 
     // "Tümünü geldi yap" gerçekten durumu değiştirir → puan alanları açılır.
     fireEvent.click(screen.getByRole('button', { name: 'Tümünü geldi yap' }));
-    expect(screen.getByLabelText('Ödev puanı')).not.toBeDisabled();
-    expect(screen.getByLabelText('Ders içi performans puanı')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ödev puanı — Öğrenci A')).not.toBeDisabled();
+    expect(screen.getByLabelText('Ders içi performans puanı — Öğrenci A')).not.toBeDisabled();
   });
 
   it('son hafta (homework yok) uyarısı gösterilir', async () => {

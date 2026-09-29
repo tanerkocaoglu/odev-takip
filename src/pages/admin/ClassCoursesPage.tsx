@@ -1,18 +1,31 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { DAY_LABELS, type AcademicYear, type ClassCourse, type ClassItem, type Course, type Teacher } from '../../types';
-import { adminApi, ApiClientError } from '../../services/api';
-import Modal from '../../components/admin/Modal';
 import {
-  DangerButton,
-  EmptyState,
+  DAY_LABELS,
+  type AcademicYear,
+  type ClassCourse,
+  type ClassItem,
+  type Course,
+  type Teacher,
+} from '../../types';
+import { adminApi, ApiClientError } from '../../services/api';
+import { ArrowLeftRight, X } from 'lucide-react';
+import {
+  ActionError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
+  FormActions,
   FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
+  Input,
+  ListState,
+  Modal,
   SearchBox,
-  inputClass,
-} from '../../components/admin/ui';
+  Select,
+  Toolbar,
+  type Column,
+} from '../../components/ui';
 
 /**
  * Atamalar — tüm sınıflar tek listede (sınıf filtresiz), isim araması ile.
@@ -27,6 +40,10 @@ export default function ClassCoursesPage() {
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [deleteItem, setDeleteItem] = useState<ClassCourse | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -65,7 +82,11 @@ export default function ClassCoursesPage() {
       const data = await adminApi.classCourses.list();
       setItems(data.items);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Atamalar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      );
     } finally {
       setLoading(false);
     }
@@ -141,125 +162,225 @@ export default function ClassCoursesPage() {
       setSelected([]);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setFormError(err instanceof ApiClientError ? err.message : 'Atama kaydedilemedi.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleSwap() {
-    const [aId, bId] = selected;
-    const a = items.find((i) => i.id === aId);
-    const b = items.find((i) => i.id === bId);
-    if (!a || !b) return;
-    if (a.teacher_id === b.teacher_id) {
+  const selA = items.find((i) => i.id === selected[0]);
+  const selB = items.find((i) => i.id === selected[1]);
+  const asg = (i: ClassCourse) => `${i.class_name} · ${i.course_name}`;
+
+  /** "Yer değiştir": aynı öğretmen kontrolü sonrası onay diyaloğu açılır. */
+  function requestSwap() {
+    if (!selA || !selB) return;
+    if (selA.teacher_id === selB.teacher_id) {
       setActionError('Aynı öğretmene ait atamaların yerini değiştirmeye gerek yok.');
       return;
     }
-    if (!window.confirm(`"${a.class_name} · ${a.course_name}" ile "${b.class_name} · ${b.course_name}" öğretmenleri yer değiştirsin mi?`)) {
-      return;
-    }
+    setActionError(null);
+    setSwapOpen(true);
+  }
+
+  async function handleSwap() {
+    if (!selA || !selB) return;
+    setSwapping(true);
     setActionError(null);
     try {
-      await adminApi.classCourses.swap(aId, bId);
+      await adminApi.classCourses.swap(selA.id, selB.id);
+      setSwapOpen(false);
       setSelected([]);
       await load();
     } catch (err) {
+      setSwapOpen(false);
       setActionError(err instanceof ApiClientError ? err.message : 'Takas yapılamadı.');
+    } finally {
+      setSwapping(false);
     }
   }
 
-  async function handleDelete(item: ClassCourse) {
-    if (!window.confirm(`"${item.class_name} · ${item.course_name}" ataması silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteItem) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.classCourses.remove(item.id);
-      setSelected((prev) => prev.filter((x) => x !== item.id));
+      await adminApi.classCourses.remove(deleteItem.id);
+      setSelected((prev) => prev.filter((x) => x !== deleteItem.id));
+      setDeleteItem(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setDeleteItem(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Atama silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
+
+  const columns: Column<ClassCourse>[] = [
+    {
+      key: 'class',
+      header: 'Sınıf',
+      card: 'title',
+      cell: (i) => <span className="font-medium">{i.class_name}</span>,
+    },
+    { key: 'course', header: 'Ders', cell: (i) => i.course_name },
+    { key: 'teacher', header: 'Öğretmen', className: 'text-muted', cell: (i) => i.teacher_name },
+    {
+      key: 'day',
+      header: 'Gün',
+      className: 'text-muted',
+      cell: (i) => DAY_LABELS[i.day_of_week],
+    },
+    { key: 'time', header: 'Saat', className: 'tabular text-muted', cell: (i) => i.lesson_time },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex items-end gap-3">
-          <SearchBox value={q} onChange={setQ} placeholder="Sınıf, ders veya öğretmen ara…" />
-          <PrimaryButton
-            onClick={() => void handleSwap()}
-            disabled={selected.length !== 2}
-          >
-            Yer değiştir
-          </PrimaryButton>
+      <Toolbar
+        filters={
+          <>
+            <SearchBox
+              value={q}
+              onChange={setQ}
+              placeholder="Sınıf, ders veya öğretmen ara…"
+              label="Atama ara"
+            />
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={filtered.length} /> atama
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <Button variant="primary" onClick={openCreate} disabled={!classes.length}>
+            Yeni atama
+          </Button>
+        }
+      />
+
+      {/* Seçim durumu: kaç atama seçili, hangi ikisi takas edilecek */}
+      <div className="sticky top-14 z-20 lg:top-0">
+        <div className="rounded-md border border-border bg-surface px-3 py-1.5">
+          <div className="flex items-center gap-x-3">
+            <p className="flex min-w-0 items-center gap-2 text-sm text-text" aria-live="polite">
+              <ArrowLeftRight size={16} aria-hidden="true" className="shrink-0 text-muted" />
+              <span className="tabular whitespace-nowrap font-medium">
+                Seçili: {selected.length}/2
+              </span>
+              {selected.length < 2 && (
+                <span className="hidden text-muted sm:inline">
+                  Öğretmenleri yer değiştirmek için iki atama seçin.
+                </span>
+              )}
+            </p>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {selected.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
+                  Temizle
+                </Button>
+              )}
+              <Button variant="primary" onClick={requestSwap} disabled={selected.length !== 2}>
+                Yer değiştir
+              </Button>
+            </div>
+          </div>
+          {selected.length > 0 && (
+            // Tek satır, yatay kaydırılabilir; kaldır düğmesinin dokunma alanı 44px
+            <ul className="flex flex-nowrap gap-2 overflow-x-auto py-0.5 [scrollbar-width:none]">
+              {[selA, selB].filter(Boolean).map((i) => (
+                <li
+                  key={i!.id}
+                  className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-subtle pl-3 pr-1 text-[13px] text-text"
+                >
+                  <span>
+                    {asg(i!)} <span className="text-muted">({i!.teacher_name})</span>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`${asg(i!)} seçimini kaldır`}
+                    onClick={() => toggleSelect(i!.id)}
+                    className="-my-2 flex h-6 w-6 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-text max-md:h-11 max-md:w-11"
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <PrimaryButton onClick={openCreate} disabled={!classes.length}>
-          Yeni atama
-        </PrimaryButton>
       </div>
 
-      <FormError message={error} />
-      {actionError && <FormError message={actionError} />}
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
 
-      {loading ? (
-        <LoadingState />
-      ) : filtered.length === 0 ? (
-        <EmptyState message={q ? 'Bu aramayla atama bulunamadı.' : 'Henüz atama yok.'} />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2" />
-                <th className="px-3 py-2">Sınıf</th>
-                <th className="px-3 py-2">Ders</th>
-                <th className="px-3 py-2">Öğretmen</th>
-                <th className="px-3 py-2">Gün</th>
-                <th className="px-3 py-2">Saat</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => {
-                const isSelected = selected.includes(item.id);
-                return (
-                  <tr
-                    key={item.id}
-                    className={
-                      'border-b border-border last:border-0 ' +
-                      (isSelected ? 'bg-accent/5' : '')
-                    }
-                  >
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`${item.class_name} · ${item.course_name} seç`}
-                        checked={isSelected}
-                        onChange={() => toggleSelect(item.id)}
-                        className="h-4 w-4 accent-accent"
-                      />
-                    </td>
-                    <td className="px-3 py-2 font-medium text-text">{item.class_name}</td>
-                    <td className="px-3 py-2 text-text">{item.course_name}</td>
-                    <td className="px-3 py-2 text-muted">{item.teacher_name}</td>
-                    <td className="px-3 py-2 text-muted">{DAY_LABELS[item.day_of_week]}</td>
-                    <td className="tabular px-3 py-2 text-muted">{item.lesson_time}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(item)}
-                        className="mr-3 text-sm font-medium text-muted hover:text-text"
-                      >
-                        Düzenle
-                      </button>
-                      <DangerButton onClick={() => handleDelete(item)}>Sil</DangerButton>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={filtered.length === 0}
+        emptyMessage={q ? 'Bu aramayla atama bulunamadı.' : 'Henüz atama yok.'}
+        emptyAction={
+          q ? undefined : (
+            <Button variant="primary" onClick={openCreate} disabled={!classes.length}>
+              Yeni atama
+            </Button>
+          )
+        }
+      >
+        <DataTable
+          rows={filtered}
+          columns={columns}
+          rowKey={(i) => i.id}
+          rowLabel={asg}
+          select={{
+            isSelected: (i) => selected.includes(i.id),
+            onToggle: (i) => toggleSelect(i.id),
+            label: (i) => `${asg(i)} seç`,
+          }}
+          actions={(i) => [
+            { label: 'Düzenle', onSelect: () => openEdit(i) },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteItem(i) },
+          ]}
+        />
+      </ListState>
+
+      <ConfirmDialog
+        open={swapOpen && !!selA && !!selB}
+        title="Öğretmenleri yer değiştir"
+        confirmLabel="Yer değiştir"
+        danger={false}
+        loading={swapping}
+        onConfirm={() => void handleSwap()}
+        onCancel={() => setSwapOpen(false)}
+      >
+        {selA && selB && (
+          <div className="space-y-2">
+            <p>
+              <strong className="text-text">{asg(selA)}</strong> atamasına{' '}
+              <strong className="text-text">{selB.teacher_name}</strong>, ve{' '}
+              <strong className="text-text">{asg(selB)}</strong> atamasına{' '}
+              <strong className="text-text">{selA.teacher_name}</strong> geçecek.
+            </p>
+            <p>
+              Toplam <span className="tabular font-medium text-text">2</span> atama etkilenir. İki
+              değişiklik tek işlemde yapılır; biri başarısız olursa hiçbiri uygulanmaz. Ders günü ve
+              saati değişmez.
+            </p>
+          </div>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={deleteItem !== null}
+        title="Atamayı sil"
+        confirmLabel="Atamayı sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteItem(null)}
+      >
+        "{deleteItem ? asg(deleteItem) : ''}" ataması silinsin mi?
+      </ConfirmDialog>
 
       <Modal
         open={formOpen}
@@ -268,13 +389,12 @@ export default function ClassCoursesPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Sınıf" htmlFor="cc-class">
-            <select
+            <Select
               id="cc-class"
               value={classId}
               onChange={(e) => setClassId(e.target.value)}
               disabled={editId !== null}
               required
-              className={inputClass}
             >
               <option value="">Seçin…</option>
               {classes.map((c) => (
@@ -282,16 +402,15 @@ export default function ClassCoursesPage() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Ders" htmlFor="cc-course">
-            <select
+            <Select
               id="cc-course"
               value={courseId}
               onChange={(e) => setCourseId(e.target.value)}
               disabled={editId !== null}
               required
-              className={inputClass}
             >
               <option value="">Seçin…</option>
               {courses.map((c) => (
@@ -299,15 +418,14 @@ export default function ClassCoursesPage() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Öğretmen" htmlFor="cc-teacher">
-            <select
+            <Select
               id="cc-teacher"
               value={teacherId}
               onChange={(e) => setTeacherId(e.target.value)}
               required
-              className={inputClass}
             >
               <option value="">Seçin…</option>
               {teachers.map((t) => (
@@ -315,40 +433,38 @@ export default function ClassCoursesPage() {
                   {t.full_name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Ders günü" htmlFor="cc-day">
-              <select
+              <Select
                 id="cc-day"
                 value={dayOfWeek}
                 onChange={(e) => setDayOfWeek(Number(e.target.value))}
-                className={inputClass}
               >
                 {DAY_LABELS.slice(1).map((label, i) => (
                   <option key={i + 1} value={i + 1}>
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field label="Saat" htmlFor="cc-time">
-              <input
+              <Input
                 id="cc-time"
                 type="time"
                 value={lessonTime}
                 onChange={(e) => setLessonTime(e.target.value)}
-                className={inputClass}
               />
             </Field>
           </div>
           <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              {editId ? 'Atamayı kaydet' : 'Atamayı ekle'}
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>

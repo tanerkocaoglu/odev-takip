@@ -24,17 +24,22 @@ import type {
 import { DAY_LABELS } from '../../types';
 import { teacherApi, ApiClientError } from '../../services/api';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import Pagination from '../../components/admin/Pagination';
 import {
-  LoadingState,
+  Button,
   EmptyState,
-  FormError,
+  ErrorState,
   FilterChip,
+  FilterChipRow,
   FilterSelect,
+  LoadingState,
   PageTitle,
-  SecondaryButton,
+  Pagination,
   StatusBadge,
-} from '../../components/admin/ui';
+  Tabs,
+  TableCard,
+  tdClass,
+  thClass,
+} from '../../components/ui';
 
 const PAGE_SIZE = 20;
 
@@ -76,7 +81,11 @@ export default function ReportHistoryPage() {
       setTotal(res.total);
       setPage(res.page);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Raporlar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      );
     } finally {
       setLoading(false);
     }
@@ -111,74 +120,47 @@ export default function ReportHistoryPage() {
 
   const mobileFilters = (
     <div className="space-y-4">
-      <div
-        role="tablist"
-        aria-label="Durum"
-        className="flex gap-1 rounded-2xl border border-border bg-surface p-1"
-      >
-        {STATUS_OPTIONS.map((o) => (
-          <button
-            key={o.value}
-            role="tab"
-            type="button"
-            aria-selected={status === o.value}
-            onClick={() => applyFilter((v) => setStatus(v as StatusFilter))(o.value)}
-            className={
-              'flex min-h-11 flex-1 items-center justify-center rounded-xl text-sm font-medium transition-colors ' +
-              (status === o.value ? 'bg-accent text-accent-fg' : 'text-muted hover:text-text')
-            }
+      <Tabs
+        label="Durum"
+        value={status}
+        onChange={(v) => applyFilter((x) => setStatus(x as StatusFilter))(v)}
+        items={STATUS_OPTIONS.map((o) => ({ id: o.value, label: o.label }))}
+      />
+
+      <FilterChipRow label="Sınıf">
+        <FilterChip active={!classId} onClick={() => applyFilter(setClassId)('')}>
+          Tümü
+        </FilterChip>
+        {classes.map((c) => (
+          <FilterChip
+            key={c.id}
+            active={classId === c.id}
+            onClick={() => applyFilter(setClassId)(c.id)}
           >
-            {o.label}
-          </button>
+            {c.name}
+          </FilterChip>
         ))}
-      </div>
+      </FilterChipRow>
 
-      <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-          Sınıf
-        </h2>
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-          <FilterChip active={!classId} onClick={() => applyFilter(setClassId)('')}>
-            Tümü
+      <FilterChipRow label="Hafta">
+        <FilterChip active={!weekId} onClick={() => applyFilter(setWeekId)('')}>
+          Tümü
+        </FilterChip>
+        {weeks.map((w) => (
+          <FilterChip
+            key={w.id}
+            active={weekId === w.id}
+            onClick={() => applyFilter(setWeekId)(w.id)}
+          >
+            {w.week_no}. hafta
           </FilterChip>
-          {classes.map((c) => (
-            <FilterChip
-              key={c.id}
-              active={classId === c.id}
-              onClick={() => applyFilter(setClassId)(c.id)}
-            >
-              {c.name}
-            </FilterChip>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-          Hafta
-        </h2>
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-          <FilterChip active={!weekId} onClick={() => applyFilter(setWeekId)('')}>
-            Tümü
-          </FilterChip>
-          {weeks.map((w) => (
-            <FilterChip
-              key={w.id}
-              active={weekId === w.id}
-              onClick={() => applyFilter(setWeekId)(w.id)}
-            >
-              {w.week_no}. hafta
-            </FilterChip>
-          ))}
-        </div>
-      </section>
-
-      <SecondaryButton onClick={() => void load()}>Yenile</SecondaryButton>
+        ))}
+      </FilterChipRow>
     </div>
   );
 
   return (
-    <div className="space-y-5 md:space-y-4">
+    <div className="space-y-4">
       <PageTitle icon={History}>Geçmiş raporlarım</PageTitle>
 
       {isMobile ? (
@@ -212,13 +194,13 @@ export default function ReportHistoryPage() {
               </option>
             ))}
           </FilterSelect>
-          <SecondaryButton onClick={() => void load()}>Yenile</SecondaryButton>
+          <Button onClick={() => void load()}>Yenile</Button>
         </div>
       )}
 
-      <FormError message={error} />
+      {error && <ErrorState message={error} onRetry={() => void load()} />}
 
-      {loading ? (
+      {error ? null : loading ? (
         <LoadingState />
       ) : data && data.length === 0 ? (
         <EmptyState
@@ -235,7 +217,7 @@ export default function ReportHistoryPage() {
                   <li key={item.id}>
                     <Link
                       to={`/teacher/reports/${item.class_course_id}/${item.week_id}`}
-                      className="card-interactive elevation-1 block rounded-2xl border border-border bg-surface p-4"
+                      className="card-interactive block rounded-md border border-border bg-surface p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -249,7 +231,7 @@ export default function ReportHistoryPage() {
                       <p className="mt-2 truncate text-sm font-medium text-text">
                         {item.class_name} · {item.course_name}
                       </p>
-                      <div className="tabular mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                      <div className="tabular mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
                         <span>
                           {DAY_LABELS[item.day_of_week]}
                           {item.lesson_time ? ` · ${item.lesson_time}` : ''}
@@ -265,39 +247,39 @@ export default function ReportHistoryPage() {
                 ))}
               </ul>
             ) : (
-              <div className="elevation-1 overflow-hidden rounded-md border border-border bg-surface">
-                <table className="w-full text-sm">
+              <TableCard>
+                <table className="w-full">
                   <thead>
-                    <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
-                      <th className="px-3 py-2">Hafta</th>
-                      <th className="px-3 py-2">Sınıf · Ders</th>
-                      <th className="px-3 py-2">Ders günü</th>
-                      <th className="px-3 py-2">Öğrenci</th>
-                      <th className="px-3 py-2">Durum</th>
-                      <th className="px-3 py-2" />
+                    <tr className="border-b border-border">
+                      <th className={thClass()}>Hafta</th>
+                      <th className={thClass()}>Sınıf · Ders</th>
+                      <th className={thClass()}>Ders günü</th>
+                      <th className={thClass()}>Öğrenci</th>
+                      <th className={thClass()}>Durum</th>
+                      <th className={thClass()}>
+                        <span className="sr-only">Eylem</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.map((item) => (
                       <tr key={item.id} className="border-b border-border last:border-b-0">
-                        <td className="tabular px-3 py-2 text-[13px] text-text">
+                        <td className={tdClass() + ' tabular'}>
                           {item.week_no}
                           <span className="block text-xs text-muted">{item.week_label}</span>
                         </td>
-                        <td className="px-3 py-2 text-[13px] text-text">
+                        <td className={tdClass()}>
                           {item.class_name} · {item.course_name}
                         </td>
-                        <td className="tabular px-3 py-2 text-[13px] text-muted">
+                        <td className={tdClass() + ' tabular text-muted'}>
                           {DAY_LABELS[item.day_of_week]}
                           {item.lesson_time ? ` · ${item.lesson_time}` : ''}
                         </td>
-                        <td className="tabular px-3 py-2 text-[13px] text-muted">
-                          {item.student_count}
-                        </td>
-                        <td className="px-3 py-2">
+                        <td className={tdClass() + ' tabular text-muted'}>{item.student_count}</td>
+                        <td className={tdClass()}>
                           <StatusBadge status={item.status} />
                         </td>
-                        <td className="px-3 py-2 text-right">
+                        <td className={tdClass() + ' text-right'}>
                           <Link
                             to={`/teacher/reports/${item.class_course_id}/${item.week_id}`}
                             className="text-sm font-medium text-accent hover:underline"
@@ -309,7 +291,7 @@ export default function ReportHistoryPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableCard>
             )}
             <Pagination
               page={page}

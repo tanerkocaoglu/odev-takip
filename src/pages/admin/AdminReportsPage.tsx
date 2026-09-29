@@ -18,15 +18,19 @@ import type {
 } from '../../types';
 import { DAY_LABELS } from '../../types';
 import { adminApi, teacherApi, ApiClientError } from '../../services/api';
-import Pagination from '../../components/admin/Pagination';
 import {
-  EmptyState,
-  FormError,
-  LoadingState,
-  SearchBox,
+  ActionError,
+  Button,
+  CountChip,
+  DataTable,
   FilterSelect,
+  ListState,
+  Pagination,
+  SearchBox,
   StatusBadge,
-} from '../../components/admin/ui';
+  Toolbar,
+  type Column,
+} from '../../components/ui';
 
 const PAGE_SIZE = 20;
 
@@ -55,6 +59,7 @@ export default function AdminReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Arama debounce (~300ms); yalnızca arama gerçekten değişince 1. sayfaya dön.
   const appliedQ = useRef(q);
@@ -86,7 +91,11 @@ export default function AdminReportsPage() {
       setTotal(res.total);
       setPage(res.page);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Raporlar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      );
     } finally {
       setLoading(false);
     }
@@ -107,7 +116,7 @@ export default function AdminReportsPage() {
   /** Aktif filtre sonucunu CSV indirir (spec §5.7). */
   async function handleExport() {
     setExporting(true);
-    setError(null);
+    setExportError(null);
     try {
       await adminApi.exports.reports({
         status: status || undefined,
@@ -117,7 +126,7 @@ export default function AdminReportsPage() {
         q: q || undefined,
       });
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
+      setExportError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
     } finally {
       setExporting(false);
     }
@@ -137,124 +146,130 @@ export default function AdminReportsPage() {
       });
   }, []);
 
+  const columns: Column<TeacherReportHistoryItem>[] = [
+    {
+      key: 'class',
+      header: 'Sınıf · Ders',
+      card: 'title',
+      cell: (item) => (
+        <Link
+          to={`/admin/reports/${item.id}`}
+          className="font-medium text-accent hover:underline"
+          aria-label={`${item.class_name} · ${item.course_name} raporunu incele`}
+        >
+          {item.class_name} · {item.course_name}
+        </Link>
+      ),
+    },
+    {
+      key: 'week',
+      header: 'Hafta',
+      className: 'tabular',
+      cell: (item) => (
+        <>
+          {item.week_no}
+          <span className="ml-1.5 text-xs text-muted">{item.week_label}</span>
+        </>
+      ),
+    },
+    {
+      key: 'day',
+      header: 'Ders günü',
+      className: 'tabular text-muted',
+      cell: (item) =>
+        `${DAY_LABELS[item.day_of_week]}${item.lesson_time ? ` · ${item.lesson_time}` : ''}`,
+    },
+    {
+      key: 'students',
+      header: 'Öğrenci',
+      className: 'tabular text-muted',
+      cell: (item) => item.student_count,
+    },
+    { key: 'status', header: 'Durum', cell: (item) => <StatusBadge status={item.status} /> },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <FilterSelect
-          label="Durum"
-          value={status}
-          onChange={applyFilter((v) => setStatus(v as StatusFilter))}
-        >
-          {STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect label="Sınıf" value={classId} onChange={applyFilter(setClassId)}>
-          <option value="">Tümü</option>
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect label="Hafta" value={weekId} onChange={applyFilter(setWeekId)}>
-          <option value="">Tümü</option>
-          {weeks.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.week_no}. hafta · {w.label}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect label="Öğretmen" value={teacherId} onChange={applyFilter(setTeacherId)}>
-          <option value="">Tümü</option>
-          {teachers.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.full_name}
-            </option>
-          ))}
-        </FilterSelect>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-muted">Ara</span>
-          <SearchBox
-            value={qInput}
-            onChange={setQInput}
-            placeholder="Sınıf, ders veya öğretmen ara"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg"
-        >
-          Yenile
-        </button>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {exporting ? 'İndiriliyor…' : 'CSV indir'}
-        </button>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <FilterSelect
+              label="Durum"
+              value={status}
+              onChange={applyFilter((v) => setStatus(v as StatusFilter))}
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Sınıf" value={classId} onChange={applyFilter(setClassId)}>
+              <option value="">Tümü</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Hafta" value={weekId} onChange={applyFilter(setWeekId)}>
+              <option value="">Tümü</option>
+              {weeks.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.week_no}. hafta · {w.label}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Öğretmen" value={teacherId} onChange={applyFilter(setTeacherId)}>
+              <option value="">Tümü</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.full_name}
+                </option>
+              ))}
+            </FilterSelect>
+            <div>
+              <span className="mb-1 block text-[13px] font-medium text-muted">Ara</span>
+              <SearchBox
+                value={qInput}
+                onChange={setQInput}
+                placeholder="Sınıf, ders veya öğretmen ara"
+                label="Ara"
+              />
+            </div>
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={total} /> rapor
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={() => void load()}>Yenile</Button>
+            <Button onClick={handleExport} loading={exporting}>
+              {exporting ? 'İndiriliyor…' : 'CSV indir'}
+            </Button>
+          </>
+        }
+      />
 
-      <FormError message={error} />
+      <ActionError message={exportError} onDismiss={() => setExportError(null)} />
 
-      {loading ? (
-        <LoadingState />
-      ) : items && items.length === 0 ? (
-        <EmptyState message="Bu filtrelerle rapor bulunamadı." />
-      ) : (
-        items && (
-          <div className="overflow-hidden rounded-md border border-border bg-surface">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
-                  <th className="px-3 py-2">Hafta</th>
-                  <th className="px-3 py-2">Sınıf · Ders</th>
-                  <th className="px-3 py-2">Ders günü</th>
-                  <th className="px-3 py-2">Öğrenci</th>
-                  <th className="px-3 py-2">Durum</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} className="border-b border-border last:border-b-0">
-                    <td className="tabular px-3 py-2 text-[13px] text-text">
-                      {item.week_no}
-                      <span className="block text-xs text-muted">{item.week_label}</span>
-                    </td>
-                    <td className="px-3 py-2 text-[13px] text-text">
-                      {item.class_name} · {item.course_name}
-                    </td>
-                    <td className="tabular px-3 py-2 text-[13px] text-muted">
-                      {DAY_LABELS[item.day_of_week]}
-                      {item.lesson_time ? ` · ${item.lesson_time}` : ''}
-                    </td>
-                    <td className="tabular px-3 py-2 text-[13px] text-muted">
-                      {item.student_count}
-                    </td>
-                    <td className="px-3 py-2">
-                      <StatusBadge status={item.status} />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Link
-                        to={`/admin/reports/${item.id}`}
-                        className="text-sm font-medium text-accent hover:underline"
-                      >
-                        İncele
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={!items || items.length === 0}
+        emptyMessage="Bu filtrelerle rapor bulunamadı."
+      >
+        <DataTable
+          rows={items ?? []}
+          columns={columns}
+          rowKey={(item) => item.id}
+          rowLabel={(item) => `${item.class_name} ${item.course_name}`}
+        />
+      </ListState>
 
       {!loading && items && items.length > 0 && (
         <Pagination page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />

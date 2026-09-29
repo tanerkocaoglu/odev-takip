@@ -36,7 +36,8 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
 |---|---|
 | Frontend | React 18 + TypeScript + Vite (SPA) |
 | Routing | react-router-dom |
-| UI | Tailwind CSS + elle yazılmış ortak bileşenler (`src/components/admin/ui.tsx`) |
+| UI | Tailwind CSS + elle yazılmış ortak bileşenler (`src/components/ui/`) — shadcn/Radix yok |
+| Font | IBM Plex Sans, self-host (`@fontsource/ibm-plex-sans`) |
 | Animasyon | framer-motion |
 | İkon | lucide-react |
 | Backend | Node.js + Express (REST API) |
@@ -63,11 +64,12 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
   index.html
   render.yaml
   /src
-    /assets              → logo.png
     /components
-      /admin             → AdminLayout, HomeworkSummarySheet, Modal, Pagination, ui.tsx
-                           (elle yazılmış ortak bileşenler — shadcn/ui yok)
-      /layout            → AppLayout
+      /ui                → ORTAK BİLEŞENLER (Button, Field/Input, Badge, Card, TableCard,
+                           Tabs, Modal, ConfirmDialog, Toast, Feedback, Pagination, ...)
+                           index.ts giriş noktası — bkz. "Tasarım sistemi"
+      /admin             → AdminLayout, HomeworkSummarySheet (geçiş katmanı ui.tsx/Modal/Pagination SİLİNDİ)
+      /layout            → AppLayout, TeacherShell, CustomerShell, PublicShell
       BrandLogo.tsx   ImageLightbox.tsx   ProtectedRoute.tsx
       ReportSnapshot.tsx   SubmissionFileGrid.tsx
     /context             → AuthContext.tsx
@@ -202,11 +204,11 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
 - Vite proxy'sinde `/uploads` kaydı yok.
 
 **UI**
-- Bileşen kütüphanesi: **Tailwind CSS + shadcn/ui**. Ek animasyon için
-  framer-motion, ikonlar için lucide-react kullanılır.
+- Bileşenler: **Tailwind CSS + elle yazılmış `src/components/ui/`** (shadcn/Radix
+  YOK). Ek animasyon için framer-motion, ikonlar için lucide-react kullanılır.
 - Tüm metinler Türkçe. Tarih/saat gösterimi `Europe/Istanbul`.
 - Form durumları: yükleniyor, hata, boş durum — üçü de mutlaka ele alınır.
-- **Görsel kararlar "Tasarım kuralları" bölümünde sabitlenmiştir.** Yeni bir
+- **Görsel kararlar "Tasarım sistemi" bölümünde sabitlenmiştir.** Yeni bir
   renk, boyut veya font tanımlama; oradaki token'ları kullan.
 
 **Zaman**
@@ -215,204 +217,278 @@ PROGRESS.md   (ilerleme raporu — her aşama sonunda güncellenir)
 
 ---
 
-## Tasarım kuralları
+## Tasarım sistemi
 
-Üründe **birbirine zıt iki yoğunluk** vardır ve bu bilinçlidir:
+> **ARA SÜRÜM (yeniden tasarım, Parti 1 sonrası).** Token'lar, font, ortak
+> bileşenler ve marka imzası (Parti 1) kesindir. Layout/navigasyon, öğretmen,
+> veli, öğrenci ve admin ekranlarının yeni düzeni Parti 2–6'da uygulanır;
+> henüz taşınmamış sayfalar `components/admin/ui.tsx` geçiş katmanını kullanır.
+> Final sürüm iş sonunda bu bölümün yerine yazılır.
 
-- **`compact`** — öğretmen rapor giriş tablosu ve admin listeleri. Rakibi
-  Excel; haftada onlarca kez açılır, klavyeden çıkmadan doldurulur. Bol beyaz
-  alan burada zarardır.
-- **`comfortable`** — veli rapor sayfası, öğrenci ödev ekranı, giriş ekranı.
-  Haftada bir kez, telefonda, tek seferlik okuma. Sıkışıklık burada zarardır.
+### Temel ilkeler
 
-Karar verilmemiş bir durumda `comfortable` varsayılandır.
+1. **Tek kimlik, tek accent.** Marka ve etkileşim rengi teal (`--accent`).
+   Ayrı bir "müşteri mavisi" YOKTUR; `.customer-face`, `.brand-scope`,
+   `--brand` eski adlardır, yeni kodda kullanılmaz.
+2. **Renk işlevseldir.** Accent yalnızca etkileşimli öğelere (buton, link,
+   odak halkası, aktif sekme/menü) aittir. Durumlar semantik renklerle gösterilir.
+3. **Renk tek başına anlam taşımaz:** her durum renk + ikon + metindir
+   (`Badge` bunu kendisi yapar).
+4. **Border-first derinlik:** kartlar yalnızca 1px kenarlıklıdır, gölgesizdir.
+   Gölge yalnızca yüzen öğelerde (menü, çekmece, toast, modal).
+5. **Hazır bileşen varsa onu kullan.** `src/components/ui/` içindeki bileşenlerin
+   yerine ham `<button>`, `<input>` + uzun sınıf zinciri yazma.
+
+### Token'lar (tek kaynak: `src/index.css`, Tailwind adları: `tailwind.config.js`)
+
+| Tailwind sınıfı | Değer | Kullanım |
+|---|---|---|
+| `bg-bg` | `#F7F8F9` | sayfa zemini |
+| `bg-surface` | `#FFFFFF` | kart, tablo, modal, input |
+| `bg-subtle` | `#F0F3F5` | sönük dolgu: disabled, ikon dairesi, satır hover |
+| `border-border` | `#DDE2E7` | kenarlık, ayırıcı |
+| `text-text` | `#16202A` | birincil metin |
+| `text-muted` | `#54606C` | ikincil metin, etiket (tüm zeminlerde ≥ 4.5:1) |
+| `bg-accent` / `text-accent` | `#0D6B62` | tek marka + etkileşim rengi |
+| `bg-accent-hover` | `#0A574F` | primary buton hover |
+| `text-accent-fg` | `#FFFFFF` | accent üzerindeki metin |
+| `text-success` / `bg-success/10` | `#067647` | tamam: gönderildi, yüklendi |
+| `text-warning` / `bg-warning/10` | `#A54A08` | gecikmiş: günü geçti, geç yüklendi, geç geldi |
+| `text-danger` / `bg-danger/10` | `#B42318` | eksik/olumsuz + yıkıcı eylem: yüklenmedi, gelmedi, sil |
+| `text-info` / `bg-info/10` | `#175CD3` | hazır/bilgi: tamamlandı, izinli |
+
+**Anlam eşlemesi (üç durum kümesi aynı dört renge oturur):**
+- Devamsızlık: geldi → nötr (`muted`), geç geldi → `warning`, gelmedi → `danger`, izinli → `info`.
+- Rapor durumu: taslak → nötr, tamamlandı → `info`, gönderildi → `success`.
+- Teslim: yüklendi → `success`, geç yüklendi → `warning`, yüklenmedi → `danger`.
+
+Tonlu zemin yalnızca `/5` (bant) veya `/10` (rozet) opaklığıyla; metin rengi
+her zaman aynı ailenin düz rengidir. **Yeni renk, hex veya `rgb()` yazma**;
+`text-amber`, `text-red`, `text-blue`, `text-green`, `att-*`, `status-*`,
+`sub-*` eski takma adlardır — yeni kodda `success/warning/danger/info` kullan.
 
 ### Tipografi
 
-- Tek aile: **IBM Plex Sans** (400 / 500 / 600). Google Fonts'tan `latin-ext`
-  alt kümesiyle yüklenir — Türkçe glifler (ğ ı İ ş ç ö ü) bu alt kümededir.
-- **Rakam gösteren her yerde `tabular-nums` zorunludur:** puan sütunları,
-  tarihler, hafta numaraları, sayaçlar. Hizalanmayan rakamlar tabloyu
-  okunamaz hale getirir.
-  ```css
-  .tabular { font-variant-numeric: tabular-nums; }
-  ```
-- Tip ölçeği: `12 / 13 / 14 / 16 / 20 / 24 px`. Tablo içi metin 13px,
-  gövde metni 14px, sayfa başlığı 20px. 24px yalnızca veli rapor sayfasının
-  başlığında ve admin özet kartındaki büyük sayıda.
-- Ağırlık: gövde 400, etiket ve tablo başlığı 500, sayfa başlığı 600.
-  Bunun dışında ağırlık kullanılmaz.
+- Tek aile: **IBM Plex Sans** 400 / 500 / 600, `@fontsource/ibm-plex-sans`
+  ile **self-host** (`main.tsx` içe aktarır; latin + latin-ext). Google Fonts
+  bağlantısı EKLENMEZ.
+- Ölçek yalnızca: `text-xs`(12) `text-[13px]` `text-sm`(14) `text-base`(16)
+  `text-xl`(20) `text-2xl`(24). `text-[11px]`, `text-[15px]` ve başka
+  keyfi boyutlar yasak. Gövde 14, tablo içi 13, sayfa başlığı 20/600,
+  24 yalnızca veli rapor başlığı ve büyük özet sayısı.
+- Ağırlık: gövde 400; etiket, buton, tablo başlığı 500; başlık 600. Başka yok.
+- **Rakam gösteren her yerde `tabular`** (puan, tarih, hafta no, sayaç).
+- **Dar ekranda (<768px) tüm input/select/textarea 16px'tir** (global kural;
+  iOS zoom'unu önler). Bunu `text-sm` ile ezme.
 
-### Renk
+### Şekil ve derinlik
 
-Renk **işlevseldir, dekoratif değildir.** Aşağıdaki üç küme ve tek vurgu rengi
-dışında hiçbir yerde renk kullanılmaz.
+- **İki yarıçap:** `rounded-md` = 8px (buton, input, kart, satır, banner) ve
+  `rounded-lg` = 12px (modal, çekmece, büyük yüzey). Rozet/çip/avatar
+  `rounded-full`. `rounded-xl/2xl/3xl` yazılmaz (12px'e eşlenmiştir, kullanma).
+- Kart: `<Card>` (`border border-border bg-surface`). Kartlarda renkli üst/yan çizgi YOKTUR; anlam ikon dairesinin semantik renginde (`bg-success/10 text-success` vb.) verilir. Tıklanabilir kart/satır:
+  `<Card interactive>` veya `card-interactive` sınıfı → hover'da accent
+  kenarlık + `shadow-hover`. **Hover'da yükselme (`translateY`) YOKTUR.**
+- Gölge yalnızca: `shadow-hover` (etkileşimli kart hover), `shadow-float`
+  (menü, çekmece, toast), `shadow-modal` (modal). Başka gölge yazma.
+  `elevation-*` sınıfları eskidir; yeni kodda kullanma.
+- Modal arka perdesi `bg-[var(--backdrop)]`.
 
-**Temel**
-```
---bg          #FBFCFD   sayfa arkaplanı (saf beyaz değil — uzun giriş
-                        oturumlarında göz yorgunluğunu azaltır)
---surface     #FFFFFF   kart, tablo, modal
---border      #E3E7EB   ayırıcılar, input kenarları
---text        #16202A   birincil metin
---text-muted  #5A6672   ikincil metin, etiketler
---accent      #0D6B62   birincil buton, odak halkası, aktif sekme
---accent-fg   #FFFFFF   accent üzerindeki metin
---danger      #B42318   yıkıcı eylem (sil, iptal et) — devamsızlık
-                        kırmızısıyla aynı ton
-```
-> **`--accent` yalnızca etkileşimli öğelere aittir** — buton, odak halkası,
-> aktif sekme, link. Durum rozetlerinde, etiketlerde veya dekoratif hiçbir
-> yerde kullanılmaz. Böylece kullanıcı bu rengi gördüğünde "buraya
-> tıklanabilir" bilgisini güvenle çıkarır.
->
-> **Yıkıcı eylemler `--danger` kullanır** (sil, iptal). Sistemde tek kırmızı
-> tonu dolaşır; buton ayrı bir kırmızı tanımlamaz.
+### Yoğunluk (iki mod, bilinçli)
 
-**Devamsızlık** (`report_entries.attendance`)
-```
-present  (geldi)      #5A6672   nötr — en sık durum, dikkat çekmemeli
-late     (geç geldi)  #B45309   amber
-absent   (gelmedi)    #B42318   kırmızı
-excused  (izinli)     #175CD3   mavi
-```
+- **compact** — öğretmen rapor giriş tablosu ve admin listeleri (Excel'in rakibi).
+  Tablo metni 13px, satır ≈ 36–40px, kontrol 32px (`h-8`). Tablo hücreleri için
+  `thClass('compact')` / `tdClass('compact')`; kapsayıcı `<TableCard>`.
+  Rapor giriş tablosunda ayrıca `.compact` sınıfı satırı 36px'e sabitler.
+- **comfortable** (varsayılan) — veli, öğrenci, giriş, şifre, aydınlatma.
+  Gövde 14–16px, kontrol 44px, bölümler arası 24px, kart iç boşluğu 16–20px.
+- **Dokunma hedefi:** dar ekranda her tıklanabilir öğe ≥ 44×44px.
+  `Button`, `FilterChip`, `Tabs`, `Modal` kapat düğmesi bunu kendisi sağlar
+  (`max-md:min-h-11`). Ham `<button>` yazıyorsan sen ekle.
 
-**Rapor durumu** (`reports.status`)
-```
-draft      (taslak)       #5A6672   nötr — henüz iş bitmemiş
-completed  (tamamlandı)   #175CD3   mavi — hazır, gönderim bekliyor
-sent       (gönderildi)   #067647   yeşil — döngü tamamlandı
-```
+### Bileşenler (`src/components/ui/`, giriş: `components/ui/index.ts`)
 
-**Teslim durumu**
-```
-yüklendi       #067647
-yüklenmedi     #B42318
-geç yüklendi   #B45309
-```
+Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 
-> Üç kümede aynı renk aileleri bilinçli olarak tekrarlanır: kırmızı her zaman
-> "eksik/olumsuz", amber her zaman "gecikmiş", mavi her zaman "bilgi/hazır",
-> yeşil her zaman "tamam". Kullanıcı bir kez öğrenir, üç yerde birden kullanır.
->
-> Renk **tek başına** anlam taşımaz: her durum rozeti renkle birlikte metin
-> veya ikon da içerir (renk körlüğü ve yazdırma için).
+| Bileşen | Kullanım |
+|---|---|
+| `Button` | `variant`: `primary` (sayfada tek ana eylem) · `secondary` (varsayılan) · `ghost` · `danger` (kenarlıklı) · `danger-solid` (onay diyaloğunda son adım); `size`: `sm`/`md`/`lg`; `loading` (döner ikon + devre dışı, metin değişmez). Bağlantı buton görünümü: `buttonClass(variant,size)` |
+| `Field` + `Input` / `Select` / `Textarea` | Her alan `Field` içinde (görünür etiket, `error` ikonlu metin, `hint`). Ham element gerekirse `inputClass` / `textareaClass` |
+| `SearchBox`, `FilterSelect`, `FilterChip` | liste arama/filtre; dar ekranda çip şeridi |
+| `Badge` (`tone`: neutral/positive/warning/danger/info), `StatusBadge`, `AttendanceBadge` | durum rozeti; ikon otomatik. **Sayı göstermek için KULLANILMAZ** |
+| `CountChip` | sekme/filtre yanındaki sayaç (ikonsuz, nötr). Sayı = `CountChip`, durum = `Badge` |
+| `Card` | `padding`: none/sm/md/lg; `interactive` |
+| `TableCard` + `thClass`/`tdClass` | tablo kapsayıcısı ve hücre sınıfları; `Density` = compact/comfortable |
+| `Tabs` | bölüm içi sekme (`role=tablist`), `count` sayaçlı |
+| `Modal` | `open`, `title`, `onClose`, `size` (`md`/`lg`); odak tuzağı, Escape, odak geri dönüşü otomatik. İlk odak: `data-autofocus` → gövdedeki ilk alan |
+| `ConfirmDialog` | silme/iptal/geri çekme; `confirmLabel` eylemi adıyla söyler ("Öğrenciyi sil") |
+| `useDialogBehavior` | Modal'ın odak/Escape mantığı; çekmece gibi yeni diyaloglar bunu KULLANIR, kendi focus trap'ini yazmaz |
+| `ToastProvider` + `useToast()` | `toast.success/error/info(mesaj)`; kısa işlem sonucu. Kalıcı hata için `FormError`/`InlineNotice` |
+| `LoadingState` (blok iskelet), `Skeleton`, `EmptyState`, `ErrorState` (`onRetry`), `FormError`, `InlineNotice` (`tone`) | yükleniyor / boş / hata durumları |
+| `FilterChipRow` | mobil yatay çip şeridi (etiketli) |
+| `PageTitle`, `PageHeader` | sayfa başlığı (+ açıklama + sağda eylemler) |
+| `DataTable` + `ListState` | admin liste deseni: masaüstü compact tablo, dar ekran (<768px) KART listesi (yatay kaydırma yok; karşılaştırmalı dar tablolar için `mobile="scroll"`). İşlem sütunu sağda sabit. `select` satır seçimi (onay kutusu), `rowAction` görünür ana eylem (ör. "Gönder"; menüden önce), `Column.wrap` uzun ad için satır atlama ekler. `ListState` yükleniyor/hata(+yeniden dene)/boş'u sarar |
+| `RowMenu` | satır eylemleri tek "⋯" menüsünde (klavye: Enter/↑/↓ açar, ↑↓/Home/End/harf gezer, Escape kapatır, odak tetikleyiciye döner). Yıkıcı eylem `danger` (ayırıcıdan sonra) ve menü ASLA doğrudan silmez → `ConfirmDialog` |
+| `ActionError` | listeyi bozmayan eylem hatası (silme reddedildi…): mesaj + `children` ile çıkış yolu, "Kapat". Yükleme hatası için `ListState`/`ErrorState` |
+| `Toolbar`, `FormActions` | liste araç çubuğu (solda arama/filtre, sağda eylemler) ve form alt eylem satırı |
+| `StatCard` | panel özet kartı (ikon dairesi + sayı + etiket; `to` ile bağlantı kartı) |
+| `Pagination` | 200 kayıtlık listelerde zorunlu |
+| `BrandLogo` (`components/BrandLogo.tsx`) | **tek logo bileşeni**; resim dosyası yok (SVG işaret + canlı metin). `size` sm/md/lg, `variant` full/mark, `tone` default/inverse, `responsive` |
 
-### Ölçüler
+**Yasaklar:** ham `<button className="...">` ile buton yeniden icat etmek;
+`logo.png` veya başka logo resmi eklemek; sayfada renk/hex/`rgb()` tanımlamak;
+`text-[Npx]` keyfi boyut; `rounded-xl/2xl/3xl`; hover'da `translate`; `window.confirm/alert`
+(yerine `ConfirmDialog`/`toast`); placeholder'ı etiket yerine kullanmak.
 
-```
---radius   6px   tüm bileşenler (buton, input, kart, rozet)
---ring     2px   odak halkası kalınlığı
-```
+### Rapor giriş ekranı (`ReportEntryPage`) — ürün gereği kurallar
 
-**`compact` yoğunluk**
-```
-tablo satır yüksekliği   36px
-input                    h-8 (32px)
-hücre iç boşluk          px-2 + 2px dikey (h-8 ile satır tam 36px)
-tablo metni              13px
-bileşenler arası boşluk  8px
-```
-> Satır içi kontroller `vertical-align: middle` ile hizalanır; aksi halde
-> baseline boşluğu satır yüksekliğini şişirir.
+Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entry.test.tsx`, `teacher.test.tsx`):
+- **Masaüstü tablo klavye modeli:** Enter = aynı sütunda bir satır aşağı; ok tuşları
+  hücreler arasında (select içinde ok tuşları select'e aittir); puan hücresi
+  `type=number` (rakam yazılır, `10` = "1" sonra "0"; değer 1–10'a kırpılır,
+  odakta içerik seçilir). **Bu davranışa dokunulmaz.** Tablo hücrelerinin
+  erişilebilir adı `"<alan> — <öğrenci>"` biçimindedir.
+- **Devamsız/izinli satırda yalnızca ders içi performans kapanır ve `null` olur;
+  ödev puanı her durumda girilir** (spec §4).
+- **Mobil kart** (<768px): öğrenci başına kart; 1–10 seçici `ScoreRadioGroup`
+  (TEK radiogroup, roving tabindex → grup başına 1 Tab durağı, ok/Home/End/rakam
+  tuşları, 5×2 44px; rakam tuşu 1–9 → aynı sayı, `0` → 10). **Mobil kartta puan için
+  sayı kutusu YOKTUR** (dokununca ekran klavyesi açılıyordu); radiogroup tek girdidir.
+  Kart alanlarının erişilebilir adları `Devamsızlık` (select), radiogroup'lar
+  `Ödev puanı` / `Ders içi performans puanı`, `Not`. Sayı girişi yalnızca masaüstü tabloda.
+- **Otomatik kaydetme:** debounce 2 sn, **yalnızca gerçek değişiklikte**: mevcut durumun JSON'u son yüklenen/kaydedilen
+  duruma (`baselineRef`) eşit değilse tetiklenir — açılışta kayıt YOKTUR (completed/sent-admin raporu
+  açmak `audit_logs`/`updated_at` üretmez, `topic_covered` NULL → "" olmaz). Kart değiştirme ("Önceki/Sonraki"),
+  "Geri dön" ve sayfadan ayrılma bekleyen kaydı **hemen flush eder**
+  (`flushPending`). Kaydedilemezse "Geri dön" bir kez uyarır.
+- **Kaydetme durumu:** `SaveStatus` (görsel kopya) + sayfada tek `SaveAnnouncer`
+  (`aria-live`): "Kaydediliyor…" / "Kaydedildi 14:32" (Europe/Istanbul) /
+  "Kaydedilemedi" + "Yeniden dene".
+- **Sabit alt çubuk (mobil):** `fixed bottom-0`, `pb-[max(0.5rem,env(safe-area-inset-bottom))]`,
+  içerik altında `pb-[calc(5rem+env(safe-area-inset-bottom))]`. Ekran klavyesi açıkken
+  (`useKeyboardOpen`: düzenlenebilir alan odakta + görünür yükseklik %80 altı)
+  çubuk **hiç render edilmez**. Son kartta "Sonraki" yerine "Özet" (tamamlama
+  özetine kaydırır). "Raporu tamamla" sayfada TEK kopyadır (tablo/kartın ardında).
+- Durum banner'ları `InlineNotice`: başlamamış hafta (info), sent kilitli (success),
+  admin düzenlemesi (success), completed düzenleme bilgisi (info), son hafta (warning),
+  hafta tanımı hatalı (danger).
 
-**`comfortable` yoğunluk** — shadcn varsayılanları korunur; bölümler arası
-boşluk 24px, kart iç boşluğu 16–20px.
+### Veli ekranları ve `/r/{token}` (Parti 4)
 
-### Elevation (gölge)
+- **Tek sütun, comfortable, telefon önce.** Girişsiz sayfalar `PublicShell` içinde
+  (`/r/{token}`, `/gizlilik`): sade 56px üst şerit (yalnızca marka), altta aydınlatma
+  metni bağlantısı (her durumda görünür). Gradyan/renkli başlık, `brand-*` sınıfları YOK.
+- **Rapor gövdesi** (`GuardianReportView`, public ve girişli veli ortak): `ReportCover`
+  (düz kart) → `CourseOverview` ("Haftanın dersleri": her ders tek satır — devamsızlık
+  `Badge` + HAM puanlar "Ödev 8 · Perf. 9"; ortalama/yüzde ÜRETİLMEZ; satır ders
+  kartına kaydırır) → `CourseReportCard` (tam açık, ders başına) → girişli veride
+  `SubmissionHistory`. Durum her yerde `Badge` (ikon + metin); kartlarda renkli yan çizgi yok.
+- **`/r/{token}` durumları:** yükleniyor (iskelet) · normal · **410** ("Bu rapor artık
+  geçerli değil." + ne yapılacağı + "Veli paneline giriş yap") · **bozuk bağlantı**
+  (`^[A-Za-z0-9_-]{16,}$` değil → istek atılmadan "Bağlantı geçersiz") · hata (`ErrorState`
+  + Yeniden dene). Sunucu iptal edilmiş VE bilinmeyen token için aynı 410'u döner
+  (varlık sızmaz); ekran ikisini ayırt etmez. Testlerde geçerli biçimli 43 karakterlik token kullan.
+- **Aydınlatma metni içeriği değiştirilmez** (yalnızca sunum). Yazdırma: `nav` ve üst şerit gizlenir,
+  ders kartları sayfa ortasında bölünmez (`break-inside-avoid`).
+- `ReportSnapshot` (admin gönderim önizlemesi) veli tarafıyla AYNI bileşenleri çizer (`ReportCover` + `CourseReportCard`; admin eklentileri: `action`, ödev dosyaları); veri biçimi sabittir.
 
-Derinlik seviyeleri tek yerden (`index.css`) tanımlanır; ekran başına gölge
-uydurulmaz. Renk paletine dokunmaz, yalnızca derinlik kelime dağarcığı ekler.
+### Öğrenci ekranı (Parti 5)
 
-```
-Level 0 (taban)         gölgesiz, --bg üzeri
-Level 1 (kart)          0 1px 2px 0 rgba(22,32,42,0.04)
-Level 2 (hover)         0 4px 12px 0 rgba(10,120,163,0.08), kenarlık --accent,
-                        translateY(-1px)
-Level 3 (açılır menü)   0 8px 24px -4px rgba(22,32,42,0.08)
-Level 4 (modal)         backdrop rgba(22,32,42,0.35),
-                        0 16px 40px -8px rgba(22,32,42,0.16)
-```
+- **Kırmızı çizgi (spec §6):** ekranda yalnızca ders, öğretmen, hafta, açıklama, son tarih,
+  öğretmenin PDF ekleri ve TESLİM DURUMU. Puan, öğretmen notu, rapor içeriği ve değerlendirme
+  süreci ASLA (`src/pages/student/*` bu alan adlarına hiç başvurmaz; `student-upload.test.tsx`
+  hem çalışma zamanı hem kaynak taraması ile doğrular — yeni öğrenci bileşeni de geçmeli).
+- **Yükleme kuralları DEĞİŞMEZ** (`uploadRules.ts`): jpg/jpeg/png/heic(heif)/pdf, dosya başına
+  10 MB, teslim başına toplam 30 (sunucudaki dosyalar dahil). İhlal: sabit kural cümlesi +
+  dosya bazlı ayrıntı (`InlineNotice`, `role=alert`); boyut/tür ihlalinde geçerli dosyalar eklenir,
+  30 aşımında seçimin tamamı reddedilir ve kalan kontenjan söylenir. HEIC dönüşüm hatası sunucunun
+  Türkçe mesajıyla dosyanın satırında görünür.
+- **Dosya başına yükleme** (`useHomeworkUploads`): her dosya kendi isteğiyle SIRAYLA
+  (`studentApi.submit(id, [dosya], not)`; sunucu ilk dosyada teslimi oluşturur, sonrakini ekler).
+  Durumlar: Hazır / Yükleniyor… / Yüklendi / Yüklenemedi (+ o dosya için "Yeniden dene"),
+  toplam ilerleme ("3 / 8 dosya yüklendi", `role=progressbar`). Hepsi yüklenince liste yenilenir ve
+  "Tamamlanan" sekmesine geçilir. **Not: teslim artık atomik değildir** — kısmi yükleme mümkündür
+  (yüklenenler kaybolmaz).
+- **Telefon:** bekleyen ödevler yatay kartlar (masaüstünde ızgara); her hedef ≥ 44px, alanlar 16px.
+  `CustomerShell` alt çubuğu 56px + `env(safe-area-inset-bottom)`; içerik alt boşluğu
+  `calc(5rem + env(safe-area-inset-bottom))`; klavye açıkken çubuk render edilmez. Hesap diyaloğu
+  `useDialogBehavior` kullanır. `HomeworkAttachments size="comfortable"` (44px satırlar) öğrenci/veli için.
+- Durum rozetleri `Badge`: Yüklendi (positive) · Geç yüklendi (warning) · Yüklenmedi (neutral; süresi
+  geçmişse danger + "Son tarih geçti" warning).
 
-> Gölge bir **kelime dağarcığıdır, süs değil**: yalnızca yukarıdaki seviyeler
-> kullanılır. Her yükseltme "şu an önde" mesajıdır; gereksiz gölge gürültüdür.
+### Yükleniyor / hata / boş
 
-### Kart hover deseni
-
-Etkileşimli kartlarda (tıklanabilir satır/kart) hover'da:
-
-```css
-border-color: var(--accent);
-transform: translateY(-1px);
-transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1); /* + Level 2 gölge */
-```
-
-Tıklanabilir olmayan kartlar yalnızca Level 1 gölge taşır — gölge tek başına
-"tıklanabilir" işareti değildir. `prefers-reduced-motion` aktifken transform ve
-gölge geçişleri devre dışı kalır (bkz. Erişilebilirlik tabanı).
-
-### Shimmer yükleme durumu
-
-İskelet/yükleniyor durumları için `#F0F4F8` ile `#E3E7EB` arasında 1.5s
-`linear` sonsuz gradient pulse. `index.css`'teki `.shimmer` sınıfı
-`LoadingState` ve iskelet bloklarında kullanılır; metin yerine blok iskeleti
-tercih edilir.
-
-```css
-.shimmer {
-  background: linear-gradient(90deg, #F0F4F8 25%, #E3E7EB 37%, #F0F4F8 63%);
-  background-size: 400% 100%;
-  animation: shimmer 1.5s linear infinite;
-}
-```
-
-`prefers-reduced-motion` aktifken animasyon durur (statik `#F0F4F8`).
+Her veri ekranı üçünü de ele alır: **yükleniyor** → `LoadingState` (iskelet);
+**hata** → `ErrorState` (ne oldu + "Yeniden dene"); **boş** → `EmptyState`
+(davet eden cümle + varsa eylem). Düz "Yükleniyor…" metni yazılmaz.
 
 ### Odak halkası
 
 Rapor giriş tablosu klavyeyle doldurulur; **odağın nerede olduğu her an
-görünmelidir.** Üründeki en önemli tek tasarım detayı budur.
+görünmelidir.** Global kural (`index.css`): `:focus-visible` → 2px accent
+outline, 2px offset; `td` içinde offset −2px. **Hiçbir koşulda kaldırılmaz**
+(`outline-none` yazma).
 
-```css
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* tablo hücrelerinde düzen kaymasını önlemek için içe doğru: */
-td :focus-visible { outline-offset: -2px; }
-```
+### Hareket
 
-Varsayılan shadcn `focus:ring` yerine bu kullanılır. Odak halkası hiçbir
-koşulda kaldırılmaz.
+- CSS geçişleri kısa ve sönük (150ms, renk/kenarlık/gölge). framer-motion
+  yalnızca sayfa/sekme geçişi ve çekmece için; gereksiz animasyon yok.
+- `prefers-reduced-motion`: tüm animasyon/geçiş global olarak devre dışı
+  (`index.css`); framer-motion kullanan kod `useReducedMotion` ile uyar.
+- Shimmer: `.shimmer` sınıfı (`Skeleton`/`LoadingState` kullanır).
 
 ### Mobil
 
-Dört rolden üçü telefondadır: veli WhatsApp linkinden gelir, öğrenci fotoğraf
-yükler, öğretmen dersten sonra telefondan doldurabilir. **Yalnızca admin
-paneli masaüstü önceliklidir; kalan her şey mobil önceliklidir.**
+Dört rolden üçü telefondadır. **Yalnızca admin paneli masaüstü önceliklidir;
+kalan her şey mobil önceliklidir.** Rapor giriş tablosu dar ekranda yatay
+kaydırılmaz, öğrenci başına kart görünümüne geçer (`spec.md` §6.1).
+Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
+`index.html` `viewport-fit=cover` içerir; sabit alt çubuklar
+`pb-[env(safe-area-inset-bottom)]` kullanır.
+### Navigasyon ve kabuklar
 
-- Admin navigasyonu **sol sabit dikey menü**dür (üstte marka, ortada ikon+etiket
-  sekmeler, altta kullanıcı + çıkış); dar ekranda `<lg` ikon-only şeride
-  daralır. Diğer üç rol üst header navigasyonunu kullanır.
-- Dokunma hedefi minimum 44×44px — `compact` yoğunlukta bile mobilde
-  butonlar ve puan seçicileri bu boyutun altına inmez.
-- Rapor giriş tablosu dar ekranda **yatay kaydırılmaz**, öğrenci başına kart
-  görünümüne geçer (`spec.md` §6.1).
-- Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
+- **Admin** (`AdminLayout`): `lg`+ sol sabit menü 240px (marka, **gruplu** öğeler:
+  Panel · Kurulum · Kişiler · Haftalık döngü; altta kullanıcı + çıkış).
+  `lg` altında menü gizlidir: üstte yapışkan 56px çubuk (hamburger + marka) ve
+  soldan açılan **çekmece** (`role=dialog`, `useDialogBehavior` ile odak tuzağı,
+  Escape, odak geri dönüşü; link tıklayınca kapanır). Yeni menü öğesi
+  `NAV_GROUPS`'a eklenir; ikon-only şerit YOKTUR.
+- **Öğretmen** (`TeacherShell`): 56px üst şerit (marka solda, kullanıcı + çıkış
+  sağda). `md`+ sekmeler şeritte; dar ekranda şeridin altında yapışkan sekme
+  çubuğu (sekme ≥ 44px, kısa etiket, tam ad `aria-label`).
+- **Öğrenci / veli** (`CustomerShell`): 56px üst şerit (yalnızca marka) + alt dock
+  (Ödevlerim/Raporlarım + Hesap). Alt çubuk içerik alt boşluğuyla eşleştirilmiştir (bkz. "Öğrenci ekranı").
+- Her kabukta sayfada **tek** `BrandLogo` bulunur (admin'de kenar çubuğu +
+  dar ekran çubuğu CSS ile dönüşümlü görünür).
+- **Giriş / şifre değiştirme:** `lg`+ solda teal marka paneli (`brand-panel`) +
+  sağda form; dar ekranda üstte ince teal wordmark şeridi + form. Linkler
+  `text-accent` (bg üzerinde 5.99:1, beyaz üzerinde 6.37:1).
+
+### Mobil
+
+Dört rolden üçü telefondadır. **Yalnızca admin paneli masaüstü önceliklidir;
+kalan her şey mobil önceliklidir.** Rapor giriş tablosu dar ekranda yatay
+kaydırılmaz, öğrenci başına kart görünümüne geçer (`spec.md` §6.1).
+Veli rapor sayfası (`/r/{token}`) tek sütun, 16px kenar boşluğu.
+`index.html` `viewport-fit=cover` içerir; sabit alt çubuklar
+`pb-[env(safe-area-inset-bottom)]` kullanır.
 
 ### Erişilebilirlik tabanı
 
-- `prefers-reduced-motion` desteklenir; framer-motion animasyonları **ve** CSS
-  geçişleri/gölge/transform ile shimmer animasyonu bu durumda devre dışı kalır.
-- Metin/arkaplan kontrastı en az 4.5:1.
-- Her form alanının `<label>`'ı vardır; placeholder etiket yerine geçmez.
-- Hata mesajları alanın altında, kırmızı **ve** metinle gösterilir.
+- Metin/zemin kontrastı ≥ 4.5:1 (token'lar doğrulanmıştır; `warning` bu yüzden `#A54A08`).
+- Her form alanının görünür `<label>`'ı vardır; hata alanın altında ikon + metin.
+- Diyaloglarda odak tuzağı ve odak geri dönüşü; durum bildirimleri `aria-live`.
+- `prefers-reduced-motion` desteklenir.
 
 ### Yazım tonu
 
-- Butonlar ne yaptığını söyler: "Raporu tamamla", "Gönder" — "Kaydet" veya
-  "Onayla" gibi belirsiz fiiller değil. Aynı eylem akış boyunca aynı adı taşır.
-- Hata mesajları özür dilemez, ne olduğunu ve ne yapılacağını söyler.
-  "Bir hata oluştu" yerine "Ödev puanı 1 ile 10 arasında olmalı."
+- Butonlar ne yaptığını söyler: "Raporu tamamla", "Gönder", "Öğrenciyi sil".
+  "Kaydet", "Onayla", "Tamam" gibi belirsiz fiiller kullanılmaz; aynı eylem
+  akış boyunca aynı adı taşır.
+- Hata mesajları özür dilemez; ne olduğunu ve ne yapılacağını söyler:
+  "Ödev puanı 1 ile 10 arasında olmalı." ("Bir hata oluştu" değil.)
 - Boş ekranlar davet eder: "Bu hafta doldurulacak rapor yok." + varsa eylem.
-- Cümle düzeni kullanılır; başlıklarda Her Kelime Büyük Yazılmaz.
+- Cümle düzeni; başlıklarda Her Kelime Büyük Yazılmaz. Tüm metin Türkçe.
 
 ---
 

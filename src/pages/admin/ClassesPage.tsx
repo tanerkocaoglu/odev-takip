@@ -1,18 +1,37 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { AcademicYear, ClassItem } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
-import Modal from '../../components/admin/Modal';
 import {
-  DangerButton,
-  EmptyState,
+  ActionError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
-  FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
+  FormActions,
+  Input,
+  ListState,
+  Modal,
   SearchBox,
-  inputClass,
-} from '../../components/admin/ui';
+  Select,
+  Toolbar,
+  type Column,
+} from '../../components/ui';
+
+const COLUMNS: Column<ClassItem>[] = [
+  {
+    key: 'name',
+    header: 'Sınıf adı',
+    card: 'title',
+    cell: (c) => <span className="font-medium">{c.name}</span>,
+  },
+  {
+    key: 'year',
+    header: 'Eğitim yılı',
+    className: 'text-muted',
+    cell: (c) => c.academic_year_name,
+  },
+];
 
 export default function ClassesPage() {
   const [years, setYears] = useState<AcademicYear[]>([]);
@@ -21,12 +40,16 @@ export default function ClassesPage() {
   const [items, setItems] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [deleteItem, setDeleteItem] = useState<ClassItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     adminApi.academicYears
@@ -46,7 +69,7 @@ export default function ClassesPage() {
       const data = await adminApi.classes.list({ academicYearId: yearId || undefined, q });
       setItems(data.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bir hata oluştu.');
+      setError(err instanceof Error ? err.message : 'Sınıflar yüklenemedi. Yeniden deneyin.');
     } finally {
       setLoading(false);
     }
@@ -83,107 +106,115 @@ export default function ClassesPage() {
       setFormOpen(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setFormError(err instanceof ApiClientError ? err.message : 'Sınıf kaydedilemedi.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(item: ClassItem) {
-    if (!window.confirm(`"${item.name}" silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteItem) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.classes.remove(item.id);
+      await adminApi.classes.remove(deleteItem.id);
+      setDeleteItem(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setDeleteItem(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Sınıf silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Eğitim yılı" htmlFor="class-year">
-            <select
-              id="class-year"
-              value={yearId}
-              onChange={(e) => setYearId(e.target.value)}
-              className={inputClass}
-            >
-              {years.map((y) => (
-                <option key={y.id} value={y.id}>
-                  {y.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <SearchBox value={q} onChange={setQ} placeholder="Sınıf ara…" />
-        </div>
-        <PrimaryButton onClick={openCreate} disabled={!yearId}>
-          Yeni sınıf
-        </PrimaryButton>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <Field label="Eğitim yılı" htmlFor="class-year">
+              <Select id="class-year" value={yearId} onChange={(e) => setYearId(e.target.value)}>
+                {years.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <SearchBox value={q} onChange={setQ} placeholder="Sınıf ara…" label="Sınıf ara" />
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={items.length} /> sınıf
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <Button variant="primary" onClick={openCreate} disabled={!yearId}>
+            Yeni sınıf
+          </Button>
+        }
+      />
 
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : items.length === 0 ? (
-        <EmptyState message="Bu eğitim yılında sınıf yok." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Sınıf adı</th>
-                <th className="px-3 py-2">Eğitim yılı</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{item.name}</td>
-                  <td className="px-3 py-2 text-muted">{item.academic_year_name}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(item)}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Düzenle
-                    </button>
-                    <DangerButton onClick={() => handleDelete(item)}>Sil</DangerButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
+
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={items.length === 0}
+        emptyMessage="Bu eğitim yılında sınıf yok."
+        emptyAction={
+          <Button variant="primary" onClick={openCreate} disabled={!yearId}>
+            Yeni sınıf
+          </Button>
+        }
+      >
+        <DataTable
+          rows={items}
+          columns={COLUMNS}
+          rowKey={(c) => c.id}
+          rowLabel={(c) => c.name}
+          actions={(c) => [
+            { label: 'Düzenle', onSelect: () => openEdit(c) },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteItem(c) },
+          ]}
+        />
+      </ListState>
+
+      <ConfirmDialog
+        open={deleteItem !== null}
+        title="Sınıfı sil"
+        confirmLabel="Sınıfı sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteItem(null)}
+      >
+        "{deleteItem?.name}" silinsin mi?
+      </ConfirmDialog>
 
       <Modal
         open={formOpen}
         title={editId ? 'Sınıfı düzenle' : 'Yeni sınıf'}
         onClose={() => setFormOpen(false)}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Sınıf adı" htmlFor="class-name">
-            <input
+        <form onSubmit={handleSubmit}>
+          <Field label="Sınıf adı" htmlFor="class-name" error={formError ?? undefined}>
+            <Input
               id="class-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className={inputClass}
               placeholder="ÖKLİD"
             />
           </Field>
-          <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              {editId ? 'Sınıfı kaydet' : 'Sınıfı ekle'}
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>
