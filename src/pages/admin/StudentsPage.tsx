@@ -822,21 +822,23 @@ export default function StudentsPage() {
             Şablonu indirin, doldurun ve yükleyin. Önizlemede hata yoksa kaydedin; tek satır bile
             hatalıysa hiçbir kayıt oluşturulmaz.
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div>
             <Button onClick={handleTemplateDownload}>Şablon indir</Button>
+          </div>
+          <Field label="CSV dosyası" htmlFor="imp-file">
             <Input
+              id="imp-file"
               type="file"
               accept=".csv,text/csv"
-              aria-label="CSV dosyası"
               onChange={(e) => {
                 setImportFile(e.target.files?.[0] ?? null);
                 setImportResult(null);
                 setImportSuccess(null);
                 setImportError(null);
               }}
-              className="text-sm text-text"
+              className="h-auto py-1.5 file:mr-3 file:rounded-md file:border file:border-border file:bg-subtle file:px-3 file:py-1 file:text-sm file:font-medium file:text-text"
             />
-          </div>
+          </Field>
           <Field label="Başlangıç haftası (tüm grup için)" htmlFor="imp-week">
             <Select
               id="imp-week"

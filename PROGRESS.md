@@ -5,6 +5,24 @@
 
 ---
 
+## Yeniden tasarım — Parti 6a: admin liste deseni + Panel + Öğrenciler ✅
+
+**Kapsam:** ortak liste/menü/form bileşenleri (`RowMenu`, `DataTable`, `ListState`, `Toolbar`, `FormActions`,
+`StatCard`); Öğrenciler ve Panel bunlara taşındı (shim import'ları kalktı).
+**Kararlar:** satır eylemleri tek "⋯" menüsü (1280'de taşan 4 satır içi bağlantı çözüldü); silme artık
+`window.confirm` yerine `ConfirmDialog` (aynı soru: "X silinsin mi?", onay düğmesi "Öğrenciyi sil");
+geniş liste dar ekranda kart (justifikasyon: yatay kaydırma satır eylemini ve ilk sütunu gizler),
+tam matris kendi kapsayıcısında kayar (sınıf sütunu sabit); Panel bölüm düğmeleri gerçek sekme
+(`role=tab`); işlem sütunu tablo kayınca da sağda sabit. Hata düzeltmesi: `sr-only` başlık kaydırma
+kapsayıcısı dışına taşıp sayfaya yatay kaydırma ekliyordu (kapsayıcı `relative`).
+**Doğrulama:** frontend 232/232 (+16: `row-menu` 12, `admin-students` 4; 4 mevcut testte yalnızca seçici:
+`button`→`tab`); typecheck/lint temiz; 200 kayıtlı yerel seed ile 1280/768/375 görsel kontrol, sayfa gövdesi
+yatay taşmıyor.
+**Etkilenen:** `components/ui/{RowMenu,DataTable,Toolbar,StatCard}.tsx`, `pages/admin/{StudentsPage,AdminDashboardPage}.tsx`,
+`index.css` (sticky hücre hover), CLAUDE.md bileşen tablosu.
+
+---
+
 ## Yeniden tasarım — Parti 5: öğrenci ekranı ✅
 
 **5a** (`3bb6c95`): `CustomerShell` — alt gezinme tam genişlik çubuk (56px + safe-area), içerik alt boşluğu

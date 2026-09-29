@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 
 export function Toolbar({ filters, actions }: { filters?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
       {filters && <div className="flex flex-wrap items-end gap-3">{filters}</div>}
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>

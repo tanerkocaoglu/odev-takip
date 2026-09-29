@@ -174,7 +174,7 @@ export default function AdminDashboardPage() {
           <Skeleton className="h-7 w-24" />
           <Skeleton className="h-9 w-44" />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
           <Skeleton className="h-28" />
@@ -233,7 +233,7 @@ export default function AdminDashboardPage() {
       )}
 
       {/* Özet kartları — anlam ikon dairesinin semantik renginde. */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           icon={CheckCircle}
           tone="success"
@@ -258,7 +258,7 @@ export default function AdminDashboardPage() {
         <StatCard
           to="/admin/reports"
           icon={Archive}
-          value="Tüm raporlar"
+          value={<span className="text-base">Tüm raporlar</span>}
           label="Durum, sınıf ve haftaya göre filtreleyin"
         />
       </div>

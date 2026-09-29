@@ -8,7 +8,8 @@
  *
  * - Sütunlardan `card: 'title'` olan kartın başlığı olur (yoksa ilk sütun); `card: 'hide'`
  *   kartta gösterilmez; diğerleri etiketli satır (dt/dd).
- * - `actions`: satır sonundaki `RowMenu` (tablo: son sütun, kart: sağ üst).
+ * - `actions`: satır sonundaki `RowMenu` (tablo: son sütun, kaydırma olsa da sağda sabit;
+ *   kart: sağ üst).
  * - İki düzen aynı anda DOM'a basılmaz (`useIsMobile`); testlerde varsayılan masaüstüdür.
  * Yükleniyor/boş/hata durumları `ListState` ile sarılır (sayfa yazmaz).
  */
@@ -80,7 +81,7 @@ export function DataTable<T>({
   }
 
   return (
-    <TableCard>
+    <TableCard className="relative">
       <table className="w-full">
         <thead>
           <tr className="border-b border-border bg-subtle/60">
@@ -90,7 +91,7 @@ export function DataTable<T>({
               </th>
             ))}
             {actions && (
-              <th className={cx(thClass(), 'w-12')}>
+              <th className={cx(thClass(), 'sticky right-0 w-12 bg-subtle')}>
                 <span className="sr-only">İşlemler</span>
               </th>
             )}
@@ -105,7 +106,7 @@ export function DataTable<T>({
                 </td>
               ))}
               {actions && (
-                <td className={cx(tdClass(), 'text-right')}>
+                <td className={cx(tdClass(), 'sticky right-0 bg-surface text-right')}>
                   <div className="flex justify-end">
                     <RowMenu label={rowLabel(row)} items={actions(row)} />
                   </div>

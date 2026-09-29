@@ -195,6 +195,10 @@ td :focus-visible {
 .admin-content tbody tr:hover > td:first-child {
   box-shadow: inset 2px 0 0 0 rgb(var(--accent));
 }
+/* Sağda sabit işlem hücresi satır hover zeminiyle aynı görünsün (saydam değil, opak) */
+.admin-content tbody tr:hover > td.sticky {
+  background-color: color-mix(in srgb, rgb(var(--subtle)) 60%, rgb(var(--surface)));
+}
 
 /* İskelet/yükleniyor: iki ton arası 1.5s linear sonsuz gradient pulse */
 .shimmer {

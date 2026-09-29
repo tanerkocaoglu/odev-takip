@@ -328,6 +328,10 @@ Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 | `LoadingState` (blok iskelet), `Skeleton`, `EmptyState`, `ErrorState` (`onRetry`), `FormError`, `InlineNotice` (`tone`) | yükleniyor / boş / hata durumları |
 | `FilterChipRow` | mobil yatay çip şeridi (etiketli) |
 | `PageTitle`, `PageHeader` | sayfa başlığı (+ açıklama + sağda eylemler) |
+| `DataTable` + `ListState` | admin liste deseni: masaüstü compact tablo, dar ekran (<768px) KART listesi (yatay kaydırma yok; karşılaştırmalı dar tablolar için `mobile="scroll"`). İşlem sütunu sağda sabit. `ListState` yükleniyor/hata(+yeniden dene)/boş'u sarar |
+| `RowMenu` | satır eylemleri tek "⋯" menüsünde (klavye: Enter/↑/↓ açar, ↑↓/Home/End/harf gezer, Escape kapatır, odak tetikleyiciye döner). Yıkıcı eylem `danger` (ayırıcıdan sonra) ve menü ASLA doğrudan silmez → `ConfirmDialog` |
+| `Toolbar`, `FormActions` | liste araç çubuğu (solda arama/filtre, sağda eylemler) ve form alt eylem satırı |
+| `StatCard` | panel özet kartı (ikon dairesi + sayı + etiket; `to` ile bağlantı kartı) |
 | `Pagination` | 200 kayıtlık listelerde zorunlu |
 | `BrandLogo` (`components/BrandLogo.tsx`) | **tek logo bileşeni**; resim dosyası yok (SVG işaret + canlı metin). `size` sm/md/lg, `variant` full/mark, `tone` default/inverse, `responsive` |
 
