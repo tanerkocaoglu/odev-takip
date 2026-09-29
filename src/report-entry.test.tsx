@@ -225,3 +225,111 @@ describe('bekleyen kaydın flush edilmesi', () => {
     await waitFor(() => expect(putBodies).toHaveLength(1));
   });
 });
+
+describe('mobil kart: puan radiogroup', () => {
+  const hwGroup = () => screen.getByRole('radiogroup', { name: 'Ödev puanı için hızlı seçim' });
+  const intGroup = () =>
+    screen.getByRole('radiogroup', { name: 'Ders içi performans puanı için hızlı seçim' });
+  const radios = (group: HTMLElement) =>
+    Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+
+  it('her grup 10 radio içerir ve tek Tab durağı vardır (roving tabindex)', async () => {
+    renderPage();
+    await loaded();
+    for (const g of [hwGroup(), intGroup()]) {
+      const rs = radios(g);
+      expect(rs).toHaveLength(10);
+      expect(rs.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    }
+    // Seçim yoksa Tab durağı "1"; seçim varsa seçili düğüm
+    expect(radios(hwGroup()).find((r) => r.tabIndex === 0)).toHaveTextContent('1');
+    fireEvent.click(radios(hwGroup())[6]); // 7
+    expect(radios(hwGroup()).find((r) => r.tabIndex === 0)).toHaveTextContent('7');
+    expect(radios(hwGroup())[6]).toHaveAttribute('aria-checked', 'true');
+    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('7');
+  });
+
+  it('ok tuşları grup içinde gezer ve seçer; sonda başa sarar; Home/End; rakam tuşu', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(hwGroup())[4]); // 5
+    const g = hwGroup();
+    fireEvent.keyDown(radios(g)[4], { key: 'ArrowRight' });
+    expect(radios(g)[5]).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(radios(g)[5]);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(radios(g)[4]).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(radios(g)[9]).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' }); // 10 → 1
+    expect(radios(g)[0]).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' }); // 1 → 10
+    expect(radios(g)[9]).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(document.activeElement!, { key: '3' });
+    expect(radios(g)[2]).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(document.activeElement!, { key: '0' });
+    expect(radios(g)[9]).toHaveAttribute('aria-checked', 'true');
+    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('10');
+  });
+
+  it('devamsız seçilince performans grubu kapanır ve değer null olur; ödev grubu açık kalır', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(intGroup())[7]); // 8
+    fireEvent.change(screen.getByLabelText('Devamsızlık'), { target: { value: 'absent' } });
+    expect(radios(intGroup()).every((r) => r.disabled)).toBe(true);
+    expect(radios(intGroup()).every((r) => r.getAttribute('aria-checked') === 'false')).toBe(true);
+    expect(radios(hwGroup()).every((r) => !r.disabled)).toBe(true);
+    expect(screen.getByText(/Devamsız\/izinli öğrencide ders içi performans girilmez\./)).toBeInTheDocument();
+  });
+
+  it('Önceki/Sonraki bekleyen kaydı 2 sn beklemeden flush eder ve kartı değiştirir', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(hwGroup())[8]); // Ali: 9
+    expect(putBodies).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));
+    await waitFor(() => expect(putBodies).toHaveLength(1));
+    expect(putBodies[0]).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ student_id: 's1', homework_score: 9 }),
+      ]),
+    });
+    // Yeni kart: Veli (7 / 8 önceden dolu)
+    expect(screen.getByRole('group', { name: 'Veli, 2 / 2' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('7');
+
+    // Geri dönünce Ali'nin puanı korunur
+    fireEvent.click(screen.getByRole('button', { name: 'Önceki' }));
+    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('9');
+  });
+
+  it('bekleyen kayıt yokken kart değiştirmek fazladan PUT üretmez', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100); // açılıştaki otomatik kayıt biter
+    });
+    const before = putBodies.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(putBodies).toHaveLength(before);
+  });
+});
+
+describe('mobil: ders bilgileri katlanır', () => {
+  it('varsayılan kapalı (aria-expanded=false); tıklayınca açılır; alanlar DOM\'da tektir', async () => {
+    renderPage();
+    await loaded();
+    const toggle = screen.getByRole('button', { name: /Ders bilgileri/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByLabelText('İşlenen konu')).toHaveLength(1);
+    expect(toggle).toHaveTextContent('Konu: Konu');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+});

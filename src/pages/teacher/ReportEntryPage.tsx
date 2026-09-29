@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronDown } from 'lucide-react';
 import type {
   Attendance,
   HomeworkAttachment,
@@ -28,10 +28,12 @@ import {
   Input,
   LoadingState,
   cx,
+  textareaClass,
   useToast,
 } from '../../components/ui';
 import HomeworkAttachments from '../../components/HomeworkAttachments';
 import SaveStatus, { type SaveState } from '../../components/SaveStatus';
+import ScoreRadioGroup from '../../components/ScoreRadioGroup';
 
 /** Tablo hücresi kontrolü (compact: 32px — `.compact` kuralı yüksekliği sabitler). */
 const cellClass =
@@ -40,6 +42,10 @@ const cellClass =
 const scoreCellClass =
   cellClass +
   ' tabular text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+/** Mobil kart kontrolü (comfortable: 44px, 16px yazı — global kural). */
+const mobileControlClass =
+  'h-11 rounded-md border border-border bg-surface px-3 text-sm text-text focus:border-accent disabled:bg-subtle disabled:text-muted';
 
 /** Devamsızlık seçicisinin renk ipucu — renk yanında seçili metin de görünür. */
 const ATTENDANCE_CELL_TONE: Record<Attendance, string> = {
@@ -109,6 +115,8 @@ export default function ReportEntryPage() {
   const [bulkHomework, setBulkHomework] = useState('');
   const [bulkInterest, setBulkInterest] = useState('');
   const [mobileIndex, setMobileIndex] = useState(0);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const mobileCardRef = useRef<HTMLDivElement>(null);
 
   // Ödev ekleri (PDF) — migration #13. Yalnızca bu haftanın ekleri düzenlenir;
   // geçen haftanın ekleri salt-okunur gösterilir.
@@ -257,6 +265,17 @@ export default function ReportEntryPage() {
       return;
     }
     navigate(returnTo);
+  }
+
+  /**
+   * Mobil kartlar arası geçiş: bekleyen otomatik kayıt 2 sn beklenmeden
+   * HEMEN gönderilir (kart değişince değişiklik kaybolmaz); odak yeni karta taşınır.
+   */
+  function goToCard(next: number) {
+    if (next < 0 || next > entries.length - 1) return;
+    void flushPending();
+    setMobileIndex(next);
+    requestAnimationFrame(() => mobileCardRef.current?.focus());
   }
 
   function updateEntry(studentId: string, patch: Partial<ReportEntry>) {
@@ -488,8 +507,37 @@ export default function ReportEntryPage() {
       <FormError message={completeMsg} />
       <FormError message={attachmentError} />
 
-      {/* Sınıf düzeyi alanlar */}
-      <Card padding="sm" className="grid gap-3 md:grid-cols-2">
+      {/* Dar ekranda ders bilgileri katlanır: öğrenci kartı ilk ekranda görünsün.
+          Alanlar DOM'da tektir; katlanınca yalnızca CSS ile gizlenir. */}
+      <button
+        type="button"
+        onClick={() => setInfoOpen((o) => !o)}
+        aria-expanded={infoOpen || Object.keys(completeErrors).length > 0}
+        aria-controls="class-info"
+        className="flex min-h-14 w-full items-center gap-3 rounded-md border border-border bg-surface px-4 py-2 text-left md:hidden"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-text">Ders bilgileri</span>
+          <span className="block truncate text-[13px] text-muted">
+            {topic || hwDesc
+              ? [topic && `Konu: ${topic}`, hwDesc && `Ödev: ${hwDesc}`].filter(Boolean).join(' · ')
+              : 'Konu ve ödev henüz girilmedi'}
+          </span>
+        </span>
+        <ChevronDown
+          size={18}
+          aria-hidden="true"
+          className={cx('shrink-0 text-muted transition-transform', infoOpen && 'rotate-180')}
+        />
+      </button>
+      <Card
+        id="class-info"
+        padding="sm"
+        className={cx(
+          'grid gap-3 md:grid-cols-2',
+          !infoOpen && Object.keys(completeErrors).length === 0 && 'max-md:hidden',
+        )}
+      >
         <Field label="Verilmiş olan ödev" htmlFor="prev-homework">
           <Input
             id="prev-homework"
@@ -557,10 +605,10 @@ export default function ReportEntryPage() {
       {/* Toplu doldurma kısayolu (salt-okunur önizlemede gizli) */}
       {!readOnly && (
         <Card padding="sm" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Button size="sm" onClick={bulkMakePresent}>
+          <Button size="sm" onClick={bulkMakePresent} className="max-md:w-full">
             Tümünü geldi yap
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 max-md:hidden">
             <label htmlFor="bulk-homework" className="whitespace-nowrap text-[13px] text-muted">
               Tümü ödev puanı
             </label>
@@ -577,7 +625,7 @@ export default function ReportEntryPage() {
               Uygula
             </Button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 max-md:hidden">
             <label
               htmlFor="bulk-interest"
               title="Ders içi performans puanı"
@@ -728,29 +776,49 @@ export default function ReportEntryPage() {
         </table>
       </div>
 
-      {/* Mobil: öğrenci başına kart + ileri/geri */}
+      {/* Mobil: öğrenci başına kart + önceki/sonraki (yatay kaydırma yok) */}
       <div className="md:hidden">
-        {entries.length > 0 && (
-          <div className="space-y-3">
-            {(() => {
-              const entry = entries[Math.min(mobileIndex, entries.length - 1)];
-              const interestDisabled =
-                entry.attendance === 'absent' || entry.attendance === 'excused';
-              return (
-                <div className="space-y-3 rounded-md border border-border bg-surface p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-text">{entry.student_name}</p>
-                    <span className="tabular text-xs text-muted">
-                      {mobileIndex + 1} / {entries.length}
-                    </span>
+        {entries.length > 0 &&
+          (() => {
+            const index = Math.min(mobileIndex, entries.length - 1);
+            const entry = entries[index];
+            const away = entry.attendance === 'absent' || entry.attendance === 'excused';
+            return (
+              <div className="space-y-3">
+                <div
+                  ref={mobileCardRef}
+                  role="group"
+                  aria-label={`${entry.student_name}, ${index + 1} / ${entries.length}`}
+                  tabIndex={-1}
+                  className="space-y-4 rounded-md border border-border bg-surface p-4 focus:outline-none"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <h2 className="text-base font-semibold text-text">{entry.student_name}</h2>
+                      <span className="tabular shrink-0 pt-0.5 text-[13px] text-muted">
+                        {index + 1} / {entries.length}
+                      </span>
+                    </div>
+                    <div
+                      aria-hidden="true"
+                      className="mt-2 h-1 overflow-hidden rounded-full bg-subtle"
+                    >
+                      <div
+                        className="h-full rounded-full bg-accent transition-all"
+                        style={{ width: `${((index + 1) / entries.length) * 100}%` }}
+                      />
+                    </div>
+                    <div className="mt-2">
+                      {entry.submission ? (
+                        <Badge tone={entry.submission.is_late ? 'warning' : 'positive'}>
+                          {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
+                        </Badge>
+                      ) : (
+                        <Badge tone="danger">Yüklenmedi</Badge>
+                      )}
+                    </div>
                   </div>
-                  {entry.submission ? (
-                    <Badge tone={entry.submission.is_late ? 'warning' : 'positive'}>
-                      {entry.submission.is_late ? 'Geç yüklendi' : 'Yüklendi'}
-                    </Badge>
-                  ) : (
-                    <Badge tone="danger">Yüklenmedi</Badge>
-                  )}
+
                   <Field label="Devamsızlık" htmlFor="m-att">
                     <select
                       id="m-att"
@@ -761,7 +829,7 @@ export default function ReportEntryPage() {
                         })
                       }
                       disabled={readOnly}
-                      className="h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-subtle"
+                      className={cx(mobileControlClass, 'w-full', ATTENDANCE_CELL_TONE[entry.attendance])}
                     >
                       {(Object.keys(ATTENDANCE_LABELS) as Attendance[]).map((a) => (
                         <option key={a} value={a}>
@@ -770,8 +838,12 @@ export default function ReportEntryPage() {
                       ))}
                     </select>
                   </Field>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Ödev puanı" htmlFor="m-hw">
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <label htmlFor="m-hw" className="text-[13px] font-medium text-muted">
+                        Ödev puanı
+                      </label>
                       <input
                         id="m-hw"
                         type="number"
@@ -784,26 +856,51 @@ export default function ReportEntryPage() {
                           })
                         }
                         disabled={readOnly}
-                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-subtle"
+                        className={cx(mobileControlClass, 'tabular w-20 text-center')}
                       />
-                    </Field>
-                    <Field label="Ders içi performans puanı" htmlFor="m-int">
+                    </div>
+                    <ScoreRadioGroup
+                      label="Ödev puanı için hızlı seçim"
+                      value={entry.homework_score}
+                      disabled={readOnly}
+                      onChange={(n) => updateEntry(entry.student_id, { homework_score: n })}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <label htmlFor="m-int" className="text-[13px] font-medium text-muted">
+                        Ders içi performans puanı
+                      </label>
                       <input
                         id="m-int"
                         type="number"
                         min={1}
                         max={10}
-                        disabled={readOnly || interestDisabled}
+                        disabled={readOnly || away}
+                        placeholder={away ? '—' : undefined}
                         value={entry.interest_score ?? ''}
                         onChange={(e) =>
                           updateEntry(entry.student_id, {
                             interest_score: parseScore(e.target.value),
                           })
                         }
-                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-subtle"
+                        className={cx(mobileControlClass, 'tabular w-20 text-center')}
                       />
-                    </Field>
+                    </div>
+                    <ScoreRadioGroup
+                      label="Ders içi performans puanı için hızlı seçim"
+                      value={entry.interest_score}
+                      disabled={readOnly || away}
+                      onChange={(n) => updateEntry(entry.student_id, { interest_score: n })}
+                    />
+                    {away && (
+                      <p className="mt-2 text-[13px] text-muted">
+                        Devamsız/izinli öğrencide ders içi performans girilmez.
+                      </p>
+                    )}
                   </div>
+
                   <Field label="Not" htmlFor="m-note">
                     <textarea
                       id="m-note"
@@ -813,32 +910,33 @@ export default function ReportEntryPage() {
                         updateEntry(entry.student_id, { teacher_note: e.target.value })
                       }
                       disabled={readOnly}
-                      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text disabled:bg-bg"
+                      className={textareaClass}
                     />
                   </Field>
                 </div>
-              );
-            })()}
-            <div className="flex justify-between">
-              <button
-                type="button"
-                disabled={mobileIndex === 0}
-                onClick={() => setMobileIndex((i) => Math.max(0, i - 1))}
-                className="min-h-[44px] min-w-[44px] rounded-md border border-border px-4 text-sm text-text disabled:opacity-50"
-              >
-                Önceki
-              </button>
-              <button
-                type="button"
-                disabled={mobileIndex >= entries.length - 1}
-                onClick={() => setMobileIndex((i) => Math.min(entries.length - 1, i + 1))}
-                className="min-h-[44px] min-w-[44px] rounded-md border border-border px-4 text-sm text-text disabled:opacity-50"
-              >
-                Sonraki
-              </button>
-            </div>
-          </div>
-        )}
+
+                <div className="flex justify-between gap-3">
+                  <Button
+                    size="lg"
+                    disabled={index === 0}
+                    onClick={() => goToCard(index - 1)}
+                    className="flex-1"
+                  >
+                    Önceki
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="primary"
+                    disabled={index >= entries.length - 1}
+                    onClick={() => goToCard(index + 1)}
+                    className="flex-1"
+                  >
+                    Sonraki
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
       </div>
 
       {/* Tamamlama: tablonun/kartın hemen ardından — Tab ile son hücreden ulaşılır */}
