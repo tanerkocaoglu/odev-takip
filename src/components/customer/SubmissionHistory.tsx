@@ -54,7 +54,11 @@ export default function SubmissionHistory({
               </p>
               {(sub.attachments ?? []).length > 0 && (
                 <div className="mt-2">
-                  <HomeworkAttachments attachments={sub.attachments ?? []} onOpen={onOpenFile} />
+                  <HomeworkAttachments
+                    size="comfortable"
+                    attachments={sub.attachments ?? []}
+                    onOpen={onOpenFile}
+                  />
                 </div>
               )}
               {sub.submission && (

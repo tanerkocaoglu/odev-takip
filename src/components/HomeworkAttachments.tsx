@@ -22,6 +22,7 @@ export default function HomeworkAttachments({
   onRemove,
   busy = false,
   emptyLabel = 'Ek yok',
+  size = 'compact',
 }: {
   attachments: HomeworkAttachment[];
   onOpen: (key: string) => void;
@@ -31,6 +32,11 @@ export default function HomeworkAttachments({
   onRemove?: (attachmentId: string) => void;
   busy?: boolean;
   emptyLabel?: string;
+  /**
+   * compact: öğretmen rapor girişi (tek satır çipler, hız).
+   * comfortable: öğrenci/veli (telefon): her ek ≥ 44px yüksekliğinde satır.
+   */
+  size?: 'compact' | 'comfortable';
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,6 +45,37 @@ export default function HomeworkAttachments({
     const files = Array.from(list).filter(isPdf);
     if (files.length > 0) onAdd(files);
     if (inputRef.current) inputRef.current.value = '';
+  }
+
+  if (size === 'comfortable') {
+    return (
+      <div>
+        <p className="mb-1.5 inline-flex items-center gap-1 text-[13px] font-medium text-muted">
+          <Paperclip size={13} aria-hidden="true" />
+          Öğretmenin eklediği dosyalar
+        </p>
+        {attachments.length === 0 ? (
+          <p className="text-[13px] text-muted">{emptyLabel}</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {attachments.map((a) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(a.key)}
+                  title={a.filename}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-md border border-border bg-surface px-3 text-left text-sm font-medium text-accent transition-colors hover:border-accent"
+                >
+                  <FileText size={16} aria-hidden="true" className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{a.filename}</span>
+                  <span className="shrink-0 text-[13px] font-normal text-muted">PDF</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
   }
 
   return (

@@ -149,10 +149,8 @@ export default function GuardianReportDetailPage() {
               <div className="mt-2 space-y-2">
                 {teacherAttachments.length > 0 && (
                   <div>
-                    <p className="text-[13px] text-muted">
-                      Öğretmenin eklediği dosyalar
-                    </p>
                     <HomeworkAttachments
+                      size="comfortable"
                       attachments={teacherAttachments}
                       onOpen={(key) => void openFile(key)}
                     />

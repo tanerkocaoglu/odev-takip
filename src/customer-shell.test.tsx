@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import CustomerShell from './components/layout/CustomerShell';
 import { AuthProvider } from './context/AuthContext';
@@ -84,7 +84,7 @@ describe('CustomerShell', () => {
     expect(screen.getByText('Örnek Kişi 8')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Çıkış yap' })).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Hesap' })).not.toBeInTheDocument();
     });
@@ -133,5 +133,61 @@ describe('CustomerShell', () => {
     await waitFor(() => {
       expect(screen.getByTestId('customer-topbar').className).not.toContain('-translate-y-full');
     });
+  });
+
+  it('içerik alt boşluğu gezinme çubuğu + güvenli alan kadar ayrılır; çubuk sabit ve güvenli alan payı taşır', async () => {
+    stubUser();
+    renderShell();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Hesap' })).toBeInTheDocument();
+    });
+    const main = screen.getByRole('main');
+    expect(main.className).toContain('pb-[calc(5rem+env(safe-area-inset-bottom))]');
+    const nav = screen.getByRole('navigation', { name: 'Ana gezinme' });
+    expect(nav.className).toContain('fixed');
+    expect(nav.className).toContain('env(safe-area-inset-bottom)');
+  });
+
+  it('Hesap diyaloğu: odak diyaloğa girer, kapanınca "Hesap" düğmesine döner', async () => {
+    stubUser();
+    renderShell();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Hesap' })).toBeInTheDocument();
+    });
+    const opener = screen.getByRole('button', { name: 'Hesap' });
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = screen.getByRole('dialog', { name: 'Hesap' });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('ekran klavyesi açıkken (metin alanı odakta, görünür yükseklik küçük) gezinme çubuğu kalkar', async () => {
+    stubUser();
+    const listeners = new Set<() => void>();
+    const vv = {
+      height: 800,
+      offsetTop: 0,
+      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+    };
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    const input = document.createElement('textarea');
+    document.body.appendChild(input);
+    renderShell();
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Ana gezinme' })).toBeInTheDocument();
+    });
+    input.focus();
+    vv.height = 400;
+    act(() => listeners.forEach((cb) => cb()));
+    await waitFor(() => {
+      expect(screen.queryByRole('navigation', { name: 'Ana gezinme' })).not.toBeInTheDocument();
+    });
+    input.remove();
+    Object.defineProperty(window, 'visualViewport', { value: undefined, configurable: true });
   });
 });

@@ -24,11 +24,14 @@ export function Badge({
   tone = 'neutral',
   children,
   icon,
+  spin,
 }: {
   tone?: BadgeTone;
   children: ReactNode;
   /** Varsayılan ton ikonunu değiştirir. */
   icon?: LucideIcon;
+  /** İkon döner (devam eden işlem: yükleniyor). */
+  spin?: boolean;
 }) {
   const Icon = icon ?? TONES[tone].icon;
   return (
@@ -38,7 +41,7 @@ export function Badge({
         TONES[tone].cls,
       )}
     >
-      <Icon size={12} aria-hidden="true" className="shrink-0" />
+      <Icon size={12} aria-hidden="true" className={cx('shrink-0', spin && 'animate-spin')} />
       {children}
     </span>
   );
