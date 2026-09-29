@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import type {
   Attendance,
   HomeworkAttachment,
@@ -16,11 +17,37 @@ import type {
 } from '../../types';
 import { ATTENDANCE_LABELS, DAY_LABELS } from '../../types';
 import { teacherApi, openProtectedFile, ApiClientError } from '../../services/api';
-import { Badge, Field, FormError, LoadingState, PrimaryButton } from '../../components/admin/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  ErrorState,
+  Field,
+  FormError,
+  InlineNotice,
+  Input,
+  LoadingState,
+  cx,
+  useToast,
+} from '../../components/ui';
 import HomeworkAttachments from '../../components/HomeworkAttachments';
+import SaveStatus, { type SaveState } from '../../components/SaveStatus';
 
-const inputClass =
-  'h-8 w-full rounded-md border border-border bg-surface px-2 text-[13px] text-text placeholder:text-muted focus:border-accent';
+/** Tablo hücresi kontrolü (compact: 32px — `.compact` kuralı yüksekliği sabitler). */
+const cellClass =
+  'h-8 w-full rounded-md border border-border bg-surface px-2 text-[13px] text-text placeholder:text-muted focus:border-accent disabled:bg-subtle disabled:text-muted';
+/** Puan hücresi: ortalı, iğne oklar gizli (ok tuşları satır/hücre gezinmesine ayrılmıştır). */
+const scoreCellClass =
+  cellClass +
+  ' tabular text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+/** Devamsızlık seçicisinin renk ipucu — renk yanında seçili metin de görünür. */
+const ATTENDANCE_CELL_TONE: Record<Attendance, string> = {
+  present: '',
+  late: 'border-warning/30 text-warning font-medium',
+  absent: 'border-danger/30 text-danger font-medium',
+  excused: 'border-info/30 text-info font-medium',
+};
 
 function parseScore(value: string): number | null {
   if (value === '') return null;
@@ -28,8 +55,6 @@ function parseScore(value: string): number | null {
   if (Number.isNaN(n)) return null;
   return Math.min(10, Math.max(1, n));
 }
-
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 /**
  * `returnTo` query parametresini güvenli, dahili bir yola çevirir.
@@ -73,7 +98,10 @@ export default function ReportEntryPage() {
   const [dueDate, setDueDate] = useState('');
   const [entries, setEntries] = useState<ReportEntry[]>([]);
 
+  const toast = useToast();
+  const [reloadKey, setReloadKey] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [completing, setCompleting] = useState(false);
   const [completeMsg, setCompleteMsg] = useState<string | null>(null);
   const [completeErrors, setCompleteErrors] = useState<Record<string, string>>({});
@@ -92,6 +120,12 @@ export default function ReportEntryPage() {
   const originalDueRef = useRef('');
   const readyRef = useRef(false);
   const cellRefs = useRef(new Map<string, HTMLElement>());
+  // Bekleyen otomatik kayıt: `pendingRef` değişiklik kaydedilmeden önce true,
+  // `timerRef` debounce zamanlayıcısı, `flushSaveRef` her zaman en güncel kaydedici.
+  const pendingRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushSaveRef = useRef<() => Promise<boolean>>(async () => true);
+  const leaveBlockedRef = useRef(false);
 
   // ---- Yükleme (rapor varsa o; yoksa ve hafta başladıysa get-or-create) ----
   useEffect(() => {
@@ -126,13 +160,17 @@ export default function ReportEntryPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setLoadError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+          setLoadError(
+          err instanceof ApiClientError
+            ? err.message
+            : 'Rapor yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+        );
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [classCourseId, weekId]);
+  }, [classCourseId, weekId, reloadKey]);
 
   const buildInput = useCallback(
     (): ReportSaveInput => ({
@@ -152,26 +190,74 @@ export default function ReportEntryPage() {
     [topic, prevText, hwDesc, dueDate, entries],
   );
 
-  const flushSave = useCallback(async () => {
+  /** Kaydeder; başarıyı döndürür. Bekleyen debounce'u sıfırlar. */
+  const flushSave = useCallback(async (): Promise<boolean> => {
     const id = reportIdRef.current;
-    if (!id) return;
+    if (!id) return true;
+    pendingRef.current = false;
     try {
       await teacherApi.saveReport(id, buildInput());
       setSaveState('saved');
+      setSavedAt(Date.now());
+      return true;
     } catch {
+      pendingRef.current = true;
       setSaveState('error');
+      return false;
     }
   }, [buildInput]);
+  useEffect(() => {
+    flushSaveRef.current = flushSave;
+  }, [flushSave]);
+
+  /**
+   * Bekleyen değişiklik varsa 2 sn beklemeden HEMEN kaydeder (kart değiştirme,
+   * "Geri dön"). Bekleyen yoksa hiçbir şey yapmaz. Başarıyı döndürür.
+   */
+  const flushPending = useCallback(async (): Promise<boolean> => {
+    if (!pendingRef.current) return true;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setSaveState('saving');
+    return flushSaveRef.current();
+  }, []);
 
   // ---- Otomatik kaydetme: debounce ~2 sn (salt-okunur önizlemede kapalı) ----
   useEffect(() => {
     if (readOnly || !readyRef.current || !reportIdRef.current) return;
     setSaveState('saving');
+    pendingRef.current = true;
     const timer = setTimeout(() => {
-      flushSave();
+      timerRef.current = null;
+      void flushSaveRef.current();
     }, 2000);
+    timerRef.current = timer;
     return () => clearTimeout(timer);
-  }, [topic, prevText, hwDesc, dueDate, entries, flushSave, readOnly]);
+  }, [topic, prevText, hwDesc, dueDate, entries, readOnly]);
+
+  // Sayfadan ayrılırken (sekme değişimi dahil) bekleyen değişiklik kaybolmasın.
+  useEffect(
+    () => () => {
+      if (pendingRef.current) void flushSaveRef.current();
+    },
+    [],
+  );
+
+  function handleRetrySave() {
+    setSaveState('saving');
+    void flushSaveRef.current();
+  }
+
+  async function handleLeave() {
+    // Kaydedilemeyen değişiklik varsa bir kez uyarır; ikinci tıklama yine de çıkar.
+    const ok = await flushPending();
+    if (!ok && !leaveBlockedRef.current) {
+      leaveBlockedRef.current = true;
+      setCompleteMsg('Değişiklikler kaydedilemedi. Yeniden deneyin ya da yine de çıkmak için tekrar tıklayın.');
+      return;
+    }
+    navigate(returnTo);
+  }
 
   function updateEntry(studentId: string, patch: Partial<ReportEntry>) {
     setEntries((prev) =>
@@ -227,6 +313,8 @@ export default function ReportEntryPage() {
     setCompleteErrors({});
     try {
       // Bekleyen otomatik kaydı tamamla, sonra sunucuda doğrulat.
+      if (timerRef.current) clearTimeout(timerRef.current);
+      pendingRef.current = false;
       await teacherApi.saveReport(id, buildInput());
       await teacherApi.completeReport(id);
       navigate('/teacher');
@@ -235,7 +323,7 @@ export default function ReportEntryPage() {
         setCompleteErrors(err.fields);
         setCompleteMsg(err.message);
       } else {
-        setCompleteMsg(err instanceof Error ? err.message : 'Bir hata oluştu.');
+        setCompleteMsg(err instanceof Error ? err.message : 'Rapor tamamlanamadı. Yeniden deneyin.');
       }
     } finally {
       setCompleting(false);
@@ -246,7 +334,7 @@ export default function ReportEntryPage() {
     try {
       await openProtectedFile(key);
     } catch (err) {
-      window.alert(err instanceof ApiClientError ? err.message : 'Dosya açılamadı.');
+      toast.error(err instanceof ApiClientError ? err.message : 'Dosya açılamadı. Yeniden deneyin.');
     }
   }
 
@@ -305,14 +393,14 @@ export default function ReportEntryPage() {
   if (loadError) {
     return (
       <div className="space-y-3">
-        <FormError message={loadError} />
-        <button
-          type="button"
-          onClick={() => navigate(returnTo)}
-          className="rounded-md border border-border px-3 py-1.5 text-sm text-text hover:bg-bg"
-        >
-          {returnLabel}
-        </button>
+        <ErrorState
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+        <Button onClick={() => navigate(returnTo)}>{returnLabel}</Button>
       </div>
     );
   }
@@ -325,92 +413,86 @@ export default function ReportEntryPage() {
   // `sent` kendi banner'ını alır (spec §2) — ikisi asla üst üste görünmez.
   const isCompleted = report.status === 'completed';
 
-  const saveIndicator = readOnly
-    ? null
-    : saveState === 'saving' ? (
-        <span className="text-xs text-muted">Kaydediliyor…</span>
-      ) : saveState === 'saved' ? (
-        <span className="text-xs text-status-sent">Kaydedildi</span>
-      ) : saveState === 'error' ? (
-        <span className="text-xs text-att-absent">Kaydedilemedi</span>
-      ) : null;
+  // Tamamlanma özeti: ödev puanı dolu + (performans dolu ya da devamsız/izinli).
+  const doneCount = entries.filter((e) => {
+    const away = e.attendance === 'absent' || e.attendance === 'excused';
+    return e.homework_score !== null && (away || e.interest_score !== null);
+  }).length;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-text">
-            {report.class_name} · {report.course_name}
-          </h1>
-          <p className="tabular mt-0.5 text-sm text-muted">
-            Hafta {report.week.week_no} · {DAY_LABELS[report.day_of_week]}
-            {report.lesson_time ? ` ${report.lesson_time}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate(returnTo)}
-            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-bg"
-          >
-            {returnLabel}
-          </button>
-          {saveIndicator}
-          {report.status === 'draft' && !readOnly && (
-            <PrimaryButton onClick={handleComplete} disabled={completing}>
-              {completing ? 'Tamamlanıyor…' : 'Raporu tamamla'}
-            </PrimaryButton>
+    <div className="space-y-3">
+      <div>
+        <Button variant="ghost" size="sm" onClick={() => void handleLeave()} className="-ml-2">
+          <ArrowLeft size={16} aria-hidden="true" />
+          {returnLabel}
+        </Button>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold text-text">
+              {report.class_name} · {report.course_name}
+            </h1>
+            <p className="tabular mt-0.5 text-sm text-muted">
+              Hafta {report.week.week_no} · {DAY_LABELS[report.day_of_week]}
+              {report.lesson_time ? ` ${report.lesson_time}` : ''}
+            </p>
+          </div>
+          {!readOnly && (
+            <SaveStatus
+              state={saveState}
+              savedAt={savedAt}
+              onRetry={handleRetrySave}
+              className="pt-1"
+            />
           )}
         </div>
       </div>
 
       {payload.week_range_invalid ? (
-        <p className="rounded-md border border-att-absent/40 bg-att-absent/5 px-3 py-2 text-sm text-att-absent">
+        <InlineNotice tone="danger">
           Hafta tanımı hatalı — bu dersin günü hafta aralığının dışında. Yönetici
           haftanın tarih aralığını düzeltmeden rapor doldurulamaz.
-        </p>
+        </InlineNotice>
       ) : payload.locked_for_teacher ? (
-        <p className="rounded-md border border-status-sent/30 bg-status-sent/5 px-3 py-2 text-sm text-status-sent">
+        <InlineNotice tone="success">
           Bu rapor gönderildi; artık düzenlenemez. Düzeltme gerekiyorsa
           yöneticinize başvurun.
-        </p>
+        </InlineNotice>
       ) : readOnly ? (
-        <p className="rounded-md border border-att-late/40 bg-att-late/5 px-3 py-2 text-sm text-att-late">
+        <InlineNotice tone="info">
           Bu hafta henüz başlamadı — yalnızca önizleme. Hafta başladığında rapor
           doldurulabilir.
-        </p>
+        </InlineNotice>
       ) : report.status === 'sent' ? (
-        <p className="rounded-md border border-status-sent/30 bg-status-sent/5 px-3 py-2 text-sm text-status-sent">
+        <InlineNotice tone="success">
           Bu rapor gönderildi. Admin olarak düzenleyebilirsiniz; değişiklikler
           kayıt altına alınır. Veliye iletilen kopya değişmez — gerekiyorsa
           yeniden gönderin.
-        </p>
+        </InlineNotice>
       ) : null}
 
       {isCompleted && (
-        <p className="rounded-md border border-status-completed/30 bg-status-completed/5 px-3 py-2 text-sm text-status-completed">
+        <InlineNotice tone="info">
           Bu rapor tamamlandı. Yapılan düzenlemeler kayıt altına alınır.
-        </p>
+        </InlineNotice>
       )}
 
       {/* "Teslim tarihini siz belirleyin" yalnızca yazılabilir raporda anlamlı:
           kilitli (locked_for_teacher) ya da hafta salt-okunur/aralık-hatalıyken
           (`readOnly`) bastırılır (banner önceliğinde isLastWeek en altta). */}
       {isLastWeek && !readOnly && (
-        <p className="rounded-md border border-amber/40 bg-amber/5 px-3 py-2 text-sm text-amber">
+        <InlineNotice tone="warning">
           Yılın son haftası — teslim tarihini siz belirleyin.
-        </p>
+        </InlineNotice>
       )}
 
       <FormError message={completeMsg} />
       <FormError message={attachmentError} />
 
       {/* Sınıf düzeyi alanlar */}
-      <section className="elevation-1 grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-2">
+      <Card padding="sm" className="grid gap-3 md:grid-cols-2">
         <Field label="Verilmiş olan ödev" htmlFor="prev-homework">
-          <input
+          <Input
             id="prev-homework"
-            className={inputClass}
             value={prevText}
             onChange={(e) => setPrevText(e.target.value)}
             disabled={readOnly}
@@ -426,9 +508,8 @@ export default function ReportEntryPage() {
           )}
         </Field>
         <Field label="İşlenen konu" htmlFor="topic" error={completeErrors.topic_covered}>
-          <input
+          <Input
             id="topic"
-            className={inputClass}
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             disabled={readOnly}
@@ -440,9 +521,8 @@ export default function ReportEntryPage() {
           htmlFor="next-homework"
           error={completeErrors.homework_description}
         >
-          <input
+          <Input
             id="next-homework"
-            className={inputClass}
             value={hwDesc}
             onChange={(e) => setHwDesc(e.target.value)}
             disabled={readOnly}
@@ -459,15 +539,11 @@ export default function ReportEntryPage() {
             />
           </div>
         </Field>
-        <Field
-          label="Teslim tarihi"
-          htmlFor="due-date"
-          error={completeErrors.due_date}
-        >
-          <input
+        <Field label="Teslim tarihi" htmlFor="due-date" error={completeErrors.due_date}>
+          <Input
             id="due-date"
             type="date"
-            className={inputClass + ' tabular'}
+            className="tabular"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
             disabled={readOnly}
@@ -476,79 +552,64 @@ export default function ReportEntryPage() {
             }}
           />
         </Field>
-      </section>
+      </Card>
 
       {/* Toplu doldurma kısayolu (salt-okunur önizlemede gizli) */}
       {!readOnly && (
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <button
-          type="button"
-          onClick={bulkMakePresent}
-          className="min-h-[44px] rounded-md border border-border px-3 text-[13px] text-text hover:bg-bg md:h-8 md:min-h-0"
-        >
-          Tümünü geldi yap
-        </button>
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="bulk-homework"
-            className="whitespace-nowrap text-[13px] text-muted"
-          >
-            Tümü ödev puanı
-          </label>
-          <input
-            id="bulk-homework"
-            type="number"
-            min={1}
-            max={10}
-            value={bulkHomework}
-            onChange={(e) => setBulkHomework(e.target.value)}
-            className={inputClass + ' tabular w-14'}
-          />
-          <button
-            type="button"
-            onClick={() => bulkApplyScore('homework_score')}
-            className="min-h-[44px] rounded-md border border-border px-3 text-[13px] text-text hover:bg-bg md:h-8 md:min-h-0"
-          >
-            Uygula
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="bulk-interest"
-            title="Ders içi performans puanı"
-            className="whitespace-nowrap text-[13px] text-muted"
-          >
-            Tümü performans puanı
-          </label>
-          <input
-            id="bulk-interest"
-            type="number"
-            min={1}
-            max={10}
-            value={bulkInterest}
-            onChange={(e) => setBulkInterest(e.target.value)}
-            className={inputClass + ' tabular w-14'}
-          />
-          <button
-            type="button"
-            onClick={() => bulkApplyScore('interest_score')}
-            className="min-h-[44px] rounded-md border border-border px-3 text-[13px] text-text hover:bg-bg md:h-8 md:min-h-0"
-          >
-            Uygula
-          </button>
-        </div>
-      </div>
+        <Card padding="sm" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Button size="sm" onClick={bulkMakePresent}>
+            Tümünü geldi yap
+          </Button>
+          <div className="flex items-center gap-2">
+            <label htmlFor="bulk-homework" className="whitespace-nowrap text-[13px] text-muted">
+              Tümü ödev puanı
+            </label>
+            <input
+              id="bulk-homework"
+              type="number"
+              min={1}
+              max={10}
+              value={bulkHomework}
+              onChange={(e) => setBulkHomework(e.target.value)}
+              className={cx(cellClass, 'tabular w-16 max-md:h-11')}
+            />
+            <Button size="sm" onClick={() => bulkApplyScore('homework_score')}>
+              Uygula
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="bulk-interest"
+              title="Ders içi performans puanı"
+              className="whitespace-nowrap text-[13px] text-muted"
+            >
+              Tümü performans puanı
+            </label>
+            <input
+              id="bulk-interest"
+              type="number"
+              min={1}
+              max={10}
+              value={bulkInterest}
+              onChange={(e) => setBulkInterest(e.target.value)}
+              className={cx(cellClass, 'tabular w-16 max-md:h-11')}
+            />
+            <Button size="sm" onClick={() => bulkApplyScore('interest_score')}>
+              Uygula
+            </Button>
+          </div>
+        </Card>
       )}
 
-      {/* Masaüstü: tablo */}
-      <div className="compact elevation-1 hidden overflow-hidden rounded-md border border-border bg-surface md:block">
+      {/* Masaüstü: tablo (klavye modeli: Tab/Enter aşağı, ok tuşları hücre, rakam tuşu puan) */}
+      <div className="compact hidden overflow-x-auto rounded-md border border-border bg-surface md:block">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-border text-left text-[13px] font-medium text-muted">
-              <th className="w-48">Öğrenci</th>
-              <th className="w-32">Devamsızlık</th>
-              <th className="w-20">Ödev</th>
-              <th className="w-20" title="Ders içi performans puanı">
+            <tr className="border-b border-border bg-subtle/60 text-left text-[13px] font-medium text-muted">
+              <th className="w-52">Öğrenci</th>
+              <th className="w-36">Devamsızlık</th>
+              <th className="w-20 text-center">Ödev</th>
+              <th className="w-24 text-center" title="Ders içi performans puanı">
                 Performans
               </th>
               <th>Not</th>
@@ -561,10 +622,13 @@ export default function ReportEntryPage() {
               const interestDisabled =
                 entry.attendance === 'absent' || entry.attendance === 'excused';
               return (
-                <tr key={entry.student_id} className="border-b border-border last:border-b-0">
+                <tr
+                  key={entry.student_id}
+                  className="border-b border-border transition-colors last:border-b-0 focus-within:bg-accent/5"
+                >
                   <td className="text-[13px] text-text">
                     <div className="flex items-center gap-2">
-                      <span className="whitespace-nowrap">{entry.student_name}</span>
+                      <span className="whitespace-nowrap font-medium">{entry.student_name}</span>
                       {entry.submission ? (
                         <span className="shrink-0">
                           <Badge tone={entry.submission.is_late ? 'warning' : 'positive'}>
@@ -581,6 +645,7 @@ export default function ReportEntryPage() {
                   <td>
                     <select
                       ref={setCellRef(`${row}-0`)}
+                      aria-label={`Devamsızlık — ${entry.student_name}`}
                       value={entry.attendance}
                       onChange={(e) =>
                         updateEntry(entry.student_id, {
@@ -589,7 +654,7 @@ export default function ReportEntryPage() {
                       }
                       onKeyDown={(e) => handleCellKeyDown(e, row, 0)}
                       disabled={readOnly}
-                      className={inputClass}
+                      className={cx(cellClass, ATTENDANCE_CELL_TONE[entry.attendance])}
                     >
                       {(Object.keys(ATTENDANCE_LABELS) as Attendance[]).map((a) => (
                         <option key={a} value={a}>
@@ -601,6 +666,7 @@ export default function ReportEntryPage() {
                   <td>
                     <input
                       ref={setCellRef(`${row}-1`)}
+                      aria-label={`Ödev puanı — ${entry.student_name}`}
                       type="number"
                       min={1}
                       max={10}
@@ -613,16 +679,23 @@ export default function ReportEntryPage() {
                       onKeyDown={(e) => handleCellKeyDown(e, row, 1)}
                       onFocus={(e) => e.target.select()}
                       disabled={readOnly}
-                      className={inputClass + ' tabular'}
+                      className={scoreCellClass}
                     />
                   </td>
                   <td>
                     <input
                       ref={setCellRef(`${row}-2`)}
+                      aria-label={`Ders içi performans puanı — ${entry.student_name}`}
                       type="number"
                       min={1}
                       max={10}
                       disabled={readOnly || interestDisabled}
+                      title={
+                        interestDisabled
+                          ? 'Devamsız/izinli öğrencide ders içi performans girilmez'
+                          : undefined
+                      }
+                      placeholder={interestDisabled ? '—' : undefined}
                       value={entry.interest_score ?? ''}
                       onChange={(e) =>
                         updateEntry(entry.student_id, {
@@ -631,12 +704,13 @@ export default function ReportEntryPage() {
                       }
                       onKeyDown={(e) => handleCellKeyDown(e, row, 2)}
                       onFocus={(e) => e.target.select()}
-                      className={inputClass + ' tabular disabled:bg-bg disabled:text-muted'}
+                      className={scoreCellClass}
                     />
                   </td>
                   <td>
                     <textarea
                       ref={setCellRef(`${row}-3`)}
+                      aria-label={`Not — ${entry.student_name}`}
                       rows={1}
                       disabled={readOnly}
                       value={entry.teacher_note ?? ''}
@@ -644,7 +718,7 @@ export default function ReportEntryPage() {
                         updateEntry(entry.student_id, { teacher_note: e.target.value })
                       }
                       onKeyDown={(e) => handleCellKeyDown(e, row, 3)}
-                      className={inputClass + ' h-8 resize-y'}
+                      className={cx(cellClass, 'resize-y')}
                     />
                   </td>
                 </tr>
@@ -663,7 +737,7 @@ export default function ReportEntryPage() {
               const interestDisabled =
                 entry.attendance === 'absent' || entry.attendance === 'excused';
               return (
-                <div className="elevation-1 space-y-3 rounded-md border border-border bg-surface p-4">
+                <div className="space-y-3 rounded-md border border-border bg-surface p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-text">{entry.student_name}</p>
                     <span className="tabular text-xs text-muted">
@@ -687,7 +761,7 @@ export default function ReportEntryPage() {
                         })
                       }
                       disabled={readOnly}
-                      className="h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
+                      className="h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-subtle"
                     >
                       {(Object.keys(ATTENDANCE_LABELS) as Attendance[]).map((a) => (
                         <option key={a} value={a}>
@@ -710,7 +784,7 @@ export default function ReportEntryPage() {
                           })
                         }
                         disabled={readOnly}
-                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
+                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-subtle"
                       />
                     </Field>
                     <Field label="Ders içi performans puanı" htmlFor="m-int">
@@ -726,7 +800,7 @@ export default function ReportEntryPage() {
                             interest_score: parseScore(e.target.value),
                           })
                         }
-                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-bg"
+                        className="tabular h-11 w-full rounded-md border border-border bg-surface px-3 text-sm text-text disabled:bg-subtle"
                       />
                     </Field>
                   </div>
@@ -766,6 +840,21 @@ export default function ReportEntryPage() {
           </div>
         )}
       </div>
+
+      {/* Tamamlama: tablonun/kartın hemen ardından — Tab ile son hücreden ulaşılır */}
+      {!readOnly && report.status === 'draft' && (
+        <Card padding="sm" className="flex flex-wrap items-center justify-between gap-3">
+          <p className="tabular text-sm text-muted">
+            <span className="font-medium text-text">
+              {doneCount} / {entries.length}
+            </span>{' '}
+            öğrencinin puanları tamam
+          </p>
+          <Button variant="primary" onClick={handleComplete} loading={completing}>
+            {completing ? 'Tamamlanıyor…' : 'Raporu tamamla'}
+          </Button>
+        </Card>
+      )}
     </div>
   );
 }
