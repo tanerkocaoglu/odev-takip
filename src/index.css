@@ -260,3 +260,16 @@ td :focus-visible {
     background: rgb(var(--subtle));
   }
 }
+
+/* =====================================
+   Yazdırma / PDF — veli raporu okunaklı kalsın
+   ===================================== */
+@media print {
+  body {
+    background: #fff;
+  }
+  nav,
+  [data-testid='customer-topbar'] {
+    display: none !important;
+  }
+}

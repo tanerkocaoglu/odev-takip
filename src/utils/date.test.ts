@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDate, formatDateTime, formatTime } from './date';
+import { formatDate, formatDateIst, formatDateTime, formatTime } from './date';
 
 describe('formatDate', () => {
   it('tarih-only ISOyu gg.aa.yyyy yapar', () => {
@@ -34,5 +34,12 @@ describe('formatDateTime / formatTime (Europe/Istanbul)', () => {
   it('geçersiz girdide boş dize döner', () => {
     expect(formatDateTime('bozuk')).toBe('');
     expect(formatTime('bozuk')).toBe('');
+  });
+});
+
+describe('formatDateIst', () => {
+  it('gün sınırını İstanbul takvimine göre verir', () => {
+    expect(formatDateIst('2026-09-22T21:30:00.000Z')).toBe('23.09.2026');
+    expect(formatDateIst('bozuk')).toBe('');
   });
 });

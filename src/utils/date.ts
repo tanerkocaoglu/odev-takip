@@ -43,3 +43,8 @@ export function formatDateTime(input: string | number | Date): string {
   const p = istanbulParts(input);
   return p ? `${p.day}.${p.month}.${p.year} ${p.hour}:${p.minute}` : '';
 }
+
+/** Anlık damga → `gg.aa.yyyy` (Europe/Istanbul takvimine göre; saat dilimi kaymasız). */
+export function formatDateIst(input: string | number | Date): string {
+  return formatDateTime(input).slice(0, 10);
+}

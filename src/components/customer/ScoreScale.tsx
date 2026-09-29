@@ -14,10 +14,10 @@ export default function ScoreScale({
   value: number | null;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-bg/40 p-3">
-      <p className="text-xs font-medium text-muted">{label}</p>
+    <div className="rounded-md border border-border bg-subtle/50 p-3">
+      <p className="text-[13px] font-medium text-muted">{label}</p>
       {value === null ? (
-        <p className="mt-1.5 text-sm font-medium text-muted">Puan girilmedi</p>
+        <p className="mt-1.5 text-sm text-muted">Puan girilmedi</p>
       ) : (
         <>
           <p className="tabular mt-1 text-2xl font-semibold leading-none text-text">
@@ -29,7 +29,7 @@ export default function ScoreScale({
               <span
                 key={i}
                 className={
-                  'h-2 flex-1 rounded-full ' + (i < value ? 'bg-accent' : 'bg-border')
+                  'h-2 flex-1 rounded-full ' + (i < value ? 'bg-text' : 'bg-border')
                 }
               />
             ))}

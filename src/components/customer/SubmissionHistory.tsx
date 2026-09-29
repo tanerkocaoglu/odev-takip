@@ -6,34 +6,22 @@
 import { BookOpen } from 'lucide-react';
 import type { GuardianReportDetail } from '../../types';
 import { formatDate } from '../../utils/date';
+import { Badge, Card, type BadgeTone } from '../ui';
 import HomeworkAttachments from '../HomeworkAttachments';
 import SubmissionFileGrid from '../SubmissionFileGrid';
 
 type SubmissionItem = GuardianReportDetail['submissions'][number];
-type SubState = 'uploaded' | 'late' | 'missing';
 
-const SUB_STRIPE: Record<SubState, string> = {
-  uploaded: 'border-l-sub-uploaded',
-  late: 'border-l-sub-late',
-  missing: 'border-l-sub-missing',
-};
-
-const SUB_CHIP: Record<SubState, string> = {
-  uploaded: 'bg-sub-uploaded/10 text-sub-uploaded',
-  late: 'bg-sub-late/10 text-sub-late',
-  missing: 'bg-sub-missing/10 text-sub-missing',
-};
-
-function subState(sub: SubmissionItem): SubState {
-  if (!sub.submission) return 'missing';
-  return sub.submission.is_late ? 'late' : 'uploaded';
+function subBadge(sub: SubmissionItem): { tone: BadgeTone; label: string } {
+  if (!sub.submission) return { tone: 'danger', label: 'Yüklenmedi' };
+  if (sub.submission.is_late) return { tone: 'warning', label: 'Geç yüklendi' };
+  if (sub.submission.status === 'reviewed') return { tone: 'info', label: 'İncelendi' };
+  return { tone: 'positive', label: 'Yüklendi' };
 }
 
-function subLabel(sub: SubmissionItem): string {
-  if (!sub.submission) return 'Yüklenmedi';
-  if (sub.submission.is_late) return 'Geç yüklendi';
-  if (sub.submission.status === 'reviewed') return 'İncelendi';
-  return 'Yüklendi';
+function subState(sub: SubmissionItem): 'uploaded' | 'late' | 'missing' {
+  if (!sub.submission) return 'missing';
+  return sub.submission.is_late ? 'late' : 'uploaded';
 }
 
 export default function SubmissionHistory({
@@ -46,37 +34,23 @@ export default function SubmissionHistory({
   return (
     <section>
       <h2 className="text-lg font-semibold text-text">Ödev teslim geçmişi</h2>
-      <div className="mt-4 space-y-4">
+      <div className="mt-3 space-y-3">
         {submissions.map((sub) => {
-          const state = subState(sub);
-          const reviewed = sub.submission?.status === 'reviewed';
-          const chip = reviewed ? 'bg-status-completed/10 text-status-completed' : SUB_CHIP[state];
+          const { tone, label } = subBadge(sub);
           return (
-            <article
-              key={sub.course_name}
-              data-status={state}
-              className={
-                'overflow-hidden rounded-2xl border border-border border-l-4 bg-surface p-4 elevation-1 ' +
-                SUB_STRIPE[state]
-              }
-            >
+            <Card key={sub.course_name} data-status={subState(sub)} padding="md" className="break-inside-avoid">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-text">
-                  <BookOpen size={16} aria-hidden="true" className="shrink-0 text-accent" />
+                  <BookOpen size={16} aria-hidden="true" className="shrink-0 text-muted" />
                   {sub.course_name}
                 </h3>
-                <span
-                  className={
-                    'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ' +
-                    chip
-                  }
-                >
-                  {subLabel(sub)}
-                </span>
+                <Badge tone={tone}>{label}</Badge>
               </div>
               <p className="mt-1 text-sm text-muted">
                 Ödev: {sub.description || '—'}
-                <span className="tabular"> · son tarih: {formatDate(sub.due_date)}</span>
+                <span className="tabular block text-[13px]">
+                  Son tarih: {formatDate(sub.due_date)}
+                </span>
               </p>
               {(sub.attachments ?? []).length > 0 && (
                 <div className="mt-2">
@@ -93,7 +67,7 @@ export default function SubmissionHistory({
                   />
                 </div>
               )}
-            </article>
+            </Card>
           );
         })}
       </div>
