@@ -12,7 +12,6 @@ import { ArrowLeftRight, X } from 'lucide-react';
 import {
   ActionError,
   Button,
-  Card,
   ConfirmDialog,
   CountChip,
   DataTable,
@@ -263,19 +262,23 @@ export default function ClassCoursesPage() {
 
       {/* Seçim durumu: kaç atama seçili, hangi ikisi takas edilecek */}
       <div className="sticky top-14 z-20 lg:top-0">
-        <Card padding="sm">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="flex items-center gap-2 text-sm text-text" aria-live="polite">
-              <ArrowLeftRight size={16} aria-hidden="true" className="text-muted" />
-              <span className="tabular font-medium">Seçili: {selected.length}/2</span>
-              <span className="text-muted">
-                {selected.length === 2 ? '' : 'Öğretmenleri yer değiştirmek için iki atama seçin.'}
+        <div className="rounded-md border border-border bg-surface px-3 py-1.5">
+          <div className="flex items-center gap-x-3">
+            <p className="flex min-w-0 items-center gap-2 text-sm text-text" aria-live="polite">
+              <ArrowLeftRight size={16} aria-hidden="true" className="shrink-0 text-muted" />
+              <span className="tabular whitespace-nowrap font-medium">
+                Seçili: {selected.length}/2
               </span>
+              {selected.length < 2 && (
+                <span className="hidden text-muted sm:inline">
+                  Öğretmenleri yer değiştirmek için iki atama seçin.
+                </span>
+              )}
             </p>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               {selected.length > 0 && (
                 <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
-                  Seçimi temizle
+                  Temizle
                 </Button>
               )}
               <Button variant="primary" onClick={requestSwap} disabled={selected.length !== 2}>
@@ -284,11 +287,12 @@ export default function ClassCoursesPage() {
             </div>
           </div>
           {selected.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-2">
+            // Tek satır, yatay kaydırılabilir; kaldır düğmesinin dokunma alanı 44px
+            <ul className="flex flex-nowrap gap-2 overflow-x-auto py-0.5 [scrollbar-width:none]">
               {[selA, selB].filter(Boolean).map((i) => (
                 <li
                   key={i!.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-subtle py-0.5 pl-3 pr-1 text-[13px] text-text"
+                  className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-subtle pl-3 pr-1 text-[13px] text-text"
                 >
                   <span>
                     {asg(i!)} <span className="text-muted">({i!.teacher_name})</span>
@@ -297,7 +301,7 @@ export default function ClassCoursesPage() {
                     type="button"
                     aria-label={`${asg(i!)} seçimini kaldır`}
                     onClick={() => toggleSelect(i!.id)}
-                    className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-text max-md:h-11 max-md:w-11"
+                    className="-my-2 flex h-6 w-6 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-text max-md:h-11 max-md:w-11"
                   >
                     <X size={13} aria-hidden="true" />
                   </button>
@@ -305,7 +309,7 @@ export default function ClassCoursesPage() {
               ))}
             </ul>
           )}
-        </Card>
+        </div>
       </div>
 
       <ActionError message={actionError} onDismiss={() => setActionError(null)} />
