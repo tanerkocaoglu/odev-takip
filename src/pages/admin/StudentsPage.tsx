@@ -1,22 +1,34 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { ClassItem, Guardian, School, Student, StudentImportResponse, Week } from '../../types';
+import type {
+  ClassItem,
+  Guardian,
+  School,
+  Student,
+  StudentImportResponse,
+  Week,
+} from '../../types';
 import { GRADE_LEVELS, GRADE_LEVEL_LABELS } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
 import { defaultSelectableWeekId, isWeekPast } from '../../utils/weeks';
 import { useList } from '../../hooks/useList';
-import Modal from '../../components/admin/Modal';
-import Pagination from '../../components/admin/Pagination';
 import {
-  DangerButton,
-  EmptyState,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
+  FormActions,
   FormError,
-  LoadingState,
-  PrimaryButton,
-  SecondaryButton,
+  Input,
+  ListState,
+  Modal,
+  Pagination,
   SearchBox,
-  inputClass,
-} from '../../components/admin/ui';
+  Select,
+  Toolbar,
+  type Column,
+  type RowMenuItem,
+} from '../../components/ui';
 
 export default function StudentsPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -85,6 +97,10 @@ export default function StudentsPage() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
+  // ---------- Silme onayı ----------
+  const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     adminApi.academicYears.list().then(async (yearData) => {
       const active = yearData.items.find((y) => y.is_active === 1);
@@ -104,7 +120,7 @@ export default function StudentsPage() {
     adminApi.schools
       .list()
       .then((res) => setSchools(res.items))
-      .catch(() => { });
+      .catch(() => {});
   }, []);
 
   const searchGuardians = useCallback(async (q: string) => {
@@ -117,8 +133,12 @@ export default function StudentsPage() {
     setEditGuardianResults(data.items);
   }, []);
 
-  useEffect(() => { searchGuardians(guardianQuery); }, [guardianQuery, searchGuardians]);
-  useEffect(() => { searchEditGuardians(editGuardianQuery); }, [editGuardianQuery, searchEditGuardians]);
+  useEffect(() => {
+    searchGuardians(guardianQuery);
+  }, [guardianQuery, searchGuardians]);
+  useEffect(() => {
+    searchEditGuardians(editGuardianQuery);
+  }, [editGuardianQuery, searchEditGuardians]);
 
   useEffect(() => {
     reload(1, '');
@@ -306,9 +326,7 @@ export default function StudentsPage() {
       );
       setImportResult(res);
       if (res.committed) {
-        setImportSuccess(
-          `${res.created?.created_students ?? 0} öğrenci oluşturuldu.`,
-        );
+        setImportSuccess(`${res.created?.created_students ?? 0} öğrenci oluşturuldu.`);
         await reload();
       } else {
         setImportError('CSV dosyasında hatalar var, hiçbir kayıt oluşturulmadı.');
@@ -343,136 +361,152 @@ export default function StudentsPage() {
     ));
   }
 
-  async function handleDelete(student: Student) {
-    if (!window.confirm(`${student.full_name} silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteStudent) return;
+    setDeleting(true);
     try {
-      await adminApi.students.remove(student.id);
+      await adminApi.students.remove(deleteStudent.id);
+      setDeleteStudent(null);
       await reload();
     } catch (err) {
+      setDeleteStudent(null);
       setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+    } finally {
+      setDeleting(false);
     }
   }
 
+  function rowActions(student: Student): RowMenuItem[] {
+    return [
+      { label: 'Düzenle', onSelect: () => openEdit(student) },
+      {
+        label: 'Şifre sıfırla',
+        onSelect: () => {
+          setResetStudent(student);
+          setResetPassword('');
+          setResetError(null);
+        },
+      },
+      { label: 'Sınıf değiştir', onSelect: () => openMove(student) },
+      { label: 'Sil', danger: true, onSelect: () => setDeleteStudent(student) },
+    ];
+  }
+
+  const columns: Column<Student>[] = [
+    {
+      key: 'name',
+      header: 'Ad',
+      card: 'title',
+      cell: (st) => <span className="font-medium">{st.full_name}</span>,
+    },
+    {
+      key: 'guardian',
+      header: 'Veli',
+      className: 'text-muted',
+      cell: (st) => st.guardian_name ?? '—',
+    },
+    { key: 'class', header: 'Sınıf', className: 'text-muted', cell: (st) => st.class_name },
+    { key: 'school', header: 'Okul', className: 'text-muted', cell: (st) => st.school_name ?? '—' },
+    {
+      key: 'grade',
+      header: 'Sınıf seviyesi',
+      className: 'text-muted',
+      cell: (st) => (st.grade_level ? (GRADE_LEVEL_LABELS[st.grade_level] ?? st.grade_level) : '—'),
+    },
+    {
+      key: 'username',
+      header: 'Kullanıcı adı',
+      className: 'tabular text-muted',
+      cell: (st) => st.username,
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <SearchBox value={q} onChange={(v) => setQ(v)} placeholder="Öğrenci veya veli ara…" />
-          <Field label="Sınıf" htmlFor="st-class-filter">
-            <select
-              id="st-class-filter"
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">Tümü</option>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SecondaryButton onClick={handleExport} disabled={exporting}>
-            {exporting ? 'İndiriliyor…' : 'CSV indir'}
-          </SecondaryButton>
-          <SecondaryButton onClick={openImport} disabled={!classes.length}>
-            CSV ile toplu ekle
-          </SecondaryButton>
-          <PrimaryButton onClick={openCreate} disabled={!classes.length}>
-            Yeni öğrenci
-          </PrimaryButton>
-        </div>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <SearchBox value={q} onChange={(v) => setQ(v)} placeholder="Öğrenci veya veli ara…" />
+            <Field label="Sınıf" htmlFor="st-class-filter">
+              <Select
+                id="st-class-filter"
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+              >
+                <option value="">Tümü</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {!loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={total} /> öğrenci
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={handleExport} loading={exporting}>
+              {exporting ? 'İndiriliyor…' : 'CSV indir'}
+            </Button>
+            <Button onClick={openImport} disabled={!classes.length}>
+              CSV ile toplu ekle
+            </Button>
+            <Button variant="primary" onClick={openCreate} disabled={!classes.length}>
+              Yeni öğrenci
+            </Button>
+          </>
+        }
+      />
 
-      {error && <FormError message={error} />}
-      {loading ? (
-        <LoadingState />
-      ) : items.length === 0 ? (
-        <EmptyState message="Öğrenci bulunamadı." />
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="whitespace-nowrap px-3 py-2">Ad</th>
-                <th className="whitespace-nowrap px-3 py-2">Veli</th>
-                <th className="whitespace-nowrap px-3 py-2">Sınıf</th>
-                <th className="whitespace-nowrap px-3 py-2">Okul</th>
-                <th className="whitespace-nowrap px-3 py-2">Sınıf seviyesi</th>
-                <th className="whitespace-nowrap px-3 py-2">Kullanıcı adı</th>
-                <th className="whitespace-nowrap px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((student) => (
-                <tr key={student.id} className="border-b border-border last:border-0">
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{student.full_name}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-muted">{student.guardian_name ?? '—'}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-muted">{student.class_name}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-muted">{student.school_name ?? '—'}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-muted">
-                    {student.grade_level ? GRADE_LEVEL_LABELS[student.grade_level] ?? student.grade_level : '—'}
-                  </td>
-                  <td className="whitespace-nowrap tabular px-3 py-2 text-muted">{student.username}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(student)}
-                        className="text-sm font-medium text-muted hover:text-text"
-                      >
-                        Düzenle
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setResetStudent(student);
-                          setResetPassword('');
-                          setResetError(null);
-                        }}
-                        className="text-sm font-medium text-muted hover:text-text"
-                      >
-                        Şifre sıfırla
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openMove(student)}
-                        className="text-sm font-medium text-muted hover:text-text"
-                      >
-                        Sınıf değiştir
-                      </button>
-                      <DangerButton onClick={() => handleDelete(student)}>Sil</DangerButton>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void reload()}
+        empty={items.length === 0}
+        emptyMessage="Öğrenci bulunamadı."
+      >
+        <DataTable
+          rows={items}
+          columns={columns}
+          rowKey={(st) => st.id}
+          rowLabel={(st) => st.full_name}
+          actions={rowActions}
+        />
+      </ListState>
       <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+
+      <ConfirmDialog
+        open={deleteStudent !== null}
+        title="Öğrenciyi sil"
+        confirmLabel="Öğrenciyi sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteStudent(null)}
+      >
+        {deleteStudent?.full_name} silinsin mi?
+      </ConfirmDialog>
 
       {/* ---- Yeni öğrenci oluşturma ---- */}
       <Modal open={formOpen} title="Yeni öğrenci" onClose={() => setFormOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
           <Field label="Ad soyad" htmlFor="st-name">
-            <input
+            <Input
               id="st-name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
-              className={inputClass}
             />
           </Field>
           <Field label="Veli (arayın ve seçin)" htmlFor="st-guardian-search">
-            <input
+            <Input
               id="st-guardian-search"
               value={guardianQuery}
               onChange={(e) => setGuardianQuery(e.target.value)}
-              className={inputClass}
               placeholder="Veli adı yazın…"
               autoComplete="off"
             />
@@ -490,7 +524,7 @@ export default function StudentsPage() {
                     'block w-full px-3 py-2 text-left text-sm transition-colors ' +
                     (guardianId === g.id
                       ? 'bg-accent/10 font-medium text-accent'
-                      : 'text-text hover:bg-bg')
+                      : 'text-text hover:bg-subtle')
                   }
                 >
                   {g.full_name} · {g.username}
@@ -499,49 +533,42 @@ export default function StudentsPage() {
             )}
           </div>
           <Field label="Sınıf" htmlFor="st-class">
-            <select
+            <Select
               id="st-class"
               value={classId}
               onChange={(e) => setClassId(e.target.value)}
               required
-              className={inputClass}
             >
               {classes.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Başlangıç haftası" htmlFor="st-week">
-            <select
+            <Select
               id="st-week"
               value={createWeekId}
               onChange={(e) => setCreateWeekId(e.target.value)}
-              className={inputClass}
             >
               {renderWeekOptions()}
-            </select>
+            </Select>
           </Field>
           <p className="text-xs text-muted">
-            Öğrenci seçilen haftadan itibaren sınıf listelerinde ve raporlarda görünür.
-            Geçmiş haftalar seçilemez.
+            Öğrenci seçilen haftadan itibaren sınıf listelerinde ve raporlarda görünür. Geçmiş
+            haftalar seçilemez.
           </p>
           <Field label="Okul" htmlFor="st-school">
             <div className="flex gap-2">
-              <select
-                id="st-school"
-                value={schoolId}
-                onChange={(e) => setSchoolId(e.target.value)}
-                className={inputClass}
-              >
+              <Select id="st-school" value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
                 <option value="">Seçilmedi</option>
                 {schools.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
                 ))}
-              </select>
+              </Select>
               <button
                 type="button"
                 onClick={() => setNewSchoolOpen((v) => !v)}
@@ -552,33 +579,34 @@ export default function StudentsPage() {
             </div>
           </Field>
           {newSchoolOpen && (
-            <form onSubmit={handleAddSchool} className="space-y-2 rounded-md border border-border p-3">
+            <form
+              onSubmit={handleAddSchool}
+              className="space-y-2 rounded-md border border-border p-3"
+            >
               <Field label="Yeni okul adı" htmlFor="st-new-school">
-                <input
+                <Input
                   id="st-new-school"
                   value={newSchoolName}
                   onChange={(e) => setNewSchoolName(e.target.value)}
                   required
                   minLength={1}
-                  className={inputClass}
                   placeholder="Örn. Örnek Okul 1"
                 />
               </Field>
               <FormError message={newSchoolError} />
-              <div className="flex justify-end gap-2">
-                <SecondaryButton onClick={() => setNewSchoolOpen(false)}>İptal</SecondaryButton>
-                <PrimaryButton type="submit" disabled={newSchoolSubmitting}>
+              <FormActions>
+                <Button onClick={() => setNewSchoolOpen(false)}>İptal</Button>
+                <Button variant="primary" type="submit" disabled={newSchoolSubmitting}>
                   {newSchoolSubmitting ? 'Ekleniyor…' : 'Okulu ekle'}
-                </PrimaryButton>
-              </div>
+                </Button>
+              </FormActions>
             </form>
           )}
           <Field label="Sınıf seviyesi" htmlFor="st-grade">
-            <select
+            <Select
               id="st-grade"
               value={gradeLevel}
               onChange={(e) => setGradeLevel(e.target.value)}
-              className={inputClass}
             >
               <option value="">Seçilmedi</option>
               {GRADE_LEVELS.map((g) => (
@@ -586,10 +614,10 @@ export default function StudentsPage() {
                   {GRADE_LEVEL_LABELS[g]}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Başlangıç şifresi (öğrenciye iletin)" htmlFor="st-password">
-            <input
+            <Input
               id="st-password"
               type="password"
               autoComplete="new-password"
@@ -597,16 +625,15 @@ export default function StudentsPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className={inputClass}
             />
           </Field>
           <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting || !guardianId}>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" disabled={submitting || !guardianId}>
               {submitting ? 'Oluşturuluyor…' : 'Öğrenci oluştur'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
@@ -618,20 +645,18 @@ export default function StudentsPage() {
       >
         <form onSubmit={handleEdit} className="space-y-4">
           <Field label="Ad soyad" htmlFor="ed-name">
-            <input
+            <Input
               id="ed-name"
               value={editFullName}
               onChange={(e) => setEditFullName(e.target.value)}
               required
-              className={inputClass}
             />
           </Field>
           <Field label="Veli değiştir (boş bırakılırsa değişmez)" htmlFor="ed-guardian-search">
-            <input
+            <Input
               id="ed-guardian-search"
               value={editGuardianQuery}
               onChange={(e) => setEditGuardianQuery(e.target.value)}
-              className={inputClass}
               placeholder="Yeni veli adı yazın…"
               autoComplete="off"
             />
@@ -651,7 +676,7 @@ export default function StudentsPage() {
                     'block w-full px-3 py-2 text-left text-sm transition-colors ' +
                     (editGuardianId === g.id
                       ? 'bg-accent/10 font-medium text-accent'
-                      : 'text-text hover:bg-bg')
+                      : 'text-text hover:bg-subtle')
                   }
                 >
                   {g.full_name} · {g.username}
@@ -665,11 +690,10 @@ export default function StudentsPage() {
             </p>
           )}
           <Field label="Okul" htmlFor="ed-school">
-            <select
+            <Select
               id="ed-school"
               value={editSchoolId}
               onChange={(e) => setEditSchoolId(e.target.value)}
-              className={inputClass}
             >
               <option value="">Seçilmedi</option>
               {schools.map((s) => (
@@ -677,14 +701,13 @@ export default function StudentsPage() {
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Sınıf seviyesi" htmlFor="ed-grade">
-            <select
+            <Select
               id="ed-grade"
               value={editGradeLevel}
               onChange={(e) => setEditGradeLevel(e.target.value)}
-              className={inputClass}
             >
               <option value="">Seçilmedi</option>
               {GRADE_LEVELS.map((g) => (
@@ -692,18 +715,18 @@ export default function StudentsPage() {
                   {GRADE_LEVEL_LABELS[g]}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <p className="text-xs text-muted">
             Sınıf değişikliği için "Sınıf değiştir" işlemini kullanın.
           </p>
           <FormError message={editError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setEditStudent(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={editSubmitting}>
+          <FormActions>
+            <Button onClick={() => setEditStudent(null)}>İptal</Button>
+            <Button variant="primary" type="submit" disabled={editSubmitting}>
               {editSubmitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
@@ -715,16 +738,15 @@ export default function StudentsPage() {
       >
         <form onSubmit={handleMove} className="space-y-4">
           <p className="text-sm text-muted">
-            Geçiş haftasını seçin: yeni sınıf, seçilen haftanın başında başlar;
-            önceki sınıf kaydı önceki haftanın sonunda kapanır.
+            Geçiş haftasını seçin: yeni sınıf, seçilen haftanın başında başlar; önceki sınıf kaydı
+            önceki haftanın sonunda kapanır.
           </p>
           <Field label="Yeni sınıf" htmlFor="mv-class">
-            <select
+            <Select
               id="mv-class"
               value={moveClassId}
               onChange={(e) => setMoveClassId(e.target.value)}
               required
-              className={inputClass}
             >
               <option value="">Seçin…</option>
               {classes.map((c) => (
@@ -732,30 +754,29 @@ export default function StudentsPage() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Geçiş haftası" htmlFor="mv-week">
-            <select
+            <Select
               id="mv-week"
               value={moveWeekId}
               onChange={(e) => setMoveWeekId(e.target.value)}
               required
-              className={inputClass}
             >
               {weeks.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <FormError message={moveError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setMoveStudent(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={moveSubmitting || !moveClassId}>
+          <FormActions>
+            <Button onClick={() => setMoveStudent(null)}>İptal</Button>
+            <Button variant="primary" type="submit" disabled={moveSubmitting || !moveClassId}>
               {moveSubmitting ? 'Taşınıyor…' : 'Sınıfı değiştir'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
@@ -770,7 +791,7 @@ export default function StudentsPage() {
             Kullanıcı adı: {resetStudent?.username}. Eski oturumlar bu işlemle sona erer.
           </p>
           <Field label="Yeni şifre (öğrenciye iletin)" htmlFor="st-reset">
-            <input
+            <Input
               id="st-reset"
               type="password"
               autoComplete="new-password"
@@ -778,16 +799,15 @@ export default function StudentsPage() {
               onChange={(e) => setResetPassword(e.target.value)}
               required
               minLength={6}
-              className={inputClass}
             />
           </Field>
           <FormError message={resetError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setResetStudent(null)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={resetSubmitting}>
+          <FormActions>
+            <Button onClick={() => setResetStudent(null)}>İptal</Button>
+            <Button variant="primary" type="submit" disabled={resetSubmitting}>
               {resetSubmitting ? 'Sıfırlanıyor…' : 'Şifreyi sıfırla'}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
         </form>
       </Modal>
 
@@ -799,12 +819,12 @@ export default function StudentsPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Şablonu indirin, doldurun ve yükleyin. Önizlemede hata yoksa kaydedin;
-            tek satır bile hatalıysa hiçbir kayıt oluşturulmaz.
+            Şablonu indirin, doldurun ve yükleyin. Önizlemede hata yoksa kaydedin; tek satır bile
+            hatalıysa hiçbir kayıt oluşturulmaz.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <SecondaryButton onClick={handleTemplateDownload}>Şablon indir</SecondaryButton>
-            <input
+            <Button onClick={handleTemplateDownload}>Şablon indir</Button>
+            <Input
               type="file"
               accept=".csv,text/csv"
               aria-label="CSV dosyası"
@@ -818,64 +838,58 @@ export default function StudentsPage() {
             />
           </div>
           <Field label="Başlangıç haftası (tüm grup için)" htmlFor="imp-week">
-            <select
+            <Select
               id="imp-week"
               value={importWeekId}
               onChange={(e) => setImportWeekId(e.target.value)}
-              className={inputClass}
             >
               {renderWeekOptions()}
-            </select>
+            </Select>
           </Field>
           <p className="text-xs text-muted">
             Dosyadaki tüm öğrenciler bu haftadan itibaren aktif olur. Geçmiş haftalar seçilemez.
           </p>
-          <Field
-            label="Yeni öğrenci/veliler için ortak başlangıç şifresi"
-            htmlFor="imp-pass"
-          >
-            <input
+          <Field label="Yeni öğrenci/veliler için ortak başlangıç şifresi" htmlFor="imp-pass">
+            <Input
               id="imp-pass"
               type="password"
               autoComplete="new-password"
               value={importPassword}
               onChange={(e) => setImportPassword(e.target.value)}
               minLength={6}
-              className={inputClass}
               placeholder="En az 6 karakter"
             />
           </Field>
           <FormError message={importError} />
           {importSuccess && (
-            <p role="status" className="text-sm font-medium text-status-sent">
+            <p role="status" className="text-sm font-medium text-success">
               {importSuccess}
             </p>
           )}
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={handlePreview} disabled={!importFile || importLoading}>
+          <FormActions>
+            <Button onClick={handlePreview} disabled={!importFile || importLoading}>
               {importLoading ? 'Doğrulanıyor…' : 'Önizle'}
-            </SecondaryButton>
-            <PrimaryButton
+            </Button>
+            <Button
+              variant="primary"
               onClick={handleImportCommit}
               disabled={
-                !importFile ||
-                !importResult?.ok ||
-                importSubmitting ||
-                importSuccess !== null
+                !importFile || !importResult?.ok || importSubmitting || importSuccess !== null
               }
             >
               {importSubmitting
                 ? 'Kaydediliyor…'
                 : `${importResult?.summary.new_students ?? 0} kaydı oluştur`}
-            </PrimaryButton>
-          </div>
+            </Button>
+          </FormActions>
 
           {importResult && (
-            <div className="space-y-3 rounded-md border border-border bg-bg p-3">
+            <div className="space-y-3 rounded-md border border-border bg-subtle/60 p-3">
               <p className="text-sm text-text">
-                <strong className="tabular">{importResult.summary.new_students}</strong> yeni öğrenci ·{' '}
-                <strong className="tabular">{importResult.summary.new_guardians}</strong> yeni veli ·{' '}
-                <strong className="tabular">{importResult.summary.new_schools}</strong> yeni okul
+                <strong className="tabular">{importResult.summary.new_students}</strong> yeni
+                öğrenci · <strong className="tabular">{importResult.summary.new_guardians}</strong>{' '}
+                yeni veli · <strong className="tabular">{importResult.summary.new_schools}</strong>{' '}
+                yeni okul
                 {importResult.summary.matched_guardians > 0 &&
                   ` · ${importResult.summary.matched_guardians} mevcut veli eşleşti`}
                 {importResult.summary.matched_schools > 0 &&
@@ -897,7 +911,7 @@ export default function StudentsPage() {
               )}
               {importResult.warnings.length > 0 && (
                 <div>
-                  <p className="mb-1 text-sm font-medium text-att-late">
+                  <p className="mb-1 text-sm font-medium text-warning">
                     Uyarılar ({importResult.warnings.length})
                   </p>
                   <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted">
