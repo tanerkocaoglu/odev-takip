@@ -90,7 +90,7 @@ export default function LoginPage() {
 
         <div className="relative z-10 flex flex-col items-center gap-4 lg:h-full lg:items-start lg:justify-center lg:gap-6">
           <span className="rounded-2xl bg-surface p-4 shadow-[var(--elevation-3)]">
-            <BrandLogo className="h-24 w-auto object-contain lg:h-32" />
+            <BrandLogo size="lg" />
           </span>
           <p className="text-center text-xl font-semibold leading-snug tracking-wide text-accent-fg lg:text-left lg:text-2xl">
             ÖDEV TAKİP

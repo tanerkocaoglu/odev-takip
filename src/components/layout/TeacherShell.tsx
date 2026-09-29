@@ -49,7 +49,7 @@ export default function TeacherShell() {
             to="/teacher"
             className="flex shrink-0 items-center transition-opacity hover:opacity-80"
           >
-            <BrandLogo className="h-16 w-auto object-contain" />
+            <BrandLogo size="sm" />
           </Link>
 
           {/* Masaüstü: satır içi sekmeler */}

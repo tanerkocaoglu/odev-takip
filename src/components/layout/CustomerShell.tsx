@@ -99,7 +99,7 @@ export default function CustomerShell() {
         }
       >
         <div className="mx-auto flex h-20 max-w-2xl items-center justify-center px-4 lg:max-w-5xl">
-          <BrandLogo className="h-16 w-auto object-contain" />
+          <BrandLogo size="sm" />
         </div>
       </header>
 

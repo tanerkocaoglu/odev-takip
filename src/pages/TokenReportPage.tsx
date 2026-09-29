@@ -76,7 +76,7 @@ export default function TokenReportPage() {
         />
         <div className="relative z-10 mx-auto flex max-w-2xl flex-col items-center gap-3 px-4 py-8 text-center lg:max-w-4xl">
           <span className="rounded-2xl bg-surface p-3 shadow-[var(--elevation-3)]">
-            <BrandLogo className="h-14 w-auto object-contain" />
+            <BrandLogo size="sm" />
           </span>
           <p className="text-lg font-semibold tracking-wide text-accent-fg">
             ÖDEV TAKİP

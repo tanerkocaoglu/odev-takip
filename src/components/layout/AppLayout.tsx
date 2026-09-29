@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex h-20 max-w-5xl items-center justify-between px-4">
           <Link to="/" className="flex items-center transition-opacity hover:opacity-80">
-            <BrandLogo className="h-16 w-auto object-contain" />
+            <BrandLogo size="sm" />
           </Link>
           <nav className="flex items-center gap-4">
             {user?.role === 'admin' && (

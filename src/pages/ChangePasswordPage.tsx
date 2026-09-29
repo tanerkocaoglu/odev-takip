@@ -89,7 +89,7 @@ export default function ChangePasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-bg px-4">
       <div className="w-full max-w-sm">
         <div className="flex justify-center">
-          <BrandLogo className="h-16 w-auto object-contain" />
+          <BrandLogo size="sm" />
         </div>
 
         <div className="mt-6 rounded-md border border-border bg-surface p-6">

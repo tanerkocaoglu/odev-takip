@@ -14,14 +14,7 @@ export default function HomeworkSummarySheet({ summary }: { summary: HomeworkSum
   return (
     <div className="brand-scope w-[720px] flex-none overflow-hidden rounded-2xl border border-border bg-surface">
       <header className="brand-panel px-8 py-6 text-white">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded bg-white p-1">
-            <BrandLogo className="h-10 w-10 object-contain" />
-          </span>
-          <p className="text-sm font-semibold uppercase tracking-wide">
-            Ödev Takip
-          </p>
-        </div>
+        <BrandLogo tone="inverse" size="md" />
       </header>
 
       <div className="px-8 pb-4 pt-6">

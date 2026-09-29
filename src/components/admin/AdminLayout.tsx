@@ -69,7 +69,7 @@ export default function AdminLayout() {
         {/* Marka / kurum */}
         <div className="flex h-20 items-center justify-center border-b border-border px-0 lg:justify-start lg:px-4">
           {/* Geniş: contain (h-16); dar: kare merkez kırpma (cover) */}
-          <BrandLogo className="h-16 w-16 shrink-0 object-cover lg:w-auto lg:object-contain" />
+          <BrandLogo size="sm" responsive />
         </div>
 
         {/* Alan başlığı — <lg gizli ama ekran okuyucuda her zaman var */}

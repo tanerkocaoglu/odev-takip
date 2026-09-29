@@ -5,6 +5,35 @@
 
 ---
 
+## Yeniden tasarım — Parti 1: temel (token, font, ortak bileşenler, wordmark) ✅
+
+**Kapsam:** Tasarım sistemi temeli. Backend/API/şema/yetki dokunulmadı. Tek teal
+kimlik (mavi müşteri kimliği kaldırıldı — geçiş takma adları duruyor), IBM Plex
+Sans self-host, semantik renk token'ları (kontrast doğrulandı; `warning` →
+`#A54A08`), 2 yarıçap, border-first derinlik (hover'da yükselme kaldırıldı),
+dar ekranda 16px input (iOS zoom), `src/components/ui/` (Button, Field/Input,
+Badge+ikon, Card, TableCard, Tabs, Modal+odak tuzağı, ConfirmDialog, Toast,
+iskelet/boş/hata durumları, PageHeader, Pagination), `useDialogBehavior`
+(Modal ve ileride çekmece için ortak), SVG `BrandLogo` wordmark (logo.png silindi).
+`components/admin/ui.tsx`, `Modal.tsx`, `Pagination.tsx` re-export shim.
+
+**Kararlar (kullanıcı onaylı):** wordmark tek BrandLogo'da; tek teal kimlik;
+admin mobil menüsü hamburger çekmece (Parti 2); yeni bağımlılık yalnızca
+`@fontsource/ibm-plex-sans`; çalışma branch'i `claude/inspiring-shannon-gu5sng`.
+
+**Baseline (Aşama 2 başı):** backend 460/460 (PROGRESS-OZET ile aynı), frontend
+149/149 (PROGRESS-OZET 148, görev metni 143 — fark: OZET sonrası eklenen testler).
+**Sonuç:** frontend 156/156 (+7 yeni `ui.test.tsx`/rozet), typecheck+lint temiz,
+build başarılı; gerçek Plex ile tipografi ve Türkçe glifler (ğ ı İ ş ç ö ü)
+1280/375'te görsel doğrulandı. Güncellenen test: `admin-badges.test.tsx` (yalnızca
+sınıf adları: `text-status-*` → semantik `text-info/success/muted`).
+
+**Etkilenen:** `src/index.css`, `tailwind.config.js`, `index.html`, `src/main.tsx`,
+`src/components/ui/*`, `BrandLogo.tsx`, `HomeworkSummarySheet.tsx` (wordmark),
+CLAUDE.md "Tasarım sistemi" (ARA SÜRÜM), spec.md §7 UI satırı (shadcn → elle yazılmış).
+
+---
+
 ## PASKAL sınıfı yerel hard-delete (veri temizliği) ✅
 
 ### Kapsam

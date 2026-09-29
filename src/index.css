@@ -3,63 +3,65 @@
 @tailwind utilities;
 
 /* =====================================
-   Tasarım token'ları (CLAUDE.md · Tasarım kuralları)
+   Tasarım token'ları (CLAUDE.md · Tasarım sistemi)
    Yeni renk/boyut/font BU DOSYAYA eklenir; ekran başına tanımlanmaz.
    ===================================== */
 
 /*
  * Renkler kanal üçlüsü (R G B) olarak tutulur. Tailwind renkleri
- * `rgb(var(--x) / <alpha-value>)` deseniyle türetir; böylece `bg-status-sent/10`
+ * `rgb(var(--x) / <alpha-value>)` deseniyle türetir; böylece `bg-success/10`
  * gibi opaklık sınıfları gerçekten üretilir. Düz CSS'te `rgb(var(--x))` yazılır.
  */
 :root {
   /* Temel */
-  --bg: 251 252 253;
-  --surface: 255 255 255;
-  --border: 227 231 235;
+  --bg: 247 248 249; /* sayfa zemini */
+  --surface: 255 255 255; /* kart, tablo, modal */
+  --subtle: 240 243 245; /* sönük dolgu: disabled, ikon dairesi, hover zemin */
+  --border: 221 226 231;
   --text: 22 32 42;
-  --text-muted: 90 102 114;
-  --accent: 13 107 98;
+  --text-muted: 84 96 108; /* WCAG: bg/surface/subtle üzerinde ≥ 4.5:1 */
+  --accent: 13 107 98; /* TEK marka + etkileşim rengi */
+  --accent-hover: 10 87 79;
   --accent-fg: 255 255 255;
 
-  /* Devamsızlık (report_entries.attendance) */
-  --attendance-present: 90 102 114;
-  --attendance-late: 180 83 9;
-  --attendance-absent: 180 35 24;
-  --attendance-excused: 23 92 211;
-
-  /* Rapor durumu (reports.status) */
-  --status-draft: 90 102 114;
-  --status-completed: 23 92 211;
-  --status-sent: 6 118 71;
-
-  /* Teslim durumu */
-  --submission-uploaded: 6 118 71;
-  --submission-missing: 180 35 24;
-  --submission-late: 180 83 9;
-
-  /* Yıkıcı eylemler (sil, iptal et) — attendance.absent ile aynı kırmızı */
+  /* Semantik durum renkleri — dört renk ailesi, her yerde aynı anlam:
+     success=tamam, warning=gecikmiş, danger=eksik/yıkıcı, info=hazır/bilgi */
+  --success: 6 118 71;
+  --warning: 165 74 8; /* #A54A08 — %10 tint üzerinde bile ≥ 4.5:1 */
   --danger: 180 35 24;
+  --info: 23 92 211;
 
-  /* Müşteri yüzü (öğrenci / veli / public) — marka mavisi.
-     Admin ve öğretmen teal `--accent` kimliğini korur; marka mavisi yalnızca
-     `.customer-face` kapsayıcısı içinde geçerlidir. */
-  --brand: 10 120 163; /* metin / buton / link — WCAG 4.5:1 */
-  --brand-deco: 21 156 212; /* yalnızca dekoratif: gradyan ve düşük opaklık zemin */
+  /* Alan takma adları (mevcut adlar korunur; değerleri semantik renklerden gelir) */
+  --attendance-present: var(--text-muted);
+  --attendance-late: var(--warning);
+  --attendance-absent: var(--danger);
+  --attendance-excused: var(--info);
 
-  /* Elevation (gölge) — CLAUDE.md "Elevation" */
-  --elevation-1: 0 1px 2px 0 rgba(22, 32, 42, 0.04);
-  --elevation-2: 0 4px 12px 0 rgba(10, 120, 163, 0.08);
-  --elevation-3: 0 8px 24px -4px rgba(22, 32, 42, 0.08);
-  --elevation-4: 0 16px 40px -8px rgba(22, 32, 42, 0.16);
-  --backdrop-4: rgba(22, 32, 42, 0.35);
+  --status-draft: var(--text-muted);
+  --status-completed: var(--info);
+  --status-sent: var(--success);
+
+  --submission-uploaded: var(--success);
+  --submission-missing: var(--danger);
+  --submission-late: var(--warning);
+
+  /* Eski "marka mavisi" kaldırıldı: tek kimlik teal. Takma adlar geçiş içindir. */
+  --brand: var(--accent);
+  --brand-deco: var(--accent);
+
+  /* Derinlik: kartlar yalnızca kenarlıklıdır; gölge yalnızca yüzen öğelerde */
+  --shadow-hover: 0 2px 8px 0 rgba(22, 32, 42, 0.08);
+  --shadow-float: 0 8px 24px -4px rgba(22, 32, 42, 0.14); /* menü, çekmece, toast */
+  --shadow-modal: 0 16px 40px -8px rgba(22, 32, 42, 0.22);
+  --backdrop: rgba(22, 32, 42, 0.45);
 
   /* Ölçüler */
-  --radius: 6px;
+  --radius: 8px; /* kontrol, kart, satır */
+  --radius-lg: 12px; /* modal, çekmece, sayfa düzeyi yüzey */
   --ring: 2px;
 
   /* Tip ölçeği: 12 / 13 / 14 / 16 / 20 / 24 px */
-  --font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 /* =====================================
@@ -68,6 +70,8 @@
 
 html {
   font-family: var(--font-family);
+  /* iOS'ta yatay döndürmede metin büyütmeyi engeller */
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -81,6 +85,16 @@ body {
 /* Rakam gösteren her yerde zorunlu */
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* iOS Safari 16px altı alanlara odaklanınca sayfayı büyütür: dar ekranda
+   tüm metin alanları 16px. Onay kutusu/radyo/dosya alanı etkilenmez. */
+@media (max-width: 767px) {
+  input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 /* =====================================
@@ -99,9 +113,11 @@ td :focus-visible {
 }
 
 /* =====================================
-   Yoğunluk sınıfları
+   Yoğunluk
    compact: öğretmen rapor girişi + admin listeleri (Excel rakibi)
    comfortable: veli/öğrenci/giriş ekranları (varsayılan)
+   Yeni kodda bileşenlerin `density` prop'u tercih edilir; `.compact`
+   yalnızca rapor giriş tablosunda kalan satır yüksekliği kuralıdır.
    ===================================== */
 
 .compact {
@@ -127,77 +143,46 @@ td :focus-visible {
 }
 
 /* =====================================
-   Elevation / hover / shimmer — CLAUDE.md "Tasarım kuralları"
+   Derinlik / etkileşimli kart / iskelet
    ===================================== */
 
-.elevation-1 {
-  box-shadow: var(--elevation-1);
-}
-.elevation-2 {
-  box-shadow: var(--elevation-2);
-}
-.elevation-3 {
-  box-shadow: var(--elevation-3);
-}
-.elevation-4 {
-  box-shadow: var(--elevation-4);
-}
-
-/* Etkileşimli kart/satır: hover'da accent kenarlık + hafif yükselme + Level 2 */
+/* Geçiş: yumuşak ama kısa. Yükselme (translate) YOK. */
 .card-interactive {
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.card-interactive:hover {
-  border-color: rgb(var(--accent));
-  transform: translateY(-1px);
-  box-shadow: var(--elevation-2);
-}
-/* İçindeki kontrol odaklandığında da "şu an önde" (dropzone dilek/yükleme alanı) */
+.card-interactive:hover,
 .card-interactive:focus-within {
   border-color: rgb(var(--accent));
-  box-shadow: var(--elevation-2);
+  box-shadow: var(--shadow-hover);
 }
 
-/* Müşteri yüzü (öğrenci / veli / public): bu kapsayıcı içindeki tüm
-   etkileşimli öğeler (buton, link, aktif sekme, odak halkası) marka mavisine
-   döner. Global `--accent` değişkeni yerel olarak ezildiği için admin ve
-   öğretmen teal'i etkilenmez. */
-.customer-face {
-  --accent: 10 120 163;
-  --accent-fg: 255 255 255;
+/* Eski derinlik sınıfları (geçiş): kartlar artık yalnızca kenarlık taşır. */
+.elevation-1 {
+  box-shadow: none;
+}
+.elevation-2 {
+  box-shadow: var(--shadow-hover);
+}
+.elevation-3 {
+  box-shadow: var(--shadow-float);
+}
+.elevation-4 {
+  box-shadow: var(--shadow-modal);
 }
 
-/* Dekoratif marka gradyanı — yalnızca müşteri yüzü başlıklarında. Metin
-   taşımaz; renk tek başına anlam üretmez. */
+/* Eski marka yüzeyi sınıfları (geçiş): tek teal kimlik. Parti 2–6'da
+   kullanıldıkları yerler temizlenir. */
 .brand-hero {
-  background:
-    radial-gradient(120% 140% at 100% 0%, rgb(var(--brand-deco) / 0.18), transparent 55%),
-    linear-gradient(180deg, rgb(var(--brand-deco) / 0.07), transparent 70%);
+  background: linear-gradient(180deg, rgb(var(--accent) / 0.06), transparent 80%);
 }
-
-/* Giriş / marka yüzeyi: kapsayıcı içindeki etkileşimli öğeler (buton, odak
-   halkası) marka mavisine döner. `.customer-face` ile aynı ezme; admin,
-   öğretmen ve diğer ekranları etkilemez. Giriş rol-nötr markayı temsil eder. */
-.brand-scope {
-  --accent: 10 120 163;
-  --accent-fg: 255 255 255;
-}
-
-/* Giriş tabanı: `--bg` üzerine çok hafif marka yıkaması (metin taşımaz). */
 .brand-canvas {
   background-color: rgb(var(--bg));
-  background-image:
-    radial-gradient(120% 80% at 90% -10%, rgb(var(--brand-deco) / 0.1), transparent 60%),
-    radial-gradient(80% 60% at -10% 110%, rgb(var(--brand-deco) / 0.08), transparent 55%);
 }
-
-/* Marka paneli: koyu marka dolgusu — üzerindeki beyaz metinler WCAG 4.5:1
-   kontrast taşır. Parlak `--brand-deco` yalnızca köşe parıltısı olarak
-   dekoratiftir; hiçbir metin bu parlak tonun üzerine oturmaz. */
 .brand-panel {
-  background:
-    radial-gradient(90% 70% at 100% 0%, rgb(var(--brand-deco) / 0.28), transparent 55%),
-    rgb(var(--brand));
+  background: rgb(var(--accent));
 }
 
 /* Admin veri satırları: hover'da hafif zemin + solda ince accent şeridi */
@@ -205,7 +190,7 @@ td :focus-visible {
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .admin-content tbody tr:hover {
-  background-color: rgb(var(--bg));
+  background-color: rgb(var(--subtle) / 0.6);
 }
 .admin-content tbody tr:hover > td:first-child {
   box-shadow: inset 2px 0 0 0 rgb(var(--accent));
@@ -213,7 +198,12 @@ td :focus-visible {
 
 /* İskelet/yükleniyor: iki ton arası 1.5s linear sonsuz gradient pulse */
 .shimmer {
-  background: linear-gradient(90deg, #f0f4f8 25%, #e3e7eb 37%, #f0f4f8 63%);
+  background: linear-gradient(
+    90deg,
+    rgb(var(--subtle)) 25%,
+    rgb(var(--border)) 37%,
+    rgb(var(--subtle)) 63%
+  );
   background-size: 400% 100%;
   animation: shimmer 1.5s linear infinite;
 }
@@ -224,6 +214,21 @@ td :focus-visible {
   100% {
     background-position: 0% 50%;
   }
+}
+
+/* Toast ve çekmece girişi (framer-motion gerekmez) */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.toast-in {
+  animation: toast-in 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* =====================================
@@ -239,13 +244,8 @@ td :focus-visible {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  /* Hover yükselmesi ve shimmer bu durumda tamamen durur. */
-  .card-interactive:hover {
-    transform: none;
-    box-shadow: var(--elevation-1);
-  }
   .shimmer {
     animation: none;
-    background: #f0f4f8;
+    background: rgb(var(--subtle));
   }
 }
