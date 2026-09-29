@@ -226,12 +226,46 @@ describe('bekleyen kaydın flush edilmesi', () => {
   });
 });
 
-describe('mobil kart: puan radiogroup', () => {
-  const hwGroup = () => screen.getByRole('radiogroup', { name: 'Ödev puanı için hızlı seçim' });
-  const intGroup = () =>
-    screen.getByRole('radiogroup', { name: 'Ders içi performans puanı için hızlı seçim' });
+describe('mobil kart: puan radiogroup (sayı kutusu yok)', () => {
+  const hwGroup = () => screen.getByRole('radiogroup', { name: 'Ödev puanı' });
+  const intGroup = () => screen.getByRole('radiogroup', { name: 'Ders içi performans puanı' });
   const radios = (group: HTMLElement) =>
     Array.from(group.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+  /** Tuşu, odaktaki radio'ya (yoksa seçili radio'ya) gönderir — tarayıcıdaki gibi olay gruba kabarır. */
+  const press = (group: HTMLElement, key: string) => {
+    const target = group.contains(document.activeElement)
+      ? document.activeElement!
+      : (radios(group).find((r) => r.getAttribute('aria-checked') === 'true') ?? radios(group)[0]);
+    fireEvent.keyDown(target, { key });
+  };
+  const checkedOf = (group: HTMLElement) =>
+    radios(group).find((r) => r.getAttribute('aria-checked') === 'true')?.textContent ?? null;
+
+  it('mobil kartta sayı kutusu yoktur; puan yalnızca radiogroup ile girilir', async () => {
+    renderPage();
+    await loaded();
+    // Mobil kart alanları etiketle bulunur: yalnızca devamsızlık seçicisi, not ve iki radiogroup
+    expect(screen.queryByLabelText('Ödev puanı', { selector: 'input' })).toBeNull();
+    expect(screen.queryByLabelText('Ders içi performans puanı', { selector: 'input' })).toBeNull();
+    expect(document.getElementById('m-hw')).toBeNull();
+    expect(document.getElementById('m-int')).toBeNull();
+  });
+
+  it('1–10 tüm değerler (10 dahil) seçilebilir ve state\'e yansır', async () => {
+    renderPage();
+    await loaded();
+    const g = hwGroup();
+    for (let n = 1; n <= 10; n++) {
+      fireEvent.click(radios(g)[n - 1]);
+      expect(checkedOf(g)).toBe(String(n));
+    }
+    // Masaüstü tablo hücresi aynı state'i gösterir (10 kaydedilmiş sayıdır)
+    expect((cell('Ödev puanı', 'Ali') as HTMLInputElement).value).toBe('10');
+    // 10 düğmesi klavyeyle de erişilebilir: End → 10
+    fireEvent.click(radios(g)[0]);
+    press(g, 'End');
+    expect(checkedOf(g)).toBe('10');
+  });
 
   it('her grup 10 radio içerir ve tek Tab durağı vardır (roving tabindex)', async () => {
     renderPage();
@@ -241,35 +275,43 @@ describe('mobil kart: puan radiogroup', () => {
       expect(rs).toHaveLength(10);
       expect(rs.filter((r) => r.tabIndex === 0)).toHaveLength(1);
     }
-    // Seçim yoksa Tab durağı "1"; seçim varsa seçili düğüm
     expect(radios(hwGroup()).find((r) => r.tabIndex === 0)).toHaveTextContent('1');
     fireEvent.click(radios(hwGroup())[6]); // 7
     expect(radios(hwGroup()).find((r) => r.tabIndex === 0)).toHaveTextContent('7');
     expect(radios(hwGroup())[6]).toHaveAttribute('aria-checked', 'true');
-    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('7');
   });
 
-  it('ok tuşları grup içinde gezer ve seçer; sonda başa sarar; Home/End; rakam tuşu', async () => {
+  it('ok tuşları grup içinde gezer ve seçer; sonda başa sarar; Home/End', async () => {
     renderPage();
     await loaded();
     fireEvent.click(radios(hwGroup())[4]); // 5
     const g = hwGroup();
     fireEvent.keyDown(radios(g)[4], { key: 'ArrowRight' });
-    expect(radios(g)[5]).toHaveAttribute('aria-checked', 'true');
+    expect(checkedOf(g)).toBe('6');
     expect(document.activeElement).toBe(radios(g)[5]);
-    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
-    expect(radios(g)[4]).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(document.activeElement!, { key: 'End' });
-    expect(radios(g)[9]).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' }); // 10 → 1
-    expect(radios(g)[0]).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' }); // 1 → 10
-    expect(radios(g)[9]).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(document.activeElement!, { key: '3' });
-    expect(radios(g)[2]).toHaveAttribute('aria-checked', 'true');
-    fireEvent.keyDown(document.activeElement!, { key: '0' });
-    expect(radios(g)[9]).toHaveAttribute('aria-checked', 'true');
-    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('10');
+    press(g, 'ArrowLeft');
+    expect(checkedOf(g)).toBe('5');
+    press(g, 'End');
+    expect(checkedOf(g)).toBe('10');
+    press(g, 'ArrowRight'); // 10 → 1
+    expect(checkedOf(g)).toBe('1');
+    press(g, 'ArrowLeft'); // 1 → 10
+    expect(checkedOf(g)).toBe('10');
+    press(g, 'Home');
+    expect(checkedOf(g)).toBe('1');
+  });
+
+  it('rakam tuşu: 1–9 aynı sayıyı, "0" tuşu 10\'u seçer (10 tek tuşla girilir)', async () => {
+    renderPage();
+    await loaded();
+    fireEvent.click(radios(hwGroup())[4]);
+    const g = hwGroup();
+    press(g, '3');
+    expect(checkedOf(g)).toBe('3');
+    press(g, '0');
+    expect(checkedOf(g)).toBe('10');
+    press(g, '9');
+    expect(checkedOf(g)).toBe('9');
   });
 
   it('devamsız seçilince performans grubu kapanır ve değer null olur; ödev grubu açık kalır', async () => {
@@ -278,9 +320,12 @@ describe('mobil kart: puan radiogroup', () => {
     fireEvent.click(radios(intGroup())[7]); // 8
     fireEvent.change(screen.getByLabelText('Devamsızlık'), { target: { value: 'absent' } });
     expect(radios(intGroup()).every((r) => r.disabled)).toBe(true);
-    expect(radios(intGroup()).every((r) => r.getAttribute('aria-checked') === 'false')).toBe(true);
+    expect(checkedOf(intGroup())).toBeNull();
     expect(radios(hwGroup()).every((r) => !r.disabled)).toBe(true);
     expect(screen.getByText(/Devamsız\/izinli öğrencide ders içi performans girilmez\./)).toBeInTheDocument();
+    // Ödev puanı devamsız satırda da girilir
+    fireEvent.click(radios(hwGroup())[4]);
+    expect(checkedOf(hwGroup())).toBe('5');
   });
 
   it('Önceki/Sonraki bekleyen kaydı 2 sn beklemeden flush eder ve kartı değiştirir', async () => {
@@ -296,13 +341,11 @@ describe('mobil kart: puan radiogroup', () => {
         expect.objectContaining({ student_id: 's1', homework_score: 9 }),
       ]),
     });
-    // Yeni kart: Veli (7 / 8 önceden dolu)
     expect(screen.getByRole('group', { name: 'Veli, 2 / 2' })).toBeInTheDocument();
-    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('7');
+    expect(checkedOf(hwGroup())).toBe('7');
 
-    // Geri dönünce Ali'nin puanı korunur
     fireEvent.click(screen.getByRole('button', { name: 'Önceki' }));
-    expect((screen.getByLabelText('Ödev puanı') as HTMLInputElement).value).toBe('9');
+    expect(checkedOf(hwGroup())).toBe('9');
   });
 
   it('bekleyen kayıt yokken kart değiştirmek fazladan PUT üretmez', async () => {
@@ -310,7 +353,7 @@ describe('mobil kart: puan radiogroup', () => {
     renderPage();
     await loaded();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2100); // açılıştaki otomatik kayıt biter
+      await vi.advanceTimersByTimeAsync(2100);
     });
     const before = putBodies.length;
     fireEvent.click(screen.getByRole('button', { name: 'Sonraki' }));

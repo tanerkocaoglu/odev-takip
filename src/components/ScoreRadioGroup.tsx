@@ -1,5 +1,5 @@
 /**
- * 1–10 puan seçici (mobil kart görünümü) — TEK radiogroup.
+ * 1–10 puan seçici (mobil kart görünümü) — TEK radiogroup; mobilde puanın TEK girdisidir (sayı kutusu yok).
  *
  * Klavye modeli (ARIA radio group):
  * - roving tabindex: gruptaki tek Tab durağı seçili düğmedir (seçim yoksa "1");
@@ -16,13 +16,13 @@ import { cx } from './ui';
 const VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 export default function ScoreRadioGroup({
-  label,
+  labelledBy,
   value,
   onChange,
   disabled,
 }: {
-  /** Erişilebilir ad — görünür etiketten farklı olmalı (ör. "Ödev puanı için hızlı seçim"). */
-  label: string;
+  /** Görünür etiketin id'si (`aria-labelledby`). */
+  labelledBy: string;
   value: number | null;
   onChange: (value: number) => void;
   disabled?: boolean;
@@ -52,7 +52,7 @@ export default function ScoreRadioGroup({
   return (
     <div
       role="radiogroup"
-      aria-label={label}
+      aria-labelledby={labelledBy}
       aria-disabled={disabled || undefined}
       onKeyDown={handleKeyDown}
       className="grid grid-cols-5 gap-2"

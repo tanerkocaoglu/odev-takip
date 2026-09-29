@@ -860,27 +860,11 @@ export default function ReportEntryPage() {
                   </Field>
 
                   <div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <label htmlFor="m-hw" className="text-[13px] font-medium text-muted">
-                        Ödev puanı
-                      </label>
-                      <input
-                        id="m-hw"
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={entry.homework_score ?? ''}
-                        onChange={(e) =>
-                          updateEntry(entry.student_id, {
-                            homework_score: parseScore(e.target.value),
-                          })
-                        }
-                        disabled={readOnly}
-                        className={cx(mobileControlClass, 'tabular w-20 text-center')}
-                      />
-                    </div>
+                    <p id="m-hw-label" className="mb-2 text-[13px] font-medium text-muted">
+                      Ödev puanı
+                    </p>
                     <ScoreRadioGroup
-                      label="Ödev puanı için hızlı seçim"
+                      labelledBy="m-hw-label"
                       value={entry.homework_score}
                       disabled={readOnly}
                       onChange={(n) => updateEntry(entry.student_id, { homework_score: n })}
@@ -888,28 +872,11 @@ export default function ReportEntryPage() {
                   </div>
 
                   <div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <label htmlFor="m-int" className="text-[13px] font-medium text-muted">
-                        Ders içi performans puanı
-                      </label>
-                      <input
-                        id="m-int"
-                        type="number"
-                        min={1}
-                        max={10}
-                        disabled={readOnly || away}
-                        placeholder={away ? '—' : undefined}
-                        value={entry.interest_score ?? ''}
-                        onChange={(e) =>
-                          updateEntry(entry.student_id, {
-                            interest_score: parseScore(e.target.value),
-                          })
-                        }
-                        className={cx(mobileControlClass, 'tabular w-20 text-center')}
-                      />
-                    </div>
+                    <p id="m-int-label" className="mb-2 text-[13px] font-medium text-muted">
+                      Ders içi performans puanı
+                    </p>
                     <ScoreRadioGroup
-                      label="Ders içi performans puanı için hızlı seçim"
+                      labelledBy="m-int-label"
                       value={entry.interest_score}
                       disabled={readOnly || away}
                       onChange={(n) => updateEntry(entry.student_id, { interest_score: n })}

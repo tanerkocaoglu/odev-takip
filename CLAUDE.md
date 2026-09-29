@@ -349,8 +349,10 @@ Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entr
   ödev puanı her durumda girilir** (spec §4).
 - **Mobil kart** (<768px): öğrenci başına kart; 1–10 seçici `ScoreRadioGroup`
   (TEK radiogroup, roving tabindex → grup başına 1 Tab durağı, ok/Home/End/rakam
-  tuşları, 5×2 44px). Kart alanlarının erişilebilir adları `Devamsızlık`,
-  `Ödev puanı`, `Ders içi performans puanı`, `Not` (tek kopya).
+  tuşları, 5×2 44px; rakam tuşu 1–9 → aynı sayı, `0` → 10). **Mobil kartta puan için
+  sayı kutusu YOKTUR** (dokununca ekran klavyesi açılıyordu); radiogroup tek girdidir.
+  Kart alanlarının erişilebilir adları `Devamsızlık` (select), radiogroup'lar
+  `Ödev puanı` / `Ders içi performans puanı`, `Not`. Sayı girişi yalnızca masaüstü tabloda.
 - **Otomatik kaydetme:** debounce 2 sn. Kart değiştirme ("Önceki/Sonraki"),
   "Geri dön" ve sayfadan ayrılma bekleyen kaydı **hemen flush eder**
   (`flushPending`). Kaydedilemezse "Geri dön" bir kez uyarır.
