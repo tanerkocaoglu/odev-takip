@@ -10,6 +10,8 @@ import { cx } from './cx';
 export interface TabItem<T extends string> {
   id: T;
   label: string;
+  /** Dar ekranda (<640px) görünen kısa etiket; tam ad ekran okuyucuya (aria-label) kalır. */
+  shortLabel?: string;
   /** Sayaç rozeti (ör. eksik rapor sayısı). */
   count?: number;
   icon?: ReactNode;
@@ -40,14 +42,24 @@ export function Tabs<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            aria-label={
+              t.shortLabel ? `${t.label}${t.count !== undefined ? ` (${t.count})` : ''}` : undefined
+            }
             onClick={() => onChange(t.id)}
             className={cx(
-              'relative inline-flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm font-medium transition-colors md:min-h-10',
+              'relative inline-flex min-h-11 shrink-0 items-center gap-1.5 px-2.5 sm:gap-2 sm:px-3 text-sm font-medium transition-colors md:min-h-10',
               active ? 'text-accent' : 'text-muted hover:text-text',
             )}
           >
-            {t.icon}
-            {t.label}
+            {t.icon && <span className={t.shortLabel ? 'max-sm:hidden' : undefined}>{t.icon}</span>}
+            {t.shortLabel ? (
+              <>
+                <span className="sm:hidden">{t.shortLabel}</span>
+                <span className="max-sm:hidden">{t.label}</span>
+              </>
+            ) : (
+              t.label
+            )}
             {t.count !== undefined && <CountChip value={t.count} />}
             {active && (
               <span

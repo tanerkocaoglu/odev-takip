@@ -84,6 +84,7 @@ describe('AdminDashboardPage — henüz başlamamış hafta', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Henüz başlamadı').length).toBeGreaterThan(0);
     });
-    expect(screen.queryByText('Eksik')).toBeNull();
+    // (kısa sekme etiketi "Eksik" de var; yalnızca rozetlere bakılır)
+    expect(screen.queryByText('Eksik', { selector: 'span.rounded-full' })).toBeNull();
   });
 });

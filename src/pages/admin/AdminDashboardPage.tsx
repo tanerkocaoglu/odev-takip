@@ -271,18 +271,21 @@ export default function AdminDashboardPage() {
           {
             id: 'missing',
             label: 'Eksik raporlar',
+            shortLabel: 'Eksik',
             icon: <AlertTriangle size={16} aria-hidden="true" />,
             count: data.missing.length,
           },
           {
             id: 'matrix',
             label: 'Tam matris',
+            shortLabel: 'Matris',
             icon: <Grid3x3 size={16} aria-hidden="true" />,
             count: data.matrix.length,
           },
           {
             id: 'risk',
             label: 'Riskli öğrenciler',
+            shortLabel: 'Riskli',
             icon: <AlertCircle size={16} aria-hidden="true" />,
             count: risk ? risk.items.length : undefined,
           },
