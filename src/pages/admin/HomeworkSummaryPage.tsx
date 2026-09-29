@@ -15,13 +15,16 @@ import { adminApi, ApiClientError } from '../../services/api';
 import { defaultWeekId } from '../../utils/weeks';
 import HomeworkSummarySheet from '../../components/admin/HomeworkSummarySheet';
 import {
+  ActionError,
+  Button,
   EmptyState,
+  ErrorState,
   FilterSelect,
-  FormError,
+  InlineNotice,
   LoadingState,
-  PageTitle,
-  PrimaryButton,
-} from '../../components/admin/ui';
+  PageHeader,
+  Toolbar,
+} from '../../components/ui';
 
 /** Dosya adı için Türkçe karakterleri ASCII'ye indirger. */
 function fileSlug(name: string): string {
@@ -46,6 +49,7 @@ export default function HomeworkSummaryPage() {
   const [summary, setSummary] = useState<HomeworkSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -71,7 +75,11 @@ export default function HomeworkSummaryPage() {
         setWeekId((prev) => prev || defaultWeekId(sortedWeeks));
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+          setError(
+            err instanceof ApiClientError
+              ? err.message
+              : 'Ödev özeti yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+          );
         }
       }
     })();
@@ -96,7 +104,11 @@ export default function HomeworkSummaryPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+          setError(
+            err instanceof ApiClientError
+              ? err.message
+              : 'Ödev özeti yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+          );
           setSummary(null);
         }
       })
@@ -106,7 +118,7 @@ export default function HomeworkSummaryPage() {
     return () => {
       cancelled = true;
     };
-  }, [classId, weekId]);
+  }, [classId, weekId, reloadKey]);
 
   const handleDownload = useCallback(async () => {
     if (!sheetRef.current || !summary) return;
@@ -120,6 +132,7 @@ export default function HomeworkSummaryPage() {
       const blob = await toBlob(sheetRef.current, {
         pixelRatio: 2,
         cacheBust: true,
+        // Şeffaf PNG WhatsApp'ın koyu temasında siyah zeminde okunmaz; beyaz zemin sabitlenir.
         backgroundColor: '#ffffff',
       });
       if (!blob) throw new Error('Görsel oluşturulamadı.');
@@ -140,61 +153,69 @@ export default function HomeworkSummaryPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <PageTitle icon={ClipboardList}>Haftalık ödev özeti</PageTitle>
-        <p className="text-sm text-muted">
-          Sınıf ve hafta seçin; veli WhatsApp grubuna paylaşılacak görseli indirin.
-        </p>
-      </div>
+      <PageHeader
+        icon={ClipboardList}
+        title="Haftalık ödev özeti"
+        description="Sınıf ve hafta seçin; veli WhatsApp grubuna paylaşılacak görseli indirin."
+      />
 
-      <div className="flex flex-wrap items-end gap-4">
-        <FilterSelect label="Sınıf" value={classId} onChange={setClassId}>
-          {classes.length === 0 && <option value="">Sınıf yok</option>}
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </FilterSelect>
+      <Toolbar
+        filters={
+          <>
+            <FilterSelect label="Sınıf" value={classId} onChange={setClassId}>
+              {classes.length === 0 && <option value="">Sınıf yok</option>}
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </FilterSelect>
 
-        <FilterSelect label="Hafta" value={weekId} onChange={setWeekId}>
-          {weeks.length === 0 && <option value="">Hafta yok</option>}
-          {weeks.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.week_no}. hafta · {w.label}
-            </option>
-          ))}
-        </FilterSelect>
-
-        <PrimaryButton
-          onClick={() => void handleDownload()}
-          disabled={!summary || downloading}
-        >
-          <span className="inline-flex items-center gap-2">
+            <FilterSelect label="Hafta" value={weekId} onChange={setWeekId}>
+              {weeks.length === 0 && <option value="">Hafta yok</option>}
+              {weeks.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.week_no}. hafta · {w.label}
+                </option>
+              ))}
+            </FilterSelect>
+          </>
+        }
+        actions={
+          <Button
+            variant="primary"
+            onClick={() => void handleDownload()}
+            disabled={!summary}
+            loading={downloading}
+          >
             <Download size={16} aria-hidden="true" />
             {downloading ? 'Görsel hazırlanıyor…' : 'PNG olarak indir'}
-          </span>
-        </PrimaryButton>
-      </div>
+          </Button>
+        }
+      />
 
-      <FormError message={error} />
-      <FormError message={downloadError} />
+      <ActionError message={downloadError} onDismiss={() => setDownloadError(null)} />
 
       {summary && missingCount > 0 && (
-        <p className="text-sm text-muted">
-          {missingCount} dersin raporu girilmedi; bu satırlar görselde "Rapor girilmedi"
-          olarak işaretlenir.
-        </p>
+        <InlineNotice tone="warning">
+          {missingCount} dersin raporu girilmedi; bu satırlar görselde "Rapor girilmedi" olarak
+          işaretlenir.
+        </InlineNotice>
       )}
 
-      {loading ? (
+      {error ? (
+        <ErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+      ) : loading ? (
         <LoadingState />
       ) : !summary ? (
         <EmptyState message="Görüntülemek için bir sınıf ve hafta seçin." />
       ) : (
         <div className="overflow-x-auto pb-2">
-          <div ref={sheetRef} className="inline-block">
-            <HomeworkSummarySheet summary={summary} />
+          <div className="inline-block overflow-hidden rounded-md border border-border">
+            {/* Yalnızca bu düğüm PNG'ye çevrilir (kenarlık/yarıçap dışında kalır) */}
+            <div ref={sheetRef} className="inline-block">
+              <HomeworkSummarySheet summary={summary} />
+            </div>
           </div>
         </div>
       )}
