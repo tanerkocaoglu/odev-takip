@@ -5,6 +5,28 @@
 
 ---
 
+## Yeniden tasarım — Parti 3: öğretmen ekranları ✅
+
+**3a** (`f132911`): dashboard, teslim kontrol, geçmiş raporlar — ui bileşenleri,
+`ErrorState`+yeniden dene, `InlineNotice`, `Tabs`, `FilterChipRow`; tarih/saat
+Europe/Istanbul (`formatDateTime`, `formatTime`).
+**3b** (`be396a2`, `cefd088` + bu commit): rapor giriş ekranı — (1) masaüstü tablo:
+klavye modeli ve puan girişi AYNEN korundu, hücrelere erişilebilir ad, `SaveStatus`/
+`SaveAnnouncer`, bekleyen kaydın flush'ı (kart değişimi, Geri dön, unmount), "Raporu
+tamamla" tablonun ardında; (2) mobil kart: `ScoreRadioGroup` (tek radiogroup, roving
+tabindex), ders bilgileri katlanır; (3) mobil sabit alt çubuk: safe-area, klavye açıkken
+kalkar (`useKeyboardOpen`), `dvh`, odaktaki alan görünür alana kaydırılır.
+Küçük düzeltmeler: öğretmen üst şeridi 768px'te sığar; mobil kontrol genişlikleri.
+
+**Doğrulama:** frontend 183/183 (baseline 149 → +34 yeni), typecheck/lint/build temiz;
+yeni testler: klavye, puan girişi (10 dahil), devamsızlık, radiogroup, flush, kaydetme
+durumları, alt çubuk + klavye. Görsel: 375/768/1280 (normal, devamsız, başlamamış, sent,
+completed). Chromium'da safe-area (CDP override → 34px) ve klavye (görünür yükseklik
+küçülmesi) emülasyonu ile doğrulandı; **gerçek iOS/Android klavyesi doğrulanamadı**.
+Backend'e dokunulmadı.
+
+---
+
 ## Yeniden tasarım — Parti 2: layout, giriş, şifre değiştirme ✅
 
 **Ön düzeltmeler (ayrı commit `bcd6ce5`):** `CountChip` (ikonsuz sayaç; nötr

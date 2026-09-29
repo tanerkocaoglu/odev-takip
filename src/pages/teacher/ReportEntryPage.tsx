@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react';
 import type {
   Attendance,
   HomeworkAttachment,
@@ -32,7 +32,8 @@ import {
   useToast,
 } from '../../components/ui';
 import HomeworkAttachments from '../../components/HomeworkAttachments';
-import SaveStatus, { type SaveState } from '../../components/SaveStatus';
+import SaveStatus, { SaveAnnouncer, type SaveState } from '../../components/SaveStatus';
+import { useKeyboardOpen } from '../../hooks/useKeyboardOpen';
 import ScoreRadioGroup from '../../components/ScoreRadioGroup';
 
 /** Tablo hücresi kontrolü (compact: 32px — `.compact` kuralı yüksekliği sabitler). */
@@ -117,6 +118,8 @@ export default function ReportEntryPage() {
   const [mobileIndex, setMobileIndex] = useState(0);
   const [infoOpen, setInfoOpen] = useState(false);
   const mobileCardRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
+  const keyboardOpen = useKeyboardOpen();
 
   // Ödev ekleri (PDF) — migration #13. Yalnızca bu haftanın ekleri düzenlenir;
   // geçen haftanın ekleri salt-okunur gösterilir.
@@ -438,8 +441,18 @@ export default function ReportEntryPage() {
     return e.homework_score !== null && (away || e.interest_score !== null);
   }).length;
 
+  const lastIndex = entries.length - 1;
+  const cardIndex = Math.min(mobileIndex, Math.max(0, lastIndex));
+
   return (
-    <div className="space-y-3">
+    <div
+      className={cx(
+        'space-y-3',
+        // Sabit alt çubuğun altında içerik kalmasın (klavye açıkken çubuk yoktur).
+        !keyboardOpen && 'max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]',
+      )}
+    >
+      {!readOnly && <SaveAnnouncer state={saveState} savedAt={savedAt} />}
       <div>
         <Button variant="ghost" size="sm" onClick={() => void handleLeave()} className="-ml-2">
           <ArrowLeft size={16} aria-hidden="true" />
@@ -460,7 +473,7 @@ export default function ReportEntryPage() {
               state={saveState}
               savedAt={savedAt}
               onRetry={handleRetrySave}
-              className="pt-1"
+              className="pt-1 max-md:hidden"
             />
           )}
         </div>
@@ -790,6 +803,13 @@ export default function ReportEntryPage() {
                   role="group"
                   aria-label={`${entry.student_name}, ${index + 1} / ${entries.length}`}
                   tabIndex={-1}
+                  onFocusCapture={(e) => {
+                    // Klavye açılırken odaktaki alan görünür alanın ortasına gelsin.
+                    const t = e.target as HTMLElement;
+                    if (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT') {
+                      setTimeout(() => t.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 300);
+                    }
+                  }}
                   className="space-y-4 rounded-md border border-border bg-surface p-4 focus:outline-none"
                 >
                   <div>
@@ -914,26 +934,6 @@ export default function ReportEntryPage() {
                     />
                   </Field>
                 </div>
-
-                <div className="flex justify-between gap-3">
-                  <Button
-                    size="lg"
-                    disabled={index === 0}
-                    onClick={() => goToCard(index - 1)}
-                    className="flex-1"
-                  >
-                    Önceki
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="primary"
-                    disabled={index >= entries.length - 1}
-                    onClick={() => goToCard(index + 1)}
-                    className="flex-1"
-                  >
-                    Sonraki
-                  </Button>
-                </div>
               </div>
             );
           })()}
@@ -941,6 +941,7 @@ export default function ReportEntryPage() {
 
       {/* Tamamlama: tablonun/kartın hemen ardından — Tab ile son hücreden ulaşılır */}
       {!readOnly && report.status === 'draft' && (
+        <div ref={footerRef}>
         <Card padding="sm" className="flex flex-wrap items-center justify-between gap-3">
           <p className="tabular text-sm text-muted">
             <span className="font-medium text-text">
@@ -952,6 +953,62 @@ export default function ReportEntryPage() {
             {completing ? 'Tamamlanıyor…' : 'Raporu tamamla'}
           </Button>
         </Card>
+        </div>
+      )}
+
+      {/* Mobil sabit alt çubuk: kartlar arası gezinme + kaydetme durumu.
+          Klavye açıkken (not alanı odakta) hiç render edilmez → alanı/içeriği örtmez.
+          `env(safe-area-inset-bottom)` iOS ana ekran çubuğu/çentik payıdır. */}
+      {entries.length > 0 && !keyboardOpen && (
+        <div
+          data-testid="mobile-bar"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden"
+        >
+          <div className="mx-auto flex max-w-2xl items-center gap-2">
+            <Button
+              size="lg"
+              disabled={cardIndex === 0}
+              onClick={() => goToCard(cardIndex - 1)}
+              className="min-w-28"
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+              Önceki
+            </Button>
+            <div className="min-w-0 flex-1 text-center">
+              {!readOnly ? (
+                <SaveStatus
+                  state={saveState}
+                  savedAt={savedAt}
+                  onRetry={handleRetrySave}
+                  className="flex justify-center"
+                />
+              ) : null}
+            </div>
+            {cardIndex < lastIndex ? (
+              <Button
+                size="lg"
+                variant="primary"
+                onClick={() => goToCard(cardIndex + 1)}
+                className="min-w-28"
+              >
+                Sonraki
+                <ChevronRight size={18} aria-hidden="true" />
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                variant="primary"
+                onClick={() => {
+                  footerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className="min-w-28"
+              >
+                <ListChecks size={18} aria-hidden="true" />
+                Özet
+              </Button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

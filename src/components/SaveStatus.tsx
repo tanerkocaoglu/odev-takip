@@ -1,16 +1,35 @@
 /**
- * Otomatik kaydetme durumu — ekran okuyucuya `aria-live` ile duyurulur.
- * Dört durum ayırt edilir (renk + ikon + metin):
- *   idle    → boş (canlı bölge yerinde durur)
+ * Otomatik kaydetme durumu. Dört durum ayırt edilir (renk + ikon + metin):
+ *   idle    → boş
  *   saving  → "Kaydediliyor…"
  *   saved   → "Kaydedildi 14:32" (Europe/Istanbul)
  *   error   → "Kaydedilemedi" + "Yeniden dene"
+ *
+ * `SaveStatus` görsel kopyadır (birden çok yerde durabilir: başlık, mobil alt
+ * çubuk); ekran okuyucuya duyuru için sayfada TEK `SaveAnnouncer` bulunur
+ * (`aria-live`, görünmez) — çubuk klavye açılınca gizlense de duyuru sürer.
  */
 
 import { CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react';
 import { formatTime } from '../utils/date';
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+function saveStatusText(state: SaveState, savedAt: number | null): string {
+  if (state === 'saving') return 'Kaydediliyor…';
+  if (state === 'saved') return `Kaydedildi${savedAt ? ` ${formatTime(savedAt)}` : ''}`;
+  if (state === 'error') return 'Kaydedilemedi';
+  return '';
+}
+
+/** Görünmez `aria-live` bölgesi — sayfada bir kez. */
+export function SaveAnnouncer({ state, savedAt }: { state: SaveState; savedAt: number | null }) {
+  return (
+    <div role="status" aria-live="polite" className="sr-only">
+      {saveStatusText(state, savedAt)}
+    </div>
+  );
+}
 
 export default function SaveStatus({
   state,
@@ -24,7 +43,7 @@ export default function SaveStatus({
   className?: string;
 }) {
   return (
-    <div role="status" aria-live="polite" className={'text-[13px] ' + className}>
+    <div className={'text-[13px] ' + className}>
       {state === 'saving' && (
         <span className="inline-flex items-center gap-1.5 text-muted">
           <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />

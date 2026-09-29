@@ -44,7 +44,7 @@ export default function TeacherShell() {
   }
 
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-dvh bg-bg">
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-3 px-4">
           <Link to="/teacher" className="flex shrink-0 items-center">
@@ -60,7 +60,7 @@ export default function TeacherShell() {
                 end={end}
                 className={({ isActive }) =>
                   cx(
-                    'flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors',
+                    'flex h-9 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors',
                     isActive
                       ? 'bg-accent/10 text-accent'
                       : 'text-muted hover:bg-subtle hover:text-text',
@@ -75,7 +75,7 @@ export default function TeacherShell() {
 
           {user && (
             <div className="flex shrink-0 items-center gap-2">
-              <span className="hidden text-sm text-muted sm:inline">
+              <span className="hidden text-sm text-muted lg:inline">
                 {user.full_name} · {ROLE_LABELS[user.role] ?? user.role}
               </span>
               <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Çıkış">

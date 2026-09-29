@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ReportEntryPage from './pages/teacher/ReportEntryPage';
 
@@ -189,7 +189,7 @@ describe('kaydetme durumu', () => {
     await waitFor(() => expect(live).toHaveTextContent('Kaydedilemedi'));
 
     putShouldFail = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Yeniden dene' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Yeniden dene' })[0]);
     await waitFor(() => expect(live).toHaveTextContent(/Kaydedildi/));
     expect(putBodies.at(-1)).toMatchObject({
       entries: expect.arrayContaining([
@@ -331,5 +331,97 @@ describe('mobil: ders bilgileri katlanır', () => {
     expect(toggle).toHaveTextContent('Konu: Konu');
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('mobil sabit alt çubuk', () => {
+  function stubViewport(height: number) {
+    const listeners = new Set<() => void>();
+    const vv = {
+      height,
+      offsetTop: 0,
+      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+    };
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    return {
+      resize(h: number) {
+        vv.height = h;
+        act(() => listeners.forEach((cb) => cb()));
+      },
+    };
+  }
+
+  afterEach(() => {
+    Object.defineProperty(window, 'visualViewport', { value: undefined, configurable: true });
+  });
+
+  it('Önceki/Sonraki çubukta durur; iOS güvenli alan payını kullanır', async () => {
+    stubViewport(800);
+    renderPage();
+    await loaded();
+    const bar = screen.getByTestId('mobile-bar');
+    expect(bar.className).toContain('safe-area-inset-bottom');
+    expect(bar.className).toContain('fixed');
+    expect(bar.className).toContain('md:hidden');
+    expect(within(bar).getByRole('button', { name: /Önceki/ })).toBeDisabled();
+    expect(within(bar).getByRole('button', { name: /Sonraki/ })).toBeEnabled();
+  });
+
+  it('son kartta "Sonraki" yerine "Özet" gelir ve tamamlama özetine kaydırır', async () => {
+    stubViewport(800);
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderPage();
+    await loaded();
+    const bar = screen.getByTestId('mobile-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /Sonraki/ }));
+    expect(within(bar).queryByRole('button', { name: /Sonraki/ })).toBeNull();
+    fireEvent.click(within(bar).getByRole('button', { name: /Özet/ }));
+    expect(scroll).toHaveBeenCalled();
+    // "Raporu tamamla" tek kopyadır (çubukta yinelenmez)
+    expect(screen.getAllByRole('button', { name: 'Raporu tamamla' })).toHaveLength(1);
+  });
+
+  it('ekran klavyesi açılınca (not alanı odakta, görünür yükseklik < %80) çubuk kalkar; kapanınca döner', async () => {
+    const vp = stubViewport(800);
+    renderPage();
+    await loaded();
+    expect(screen.getByTestId('mobile-bar')).toBeInTheDocument();
+
+    const note = screen.getByLabelText('Not');
+    note.focus();
+    vp.resize(420); // klavye açıldı
+    await waitFor(() => expect(screen.queryByTestId('mobile-bar')).toBeNull());
+
+    vp.resize(800); // klavye kapandı
+    await waitFor(() => expect(screen.getByTestId('mobile-bar')).toBeInTheDocument());
+  });
+
+  it('metin alanı odakta değilken görünür yükseklik küçülse de (ör. adres çubuğu) çubuk kalır', async () => {
+    const vp = stubViewport(800);
+    renderPage();
+    await loaded();
+    (document.activeElement as HTMLElement | null)?.blur();
+    vp.resize(600);
+    expect(screen.getByTestId('mobile-bar')).toBeInTheDocument();
+  });
+
+  it('kaydetme durumu duyurusu tek aria-live bölgesinde; çubuk gizlense de sürer', async () => {
+    const vp = stubViewport(800);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderPage();
+    await loaded();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    screen.getByLabelText('Not').focus();
+    vp.resize(400);
+    fireEvent.change(screen.getByLabelText('Not'), { target: { value: 'not' } });
+    expect(screen.queryByTestId('mobile-bar')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Kaydediliyor…');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/Kaydedildi \d{2}:\d{2}/));
   });
 });

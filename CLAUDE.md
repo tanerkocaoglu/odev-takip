@@ -326,6 +326,7 @@ Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 | `useDialogBehavior` | Modal'ın odak/Escape mantığı; çekmece gibi yeni diyaloglar bunu KULLANIR, kendi focus trap'ini yazmaz |
 | `ToastProvider` + `useToast()` | `toast.success/error/info(mesaj)`; kısa işlem sonucu. Kalıcı hata için `FormError`/`InlineNotice` |
 | `LoadingState` (blok iskelet), `Skeleton`, `EmptyState`, `ErrorState` (`onRetry`), `FormError`, `InlineNotice` (`tone`) | yükleniyor / boş / hata durumları |
+| `FilterChipRow` | mobil yatay çip şeridi (etiketli) |
 | `PageTitle`, `PageHeader` | sayfa başlığı (+ açıklama + sağda eylemler) |
 | `Pagination` | 200 kayıtlık listelerde zorunlu |
 | `BrandLogo` (`components/BrandLogo.tsx`) | **tek logo bileşeni**; resim dosyası yok (SVG işaret + canlı metin). `size` sm/md/lg, `variant` full/mark, `tone` default/inverse, `responsive` |
@@ -335,6 +336,35 @@ Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 `text-[Npx]` keyfi boyut; `rounded-xl/2xl/3xl`; hover'da `translate`; `window.confirm/alert`
 (yerine `ConfirmDialog`/`toast`); placeholder'ı etiket yerine kullanmak;
 `components/admin/ui.tsx`'ten yeni import (geçiş katmanı).
+
+### Rapor giriş ekranı (`ReportEntryPage`) — ürün gereği kurallar
+
+Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entry.test.tsx`, `teacher.test.tsx`):
+- **Masaüstü tablo klavye modeli:** Enter = aynı sütunda bir satır aşağı; ok tuşları
+  hücreler arasında (select içinde ok tuşları select'e aittir); puan hücresi
+  `type=number` (rakam yazılır, `10` = "1" sonra "0"; değer 1–10'a kırpılır,
+  odakta içerik seçilir). **Bu davranışa dokunulmaz.** Tablo hücrelerinin
+  erişilebilir adı `"<alan> — <öğrenci>"` biçimindedir.
+- **Devamsız/izinli satırda yalnızca ders içi performans kapanır ve `null` olur;
+  ödev puanı her durumda girilir** (spec §4).
+- **Mobil kart** (<768px): öğrenci başına kart; 1–10 seçici `ScoreRadioGroup`
+  (TEK radiogroup, roving tabindex → grup başına 1 Tab durağı, ok/Home/End/rakam
+  tuşları, 5×2 44px). Kart alanlarının erişilebilir adları `Devamsızlık`,
+  `Ödev puanı`, `Ders içi performans puanı`, `Not` (tek kopya).
+- **Otomatik kaydetme:** debounce 2 sn. Kart değiştirme ("Önceki/Sonraki"),
+  "Geri dön" ve sayfadan ayrılma bekleyen kaydı **hemen flush eder**
+  (`flushPending`). Kaydedilemezse "Geri dön" bir kez uyarır.
+- **Kaydetme durumu:** `SaveStatus` (görsel kopya) + sayfada tek `SaveAnnouncer`
+  (`aria-live`): "Kaydediliyor…" / "Kaydedildi 14:32" (Europe/Istanbul) /
+  "Kaydedilemedi" + "Yeniden dene".
+- **Sabit alt çubuk (mobil):** `fixed bottom-0`, `pb-[max(0.5rem,env(safe-area-inset-bottom))]`,
+  içerik altında `pb-[calc(5rem+env(safe-area-inset-bottom))]`. Ekran klavyesi açıkken
+  (`useKeyboardOpen`: düzenlenebilir alan odakta + görünür yükseklik %80 altı)
+  çubuk **hiç render edilmez**. Son kartta "Sonraki" yerine "Özet" (tamamlama
+  özetine kaydırır). "Raporu tamamla" sayfada TEK kopyadır (tablo/kartın ardında).
+- Durum banner'ları `InlineNotice`: başlamamış hafta (info), sent kilitli (success),
+  admin düzenlemesi (success), completed düzenleme bilgisi (info), son hafta (warning),
+  hafta tanımı hatalı (danger).
 
 ### Yükleniyor / hata / boş
 
