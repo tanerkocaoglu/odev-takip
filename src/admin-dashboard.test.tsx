@@ -80,7 +80,7 @@ describe('AdminDashboardPage — henüz başlamamış hafta', () => {
     ).toBeInTheDocument();
 
     // Matris sekmesi: boş ders "Eksik" değil "Henüz başlamadı".
-    fireEvent.click(screen.getByRole('button', { name: 'Tam matris' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Tam matris/ }));
     await waitFor(() => {
       expect(screen.getAllByText('Henüz başlamadı').length).toBeGreaterThan(0);
     });

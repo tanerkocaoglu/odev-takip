@@ -75,7 +75,7 @@ describe('AdminDashboardPage — riskli öğrenciler sekmesi', () => {
       fetchMock.mock.calls.some(([u]) => String(u).includes('/admin/dashboard/risk')),
     ).toBe(false);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Riskli öğrenciler' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Riskli öğrenciler/ }));
 
     await waitFor(() => {
       expect(screen.getByText('Riskli Ogrenci')).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe('AdminDashboardPage — riskli öğrenciler sekmesi', () => {
       expect(screen.getByText('Panel')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Riskli öğrenciler' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Riskli öğrenciler/ }));
 
     await waitFor(() => {
       expect(
@@ -130,7 +130,7 @@ describe('AdminDashboardPage — riskli öğrenciler sekmesi', () => {
       expect(screen.getByText('Panel')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Riskli öğrenciler' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Riskli öğrenciler/ }));
 
     await waitFor(() => {
       expect(
