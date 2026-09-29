@@ -5,6 +5,22 @@
 
 ---
 
+## Yeniden tasarım — Parti 6c: veli/rapor/gönderim/özet ✅
+
+**Sayfalar (ayrı commit):** Veliler, Raporlar + rapor görünümü, Gönderim, Ödev özeti; Panel yedek hatası. Audit log sayfası yok (yalnızca sunucu tarafı).
+**Teşhis (Eğitim yılı Düzenle):** main'de de POST idi (yeniden yazım getirmedi); backend'de PATCH /admin/academic-years/:id var →
+frontend PATCH'e bağlandı (yalnızca değişen alanlar; ad çakışması alanın altında). Hafta durumu rozeti kapsam dışı bırakıldı.
+**Kararlar:** Gönderim'de ana eylem (Gönder/Yeniden gönder) satırda görünür (tıklama sayısı artmadı; menüde yalnızca "Bağlantıyı iptal et");
+iptal artık ConfirmDialog (kim/hafta/sınıf + "kalıcı geçersiz, 410"); gönder sonrası odak sıradaki "Gönder"e; önizleme modal.
+`ReportSnapshot` artık veli bileşenleriyle aynı (renkli yan çizgiler kalktı). Ödev özeti PNG 720→400px (WhatsApp'ta okunur),
+ders başına blok, sahte italik kaldırıldı; yazı tipi gömme doğrulandı (font engellenince DejaVu'ya düşüyor, normalde IBM Plex).
+Atamalar tepsisi 375'te ~94px. Yedek 429 → "bir saat sonra dene / son yedeği kullan". Shim'ler (admin/ui, Modal, Pagination) SİLİNDİ.
+**Parti 7 ölçümü:** `brand-panel` 1 (LoginPage) + index.css `brand-*`/`--brand*`/`elevation-*` tanımları; `att-*`/`status-*` 5 satır (DashboardPage) +
+tailwind.config takma adları; `text-[11px]` 3 (SubmissionFileGrid), `text-[12px]` 4 (HomeworkAttachments); hex: BrandLogo (SVG), PNG arka planı.
+**Doğrulama:** frontend 261/261; typecheck/lint/build temiz; 200 kayıtlı seed ile 1280/768/375.
+
+---
+
 ## Yeniden tasarım — Parti 6b: kurulum sayfaları ✅
 
 **Düzeltmeler:** Panel sekmeleri 375'te kısa etiket (Eksik/Matris/Riskli; tam ad + sayı `aria-label`), kaydırmasız
@@ -17,10 +33,8 @@ silme hatası da bunu kullanır — 6a'da listeyi ErrorState ile değiştiriyord
 **Kararlar:** Öğretmen silme 409 → sunucu mesajı + "Atamaları devret" / "Atamalara git". Devretme ve takas artık
 ConfirmDialog ile onaylanır: kim kimin yerine geçiyor, kaç atama etkilenir, "tek işlemde; başarısız olursa hiçbiri".
 Atamalar seçim tepsisi (Seçili N/2, seçili atamalar chip, tek tek kaldır, sabit). Haftalar: tarihler gg.aa.yyyy, 400
-hatası alanın altında, etiket sunucudan. **Haftalar'da durum rozeti (geçmiş/şimdiki/başlamamış) YOK:** API hafta
-durumu döndürmüyor ve frontend'de tarih/gün hesabı yapılmayacağı kuralı var (backend alanı gerekir — açık karar).
-**Bulgu (davranış değişmedi):** Eğitim yılı "Düzenle" formu önceden doldurup POST (yeni yıl oluşturma) yapıyor; PATCH
-akışı yok — ürün kararı bekliyor.
+hatası alanın altında, etiket sunucudan. Hafta durumu rozeti (geçmiş/şimdiki/başlamamış) kapsam dışı bırakıldı (spec'te yok, backend alanı gerektirir).
+**Bulgu:** Eğitim yılı "Düzenle" POST yapıyordu (6c'de PATCH'e bağlandı).
 **Doğrulama:** frontend 247/247 (+31: row-menu/students hariç yeni `admin-schools` 4, `admin-crud-pages` 4,
 `admin-weeks` +3, `admin-swap` +2 ve genişletilmiş takas/devir onayı, `ui` +2); mevcut testlerde yalnızca
 seçici/adım güncellendi (Panel `tab`, Öğretmenler/Haftalar menü + "Haftayı kaydet", takas onayı window.confirm→diyalog).

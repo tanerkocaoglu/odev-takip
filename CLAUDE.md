@@ -68,8 +68,7 @@ Hâlihazırda süreç Excel ile yürüyor. Sistemin tek gerçek rakibi o Excel d
       /ui                → ORTAK BİLEŞENLER (Button, Field/Input, Badge, Card, TableCard,
                            Tabs, Modal, ConfirmDialog, Toast, Feedback, Pagination, ...)
                            index.ts giriş noktası — bkz. "Tasarım sistemi"
-      /admin             → AdminLayout, HomeworkSummarySheet; Modal.tsx, Pagination.tsx,
-                           ui.tsx = ui/'a yönlenen GEÇİŞ katmanı (Parti 7'de silinir)
+      /admin             → AdminLayout, HomeworkSummarySheet (geçiş katmanı ui.tsx/Modal/Pagination SİLİNDİ)
       /layout            → AppLayout, TeacherShell, CustomerShell, PublicShell
       BrandLogo.tsx   ImageLightbox.tsx   ProtectedRoute.tsx
       ReportSnapshot.tsx   SubmissionFileGrid.tsx
@@ -328,7 +327,7 @@ Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 | `LoadingState` (blok iskelet), `Skeleton`, `EmptyState`, `ErrorState` (`onRetry`), `FormError`, `InlineNotice` (`tone`) | yükleniyor / boş / hata durumları |
 | `FilterChipRow` | mobil yatay çip şeridi (etiketli) |
 | `PageTitle`, `PageHeader` | sayfa başlığı (+ açıklama + sağda eylemler) |
-| `DataTable` + `ListState` | admin liste deseni: masaüstü compact tablo, dar ekran (<768px) KART listesi (yatay kaydırma yok; karşılaştırmalı dar tablolar için `mobile="scroll"`). İşlem sütunu sağda sabit. `select` prop'u satır seçimi (onay kutusu) ekler. `ListState` yükleniyor/hata(+yeniden dene)/boş'u sarar |
+| `DataTable` + `ListState` | admin liste deseni: masaüstü compact tablo, dar ekran (<768px) KART listesi (yatay kaydırma yok; karşılaştırmalı dar tablolar için `mobile="scroll"`). İşlem sütunu sağda sabit. `select` satır seçimi (onay kutusu), `rowAction` görünür ana eylem (ör. "Gönder"; menüden önce), `Column.wrap` uzun ad için satır atlama ekler. `ListState` yükleniyor/hata(+yeniden dene)/boş'u sarar |
 | `RowMenu` | satır eylemleri tek "⋯" menüsünde (klavye: Enter/↑/↓ açar, ↑↓/Home/End/harf gezer, Escape kapatır, odak tetikleyiciye döner). Yıkıcı eylem `danger` (ayırıcıdan sonra) ve menü ASLA doğrudan silmez → `ConfirmDialog` |
 | `ActionError` | listeyi bozmayan eylem hatası (silme reddedildi…): mesaj + `children` ile çıkış yolu, "Kapat". Yükleme hatası için `ListState`/`ErrorState` |
 | `Toolbar`, `FormActions` | liste araç çubuğu (solda arama/filtre, sağda eylemler) ve form alt eylem satırı |
@@ -339,8 +338,7 @@ Yeni kodda import: `from '../../components/ui'` (yol dosyaya göre).
 **Yasaklar:** ham `<button className="...">` ile buton yeniden icat etmek;
 `logo.png` veya başka logo resmi eklemek; sayfada renk/hex/`rgb()` tanımlamak;
 `text-[Npx]` keyfi boyut; `rounded-xl/2xl/3xl`; hover'da `translate`; `window.confirm/alert`
-(yerine `ConfirmDialog`/`toast`); placeholder'ı etiket yerine kullanmak;
-`components/admin/ui.tsx`'ten yeni import (geçiş katmanı).
+(yerine `ConfirmDialog`/`toast`); placeholder'ı etiket yerine kullanmak.
 
 ### Rapor giriş ekranı (`ReportEntryPage`) — ürün gereği kurallar
 
@@ -392,7 +390,7 @@ Bu ekran tasarım değişse de şu davranışları korur (testleri: `report-entr
   (varlık sızmaz); ekran ikisini ayırt etmez. Testlerde geçerli biçimli 43 karakterlik token kullan.
 - **Aydınlatma metni içeriği değiştirilmez** (yalnızca sunum). Yazdırma: `nav` ve üst şerit gizlenir,
   ders kartları sayfa ortasında bölünmez (`break-inside-avoid`).
-- `ReportSnapshot` (admin gönderim önizlemesi) veri biçimi sabittir; görünümü Parti 6'da gözden geçirilir.
+- `ReportSnapshot` (admin gönderim önizlemesi) veli tarafıyla AYNI bileşenleri çizer (`ReportCover` + `CourseReportCard`; admin eklentileri: `action`, ödev dosyaları); veri biçimi sabittir.
 
 ### Öğrenci ekranı (Parti 5)
 

@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { AttendanceBadge, StatusBadge } from './components/admin/ui';
+import { AttendanceBadge, StatusBadge } from './components/ui';
 
 function classOf(node: HTMLElement) {
   return node.firstElementChild?.className ?? '';
