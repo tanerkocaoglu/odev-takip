@@ -62,6 +62,7 @@ export default function TeachersPage() {
   const [targetTeacherId, setTargetTeacherId] = useState('');
   const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferConfirmOpen, setTransferConfirmOpen] = useState(false);
 
   useEffect(() => {
     adminApi.teachers
@@ -147,22 +148,34 @@ export default function TeachersPage() {
     }
   }
 
-  async function handleTransfer(event: FormEvent) {
+  /** Form gönderimi devri yapmaz: önce kim kimin yerine geçiyor + kaç atama özeti onaylanır. */
+  function requestTransfer(event: FormEvent) {
     event.preventDefault();
+    if (!transferTeacher || !targetTeacherId) return;
+    setTransferError(null);
+    setTransferConfirmOpen(true);
+  }
+
+  async function handleTransfer() {
     if (!transferTeacher) return;
     setTransferSubmitting(true);
     setTransferError(null);
     try {
       await adminApi.teachers.transferAssignments(transferTeacher.id, targetTeacherId);
+      setTransferConfirmOpen(false);
       setTransferTeacher(null);
       setTargetTeacherId('');
       await reload();
     } catch (err) {
+      // Hata, devir formunda gösterilir (onay diyaloğu kapanır; seçim korunur).
+      setTransferConfirmOpen(false);
       setTransferError(err instanceof ApiClientError ? err.message : 'Devir yapılamadı.');
     } finally {
       setTransferSubmitting(false);
     }
   }
+
+  const transferTarget = allTeachers.find((t) => t.id === targetTeacherId);
 
   return (
     <div className="space-y-4">
@@ -292,11 +305,11 @@ export default function TeachersPage() {
       </Modal>
 
       <Modal
-        open={transferTeacher !== null}
+        open={transferTeacher !== null && !transferConfirmOpen}
         title={`${transferTeacher?.full_name ?? ''} — atamaları devret`}
         onClose={() => setTransferTeacher(null)}
       >
-        <form onSubmit={handleTransfer} className="space-y-4">
+        <form onSubmit={requestTransfer} className="space-y-4">
           <p className="text-sm text-muted">
             {transferCount > 0 ? (
               <>
@@ -339,6 +352,29 @@ export default function TeachersPage() {
           </FormActions>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={transferConfirmOpen && !!transferTeacher && !!transferTarget}
+        title="Atamaları devret"
+        confirmLabel="Atamaları devret"
+        danger={false}
+        loading={transferSubmitting}
+        onConfirm={() => void handleTransfer()}
+        onCancel={() => setTransferConfirmOpen(false)}
+      >
+        <div className="space-y-2">
+          <p>
+            <strong className="text-text">{transferTeacher?.full_name}</strong> öğretmeninin tüm
+            atamaları <strong className="text-text">{transferTarget?.full_name}</strong> öğretmenine
+            geçecek.
+          </p>
+          <p>
+            Etkilenen atama: <span className="tabular font-medium text-text">{transferCount}</span>.
+            Devir tek işlemde yapılır; başarısız olursa hiçbir atama değişmez. Sonrasında{' '}
+            {transferTeacher?.full_name} öğretmeninin ataması kalmaz.
+          </p>
+        </div>
+      </ConfirmDialog>
 
       <Modal open={resetId !== null} title="Şifre sıfırla" onClose={() => setResetId(null)}>
         <form onSubmit={handleReset} className="space-y-4">

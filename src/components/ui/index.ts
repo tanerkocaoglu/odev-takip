@@ -37,6 +37,6 @@ export { default as Pagination } from './Pagination';
 export { useDialogBehavior } from './useDialogBehavior';
 export { cx } from './cx';
 export { RowMenu, type RowMenuItem } from './RowMenu';
-export { DataTable, ListState, type Column } from './DataTable';
+export { DataTable, ListState, type Column, type RowSelect } from './DataTable';
 export { Toolbar, FormActions } from './Toolbar';
 export { StatCard } from './StatCard';

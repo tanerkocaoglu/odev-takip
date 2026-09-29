@@ -5,6 +5,31 @@
 
 ---
 
+## Yeniden tasarım — Parti 6b: kurulum sayfaları ✅
+
+**Düzeltmeler:** Panel sekmeleri 375'te kısa etiket (Eksik/Matris/Riskli; tam ad + sayı `aria-label`), kaydırmasız
+(320'de de sığar). `SearchBox`: yerel "×" gizli, kendi temizleme düğmesi (etiketli, ≥44px mobil); tüm aramalar
+tek bileşenden (shim de aynı bileşeni yeniden export eder).
+**Sayfalar (her biri ayrı commit):** Okullar, Öğretmenler, Sınıflar, Dersler, Eğitim yılı, Haftalar, Atamalar —
+`DataTable`/`RowMenu`/`ListState`/`Toolbar`/`FormActions`; `window.confirm` kalmadı (ConfirmDialog, eylem adlı düğme).
+**Yeni desenler (2):** `ActionError` (silme/eylem hatası listeyi bozmadan, çıkış yolu düğmeleriyle; Öğrenciler'deki
+silme hatası da bunu kullanır — 6a'da listeyi ErrorState ile değiştiriyordu) ve `DataTable select` (satır seçimi).
+**Kararlar:** Öğretmen silme 409 → sunucu mesajı + "Atamaları devret" / "Atamalara git". Devretme ve takas artık
+ConfirmDialog ile onaylanır: kim kimin yerine geçiyor, kaç atama etkilenir, "tek işlemde; başarısız olursa hiçbiri".
+Atamalar seçim tepsisi (Seçili N/2, seçili atamalar chip, tek tek kaldır, sabit). Haftalar: tarihler gg.aa.yyyy, 400
+hatası alanın altında, etiket sunucudan. **Haftalar'da durum rozeti (geçmiş/şimdiki/başlamamış) YOK:** API hafta
+durumu döndürmüyor ve frontend'de tarih/gün hesabı yapılmayacağı kuralı var (backend alanı gerekir — açık karar).
+**Bulgu (davranış değişmedi):** Eğitim yılı "Düzenle" formu önceden doldurup POST (yeni yıl oluşturma) yapıyor; PATCH
+akışı yok — ürün kararı bekliyor.
+**Doğrulama:** frontend 247/247 (+31: row-menu/students hariç yeni `admin-schools` 4, `admin-crud-pages` 4,
+`admin-weeks` +3, `admin-swap` +2 ve genişletilmiş takas/devir onayı, `ui` +2); mevcut testlerde yalnızca
+seçici/adım güncellendi (Panel `tab`, Öğretmenler/Haftalar menü + "Haftayı kaydet", takas onayı window.confirm→diyalog).
+typecheck/lint/build temiz. Okullar yükleniyor/hata durumları Chromium'da gecikme+abort ile görsel doğrulandı.
+**Shim bağımlıları (6c'de silinecek):** `AdminReportsPage`, `AdminReportViewPage`, `DigestSendPage`, `GuardiansPage`,
+`HomeworkSummaryPage`, `ReportSnapshot` (+ `admin-badges.test`).
+
+---
+
 ## Yeniden tasarım — Parti 6a: admin liste deseni + Panel + Öğrenciler ✅
 
 **Kapsam:** ortak liste/menü/form bileşenleri (`RowMenu`, `DataTable`, `ListState`, `Toolbar`, `FormActions`,

@@ -33,12 +33,33 @@ export interface Column<T> {
   className?: string;
 }
 
+/** Satır seçimi (ör. takas için iki atama): onay kutusu tablo ilk sütununda / kart sol üstte. */
+export interface RowSelect<T> {
+  isSelected: (row: T) => boolean;
+  onToggle: (row: T) => void;
+  /** Onay kutusunun erişilebilir adı ("OKLID · Cebir seç"). */
+  label: (row: T) => string;
+}
+
+function SelectBox<T>({ select, row }: { select: RowSelect<T>; row: T }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={select.label(row)}
+      checked={select.isSelected(row)}
+      onChange={() => select.onToggle(row)}
+      className="h-4 w-4 shrink-0 accent-accent"
+    />
+  );
+}
+
 export function DataTable<T>({
   rows,
   columns,
   rowKey,
   rowLabel,
   actions,
+  select,
   mobile = 'cards',
 }: {
   rows: T[];
@@ -47,6 +68,7 @@ export function DataTable<T>({
   /** Satırın kısa adı — menü düğmesinin erişilebilir adı için ("Ali Yılmaz için işlemler"). */
   rowLabel: (row: T) => string;
   actions?: (row: T) => RowMenuItem[];
+  select?: RowSelect<T>;
   mobile?: 'cards' | 'scroll';
 }) {
   const isMobile = useIsMobile();
@@ -58,14 +80,24 @@ export function DataTable<T>({
       <ul className="space-y-2">
         {rows.map((row) => (
           <li key={rowKey(row)}>
-            <Card padding="sm">
+            <Card
+              padding="sm"
+              className={select?.isSelected(row) ? '!border-accent bg-accent/5' : undefined}
+            >
               <div
                 className={cx(
                   'flex justify-between gap-2',
                   meta.length === 0 ? 'items-center' : 'items-start',
                 )}
               >
-                <div className="min-w-0 text-sm font-medium text-text">{titleCol.cell(row)}</div>
+                {select && (
+                  <label className="-m-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center">
+                    <SelectBox select={select} row={row} />
+                  </label>
+                )}
+                <div className="min-w-0 flex-1 text-sm font-medium text-text">
+                  {titleCol.cell(row)}
+                </div>
                 {actions && <RowMenu label={rowLabel(row)} items={actions(row)} />}
               </div>
               {meta.length > 0 && (
@@ -92,6 +124,11 @@ export function DataTable<T>({
       <table className="w-full">
         <thead>
           <tr className="border-b border-border bg-subtle">
+            {select && (
+              <th className={cx(thClass(), 'w-10')}>
+                <span className="sr-only">Seç</span>
+              </th>
+            )}
             {columns.map((c) => (
               <th key={c.key} className={cx(thClass(), 'whitespace-nowrap')}>
                 {c.header}
@@ -106,7 +143,18 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-b border-border last:border-b-0">
+            <tr
+              key={rowKey(row)}
+              className={cx(
+                'border-b border-border last:border-b-0',
+                select?.isSelected(row) && 'bg-accent/5',
+              )}
+            >
+              {select && (
+                <td className={cx(tdClass(), 'w-10')}>
+                  <SelectBox select={select} row={row} />
+                </td>
+              )}
               {columns.map((c) => (
                 <td key={c.key} className={cx(tdClass(), 'whitespace-nowrap', c.className)}>
                   {c.cell(row)}
