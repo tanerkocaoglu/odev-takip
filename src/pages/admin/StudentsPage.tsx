@@ -13,6 +13,7 @@ import { defaultSelectableWeekId, isWeekPast } from '../../utils/weeks';
 import { useList } from '../../hooks/useList';
 import {
   Button,
+  ActionError,
   ConfirmDialog,
   CountChip,
   DataTable,
@@ -35,7 +36,7 @@ export default function StudentsPage() {
   const [classFilter, setClassFilter] = useState('');
   const [schools, setSchools] = useState<School[]>([]);
 
-  const { items, total, page, pageSize, loading, error, setError, q, setQ, setPage, reload } =
+  const { items, total, page, pageSize, loading, error, q, setQ, setPage, reload } =
     useList<Student>((params) =>
       adminApi.students.list({ ...params, classId: classFilter || undefined }),
     );
@@ -100,6 +101,7 @@ export default function StudentsPage() {
   // ---------- Silme onayı ----------
   const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     adminApi.academicYears.list().then(async (yearData) => {
@@ -340,11 +342,11 @@ export default function StudentsPage() {
 
   async function handleExport() {
     setExporting(true);
-    setError(null);
+    setActionError(null);
     try {
       await adminApi.exports.students({ q, classId: classFilter || undefined });
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
+      setActionError(err instanceof ApiClientError ? err.message : 'CSV indirilemedi.');
     } finally {
       setExporting(false);
     }
@@ -370,7 +372,7 @@ export default function StudentsPage() {
       await reload();
     } catch (err) {
       setDeleteStudent(null);
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setActionError(err instanceof ApiClientError ? err.message : 'Öğrenci silinemedi.');
     } finally {
       setDeleting(false);
     }
@@ -462,6 +464,8 @@ export default function StudentsPage() {
           </>
         }
       />
+
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
 
       <ListState
         loading={loading}

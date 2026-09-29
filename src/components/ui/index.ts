@@ -30,6 +30,7 @@ export {
   ErrorState,
   FormError,
   InlineNotice,
+  ActionError,
 } from './Feedback';
 export { PageTitle, PageHeader } from './PageHeader';
 export { default as Pagination } from './Pagination';

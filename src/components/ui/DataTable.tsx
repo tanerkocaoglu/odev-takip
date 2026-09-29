@@ -59,7 +59,12 @@ export function DataTable<T>({
         {rows.map((row) => (
           <li key={rowKey(row)}>
             <Card padding="sm">
-              <div className="flex items-start justify-between gap-2">
+              <div
+                className={cx(
+                  'flex justify-between gap-2',
+                  meta.length === 0 ? 'items-center' : 'items-start',
+                )}
+              >
                 <div className="min-w-0 text-sm font-medium text-text">{titleCol.cell(row)}</div>
                 {actions && <RowMenu label={rowLabel(row)} items={actions(row)} />}
               </div>
@@ -68,7 +73,9 @@ export function DataTable<T>({
                   {meta.map((c) => (
                     <div key={c.key} className="contents">
                       <dt className="text-muted">{c.header}</dt>
-                      <dd className={cx('min-w-0 break-words text-text', c.className)}>{c.cell(row)}</dd>
+                      <dd className={cx('min-w-0 break-words text-text', c.className)}>
+                        {c.cell(row)}
+                      </dd>
                     </div>
                   ))}
                 </dl>

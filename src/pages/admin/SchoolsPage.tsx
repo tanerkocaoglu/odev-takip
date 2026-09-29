@@ -6,30 +6,46 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { School } from '../../types';
 import { adminApi, ApiClientError } from '../../services/api';
-import Modal from '../../components/admin/Modal';
 import {
-  DangerButton,
-  EmptyState,
+  ActionError,
+  Button,
+  ConfirmDialog,
+  CountChip,
+  DataTable,
   Field,
-  FormError,
-  LoadingState,
-  PrimaryButton,
+  FormActions,
+  Input,
+  ListState,
+  Modal,
   SearchBox,
-  SecondaryButton,
-  inputClass,
-} from '../../components/admin/ui';
+  Toolbar,
+  type Column,
+} from '../../components/ui';
+
+const COLUMNS: Column<School>[] = [
+  {
+    key: 'name',
+    header: 'Okul',
+    card: 'title',
+    cell: (s) => <span className="font-medium">{s.name}</span>,
+  },
+];
 
 export default function SchoolsPage() {
   const [items, setItems] = useState<School[] | null>(null);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [deleteSchool, setDeleteSchool] = useState<School | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,7 +54,11 @@ export default function SchoolsPage() {
       const res = await adminApi.schools.list(q || undefined);
       setItems(res.items);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Okullar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      );
     } finally {
       setLoading(false);
     }
@@ -75,89 +95,107 @@ export default function SchoolsPage() {
       setFormOpen(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setFormError(err instanceof ApiClientError ? err.message : 'Okul kaydedilemedi.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(school: School) {
-    if (!window.confirm(`${school.name} silinsin mi?`)) return;
+  async function handleDelete() {
+    if (!deleteSchool) return;
+    setDeleting(true);
+    setActionError(null);
     try {
-      await adminApi.schools.remove(school.id);
+      await adminApi.schools.remove(deleteSchool.id);
+      setDeleteSchool(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : 'Bir hata oluştu.');
+      setDeleteSchool(null);
+      setActionError(err instanceof ApiClientError ? err.message : 'Okul silinemedi.');
+    } finally {
+      setDeleting(false);
     }
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <SearchBox value={q} onChange={setQ} placeholder="Okul ara…" />
-        <PrimaryButton onClick={openCreate}>Yeni okul</PrimaryButton>
-      </div>
+      <Toolbar
+        filters={
+          <>
+            <SearchBox value={q} onChange={setQ} placeholder="Okul ara…" label="Okul ara" />
+            {items && !loading && !error && (
+              <p className="flex items-center gap-1.5 pb-2 text-[13px] text-muted">
+                <CountChip value={items.length} /> okul
+              </p>
+            )}
+          </>
+        }
+        actions={
+          <Button variant="primary" onClick={openCreate}>
+            Yeni okul
+          </Button>
+        }
+      />
 
-      <FormError message={error} />
+      <ActionError message={actionError} onDismiss={() => setActionError(null)} />
 
-      {loading ? (
-        <LoadingState />
-      ) : !items || items.length === 0 ? (
-        <EmptyState message="Okul bulunamadı. Öğrenci formundan da okul ekleyebilirsiniz." />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-bg text-left text-xs font-medium text-muted">
-              <tr>
-                <th className="px-3 py-2">Okul</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((school) => (
-                <tr key={school.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-text">{school.name}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(school)}
-                      className="mr-3 text-sm font-medium text-muted hover:text-text"
-                    >
-                      Düzenle
-                    </button>
-                    <DangerButton onClick={() => handleDelete(school)}>Sil</DangerButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ListState
+        loading={loading}
+        error={error}
+        onRetry={() => void load()}
+        empty={!items || items.length === 0}
+        emptyMessage="Okul bulunamadı. Öğrenci formundan da okul ekleyebilirsiniz."
+        emptyAction={
+          <Button variant="primary" onClick={openCreate}>
+            Yeni okul
+          </Button>
+        }
+      >
+        <DataTable
+          rows={items ?? []}
+          columns={COLUMNS}
+          rowKey={(s) => s.id}
+          rowLabel={(s) => s.name}
+          actions={(s) => [
+            { label: 'Düzenle', onSelect: () => openEdit(s) },
+            { label: 'Sil', danger: true, onSelect: () => setDeleteSchool(s) },
+          ]}
+        />
+      </ListState>
+
+      <ConfirmDialog
+        open={deleteSchool !== null}
+        title="Okulu sil"
+        confirmLabel="Okulu sil"
+        loading={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteSchool(null)}
+      >
+        {deleteSchool?.name} silinsin mi?
+      </ConfirmDialog>
 
       <Modal
         open={formOpen}
         title={editId ? 'Okulu düzenle' : 'Yeni okul'}
         onClose={() => setFormOpen(false)}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Okul adı" htmlFor="school-name">
-            <input
+        <form onSubmit={handleSubmit}>
+          <Field label="Okul adı" htmlFor="school-name" error={formError ?? undefined}>
+            <Input
               id="school-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
               minLength={1}
-              className={inputClass}
               placeholder="Örn. Örnek Okul 1"
             />
           </Field>
-          <FormError message={formError} />
-          <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setFormOpen(false)}>İptal</SecondaryButton>
-            <PrimaryButton type="submit" disabled={submitting}>
-              {submitting ? 'Kaydediliyor…' : 'Kaydet'}
-            </PrimaryButton>
-          </div>
+          <FormActions>
+            <Button onClick={() => setFormOpen(false)}>İptal</Button>
+            <Button variant="primary" type="submit" loading={submitting}>
+              {editId ? 'Okulu kaydet' : 'Okulu ekle'}
+            </Button>
+          </FormActions>
         </form>
       </Modal>
     </div>

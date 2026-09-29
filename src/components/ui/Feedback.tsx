@@ -7,7 +7,15 @@
  */
 
 import type { ReactNode } from 'react';
-import { CircleAlert, CircleCheck, Info, Inbox, TriangleAlert, type LucideIcon } from 'lucide-react';
+import {
+  CircleAlert,
+  CircleCheck,
+  Info,
+  Inbox,
+  TriangleAlert,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { Button } from './Button';
 import { cx } from './cx';
 
@@ -50,13 +58,7 @@ export function EmptyState({
   );
 }
 
-export function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry?: () => void;
-}) {
+export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div
       role="alert"
@@ -108,6 +110,42 @@ export function InlineNotice({
     <div className={cx('flex items-start gap-2 rounded-md border px-3 py-2 text-sm', cls)}>
       <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
       <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Listeyi bozmayan eylem hatası (silme reddedildi, kayıt çakıştı…). Liste yerinde kalır;
+ * mesaj ne olduğunu söyler, `children` (bağlantı/düğme) çıkış yolunu sunar, "Kapat" ile kalkar.
+ */
+export function ActionError({
+  message,
+  onDismiss,
+  children,
+}: {
+  message: string | null;
+  onDismiss: () => void;
+  children?: ReactNode;
+}) {
+  if (!message) return null;
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger"
+    >
+      <CircleAlert size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{message}</p>
+        {children && <div className="mt-1.5 flex flex-wrap gap-2">{children}</div>}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Hatayı kapat"
+        className="-my-1 -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-danger transition-colors hover:bg-danger/10 max-md:h-11 max-md:w-11"
+      >
+        <X size={15} aria-hidden="true" />
+      </button>
     </div>
   );
 }
