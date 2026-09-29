@@ -449,7 +449,7 @@ export default function ReportEntryPage() {
       className={cx(
         'space-y-3',
         // Sabit alt çubuğun altında içerik kalmasın (klavye açıkken çubuk yoktur).
-        !keyboardOpen && 'max-md:pb-[calc(5rem+env(safe-area-inset-bottom))]',
+        !keyboardOpen && 'max-md:pb-[calc(7rem+env(safe-area-inset-bottom))]',
       )}
     >
       {!readOnly && <SaveAnnouncer state={saveState} savedAt={savedAt} />}
@@ -964,49 +964,49 @@ export default function ReportEntryPage() {
           data-testid="mobile-bar"
           className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden"
         >
-          <div className="mx-auto flex max-w-2xl items-center gap-2">
-            <Button
-              size="lg"
-              disabled={cardIndex === 0}
-              onClick={() => goToCard(cardIndex - 1)}
-              className="min-w-28"
-            >
-              <ChevronLeft size={18} aria-hidden="true" />
-              Önceki
-            </Button>
-            <div className="min-w-0 flex-1 text-center">
-              {!readOnly ? (
-                <SaveStatus
-                  state={saveState}
-                  savedAt={savedAt}
-                  onRetry={handleRetrySave}
-                  className="flex justify-center"
-                />
-              ) : null}
-            </div>
-            {cardIndex < lastIndex ? (
-              <Button
-                size="lg"
-                variant="primary"
-                onClick={() => goToCard(cardIndex + 1)}
-                className="min-w-28"
-              >
-                Sonraki
-                <ChevronRight size={18} aria-hidden="true" />
-              </Button>
-            ) : (
-              <Button
-                size="lg"
-                variant="primary"
-                onClick={() => {
-                  footerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }}
-                className="min-w-28"
-              >
-                <ListChecks size={18} aria-hidden="true" />
-                Özet
-              </Button>
+          <div className="mx-auto max-w-2xl">
+            {!readOnly && saveState !== 'idle' && (
+              <SaveStatus
+                state={saveState}
+                savedAt={savedAt}
+                onRetry={handleRetrySave}
+                className="mb-1.5 flex justify-center"
+              />
             )}
+            <div className="flex items-center gap-2">
+              <Button
+                size="lg"
+                disabled={cardIndex === 0}
+                onClick={() => goToCard(cardIndex - 1)}
+                className="flex-1"
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+                Önceki
+              </Button>
+              {cardIndex < lastIndex ? (
+                <Button
+                  size="lg"
+                  variant="primary"
+                  onClick={() => goToCard(cardIndex + 1)}
+                  className="flex-1"
+                >
+                  Sonraki
+                  <ChevronRight size={18} aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  variant="primary"
+                  onClick={() => {
+                    footerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  className="flex-1"
+                >
+                  <ListChecks size={18} aria-hidden="true" />
+                  Özet
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
